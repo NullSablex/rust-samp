@@ -1,7 +1,7 @@
 [![Build](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml/badge.svg)](https://github.com/NullSablex/rust-samp/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-# Rust-SAMP
+# rust-samp
 
 Toolkit em Rust para desenvolvimento de plugins de servidor [SA-MP](http://sa-mp.com). Escreva plugins seguros, rápidos e confiáveis usando Rust no lugar de C/C++.
 
