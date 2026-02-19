@@ -22,7 +22,7 @@ where
 /// Enables process_tick function for a plugin.
 ///
 /// # Example
-/// ```rust,compile_fail
+/// ```rust,no_run
 /// use samp::initialize_plugin;
 /// use samp::prelude::*;
 ///
