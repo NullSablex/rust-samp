@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["AmxError","Error type returned by AMX functions (origin amx_*)."]],"type":[["AmxResult","A specialized [`Result`] type for operations on AMX."]]});

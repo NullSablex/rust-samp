@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["AMX",""],["AMX_FUNCSTUB",""],["AMX_HEADER",""],["AMX_NATIVE_INFO",""],["ANX_FUNCSTUBNT",""]]});

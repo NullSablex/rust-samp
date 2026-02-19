@@ -102,7 +102,7 @@ impl Amx {
         Ok(())
     }
 
-    pub(crate) fn allot<T: Sized + AmxPrimitive>(&self, cells: usize) -> AmxResult<Ref<T>> {
+    pub(crate) fn allot<T: Sized + AmxPrimitive>(&self, cells: usize) -> AmxResult<Ref<'_, T>> {
         let allot = Allot::from_table(self.fn_table);
 
         let mut amx_addr = 0;
@@ -198,7 +198,7 @@ impl Amx {
     /// #   Ok(())
     /// # }
     /// ```
-    pub fn find_pubvar<T: Sized + AmxPrimitive>(&self, name: &str) -> AmxResult<Ref<T>> {
+    pub fn find_pubvar<T: Sized + AmxPrimitive>(&self, name: &str) -> AmxResult<Ref<'_, T>> {
         let find_pubvar = FindPubVar::from_table(self.fn_table);
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut cell_ptr = 0;
@@ -239,7 +239,7 @@ impl Amx {
     /// ```
     ///
     /// [`Ref<T>`]: ../cell/struct.Ref.html
-    pub fn get_ref<T: Sized + AmxPrimitive>(&self, address: i32) -> AmxResult<Ref<T>> {
+    pub fn get_ref<T: Sized + AmxPrimitive>(&self, address: i32) -> AmxResult<Ref<'_, T>> {
         let get_addr = GetAddr::from_table(self.fn_table);
         let mut dest = 0;
         let mut dest_addr = std::ptr::addr_of_mut!(dest);
@@ -272,7 +272,7 @@ impl Amx {
 
     /// Returns the length of a string in characters
     ///
-    pub fn strlen<'a>(&'a self, value: *const i32) -> AmxResult<usize> {
+    pub fn strlen(&self, value: *const i32) -> AmxResult<usize> {
         let strlen = StrLen::from_table(self.fn_table);
         let mut len = 0;
         amx_try!(strlen(value, &mut len));
@@ -304,7 +304,7 @@ impl Amx {
     ///
     /// [`Allocator`]: struct.Allocator.html
     /// [`Amx`]: struct.Amx.html
-    pub fn allocator(&self) -> Allocator {
+    pub fn allocator(&self) -> Allocator<'_> {
         Allocator::new(self)
     }
 
@@ -365,7 +365,7 @@ impl<'amx> Allocator<'amx> {
     /// #       Ok(())
     /// # }
     /// ```
-    pub fn allot<T: Sized + AmxPrimitive>(&self, init_value: T) -> AmxResult<Ref<T>> {
+    pub fn allot<T: Sized + AmxPrimitive>(&self, init_value: T) -> AmxResult<Ref<'_, T>> {
         let mut cell = self.amx.allot(1)?;
         *cell = init_value;
 
@@ -402,7 +402,7 @@ impl<'amx> Allocator<'amx> {
     /// #
     /// #       Ok(())
     /// # }
-    pub fn allot_buffer(&self, size: usize) -> AmxResult<Buffer> {
+    pub fn allot_buffer(&self, size: usize) -> AmxResult<Buffer<'_>> {
         let buffer = self.amx.allot(size)?;
 
         Ok(Buffer::new(buffer, size))
@@ -433,7 +433,7 @@ impl<'amx> Allocator<'amx> {
     /// #
     /// #       Ok(())
     /// # }
-    pub fn allot_array<T>(&self, array: &[T]) -> AmxResult<Buffer>
+    pub fn allot_array<T>(&self, array: &[T]) -> AmxResult<Buffer<'_>>
     where
         T: AmxCell<'amx> + AmxPrimitive,
     {
@@ -472,7 +472,7 @@ impl<'amx> Allocator<'amx> {
     /// #
     /// #       Ok(())
     /// # }
-    pub fn allot_string(&self, string: &str) -> AmxResult<AmxString> {
+    pub fn allot_string(&self, string: &str) -> AmxResult<AmxString<'_>> {
         let bytes = Allocator::string_bytes(string);
         let buffer = self.allot_buffer(bytes.len() + 1)?;
 

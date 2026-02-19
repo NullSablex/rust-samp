@@ -26,7 +26,7 @@ impl<'a> Args<'a> {
     ///     let amx = Amx::new(amx, amx_exports);
     ///     let mut args = Args::new(&amx, args);
     ///
-    ///     let say_what = match args.next::<AmxString>() {
+    ///     let say_what = match args.next_arg::<AmxString>() {
     ///         Some(string) => string.to_string(),
     ///         None => {
     ///             println!("RawNative error: no argument");
@@ -49,10 +49,10 @@ impl<'a> Args<'a> {
         }
     }
 
-    /// Return the next argument in the list (like an iterator).
+    /// Return the next argument in the list.
     ///
     /// When there is no arguments left returns `None`.
-    pub fn next<T: AmxCell<'a> + 'a>(&mut self) -> Option<T> {
+    pub fn next_arg<T: AmxCell<'a> + 'a>(&mut self) -> Option<T> {
         let result = self.get(self.offset);
         self.offset += 1;
 

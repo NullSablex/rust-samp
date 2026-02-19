@@ -24,6 +24,9 @@ where
 /// Types: i8, u8, i16, u16, i32, u32, usize, isize, f32, bool
 ///
 /// There is no values that's bigger than 4 bytes, because size of an AMX cell is 32 bits.
+///
+/// # Safety
+/// Must only be implemented for types that fit within a single 32-bit AMX cell.
 pub unsafe trait AmxPrimitive
 where
     Self: Sized,
@@ -73,9 +76,7 @@ impl AmxCell<'_> for f32 {
     }
 
     fn as_cell(&self) -> i32 {
-        // can't use `as` here because a float value will be an integer
-        // for example if you pass 10.0 (0x41200000) it will be 10 (0x0A)
-        unsafe { std::mem::transmute(*self) }
+        f32::to_bits(*self).cast_signed()
     }
 }
 

@@ -1,4 +1,7 @@
 /target
+/docs
 **/*.rs.bk
 Cargo.lock
 .idea
+.claude
+CLAUDE.md

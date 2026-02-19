@@ -4,11 +4,12 @@ use samp_sdk::raw::{functions::Logprintf, types::AMX};
 use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::ffi::CString;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::amx::{Amx, AmxIdent};
 use crate::plugin::SampPlugin;
 
-static mut RUNTIME: *mut Runtime = std::ptr::null_mut();
+static RUNTIME: AtomicPtr<Runtime> = AtomicPtr::new(std::ptr::null_mut());
 
 pub struct Runtime {
     plugin: Option<NonNull<dyn SampPlugin + 'static>>,
@@ -30,9 +31,7 @@ impl Runtime {
 
         let boxed = Box::new(rt);
 
-        unsafe {
-            RUNTIME = Box::into_raw(boxed);
-        }
+        RUNTIME.store(Box::into_raw(boxed), Ordering::Release);
 
         Runtime::get()
     }
@@ -70,9 +69,8 @@ impl Runtime {
         let log_fn = self.logger();
         let msg = format!("{}", message);
         
-        match CString::new(msg) {
-            Ok(cstr) => log_fn(cstr.as_ptr()),
-            Err(_) => (),
+        if let Ok(cstr) = CString::new(msg) {
+            log_fn(cstr.as_ptr());
         }
     }
 
@@ -93,7 +91,7 @@ impl Runtime {
         let mut supports = Supports::VERSION | Supports::AMX_NATIVES;
 
         if self.process_tick {
-            supports.toggle(Supports::PROCESS_TICK);
+            supports.insert(Supports::PROCESS_TICK);
         }
 
         supports
@@ -122,12 +120,12 @@ impl Runtime {
 
     #[inline]
     pub fn get() -> &'static mut Runtime {
-        unsafe { &mut *RUNTIME }
+        unsafe { &mut *RUNTIME.load(Ordering::Acquire) }
     }
 
     #[inline]
     pub fn plugin() -> &'static mut dyn SampPlugin {
-        unsafe { (*RUNTIME).plugin.as_mut().unwrap().as_mut() }
+        unsafe { (*RUNTIME.load(Ordering::Acquire)).plugin.as_mut().unwrap().as_mut() }
     }
 
     #[inline]

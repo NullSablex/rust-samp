@@ -17,7 +17,11 @@ pub struct AmxString<'amx> {
 }
 
 impl<'amx> AmxString<'amx> {
-    /// Create a new AmxString from an allocated buffer and fill it with a string
+    /// Create a new AmxString from an allocated buffer and fill it with a string.
+    ///
+    /// # Safety
+    /// The `buffer` must be a valid allocation from the AMX heap and must remain valid
+    /// for the lifetime `'amx`.
     pub unsafe fn new(mut buffer: Buffer<'amx>, bytes: &[u8]) -> AmxString<'amx> {
         // let _ = put_in_buffer(&mut buffer, string); // here can't be an error.
         for (idx, byte) in bytes.iter().enumerate() {
@@ -40,7 +44,7 @@ impl<'amx> AmxString<'amx> {
             let mut ptr = self.inner.as_ptr();
             let mut mark = 3;
             for _ in 0..self.len {
-                let ch = (unsafe { *ptr } >> mark * 8) as u8;
+                let ch = (unsafe { *ptr } >> (mark * 8)) as u8;
                 if ch == b'\0' {
                     break;
                 }
@@ -90,12 +94,12 @@ impl<'amx> AmxString<'amx> {
     /// }
     /// # }
     /// ```
-    pub fn to_string(&self) -> String {
+    fn convert_to_string(&self) -> String {
         #[cfg(feature = "encoding")]
         return encoding::get().decode(&self.to_bytes()).0.into_owned();
 
         #[cfg(not(feature = "encoding"))]
-        return unsafe { String::from_utf8_unchecked(self.to_bytes()) };
+        return String::from_utf8_lossy(&self.to_bytes()).into_owned();
     }
 
     /// Return a length of a string.
@@ -133,7 +137,7 @@ impl<'amx> AmxCell<'amx> for AmxString<'amx> {
 
 impl fmt::Display for AmxString<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.to_string())
+        write!(fmt, "{}", self.convert_to_string())
     }
 }
 

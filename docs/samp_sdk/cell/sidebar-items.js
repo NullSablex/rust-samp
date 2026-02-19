@@ -1,1 +1,0 @@
-initSidebarItems({"mod":[["buffer","Contains types to interact with AMX arrays."],["repr","A module to discribe how AMX cells work."],["string","String interperation inside an AMX."]],"struct":[["Ref","A reference to a cell in the [`Amx`]."]]});
