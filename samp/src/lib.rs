@@ -20,7 +20,7 @@
 //! # examples
 //! * simple memcache plugin in `plugin-example` folder.
 //! * your `lib.rs` file
-//! ```rust,compile_fail
+//! ```rust,no_run
 //! use samp::prelude::*; // export most useful types
 //! use samp::{native, initialize_plugin}; // codegen macros
 //!

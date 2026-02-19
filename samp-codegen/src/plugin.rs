@@ -21,7 +21,7 @@ impl Parse for InitPlugin {
 
                 let content;
                 let _ = bracketed!(content in input);
-                let natives = content.parse_terminated(Path::parse)?;
+                let natives = Punctuated::parse_terminated(&content)?;
 
                 let _: Token![,] = input.parse()?;
 
@@ -49,10 +49,11 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         .iter_mut()
         .flatten()
         .map(|path| {
-            if let Some(mut last_part) = path.segments.last_mut() {
-                last_part.value_mut().ident = Ident::new(
-                    &format!("{}{}", REG_PREFIX, last_part.value().ident),
-                    last_part.value().ident.span(),
+            if let Some(last_part) = path.segments.last_mut() {
+                let span = last_part.ident.span();
+                last_part.ident = Ident::new(
+                    &format!("{}{}", REG_PREFIX, last_part.ident),
+                    span,
                 );
             }
             quote!(#path(),)
@@ -60,30 +61,30 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         .collect();
 
     let generated = quote! {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "system" fn Load(server_data: *const usize) -> i32 {
             samp::interlayer::load(server_data);
             return 1;
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "system" fn Unload() {
             samp::interlayer::unload();
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "system" fn AmxLoad(amx: *mut samp::raw::types::AMX) {
             let natives = vec![#natives];
 
             samp::interlayer::amx_load(amx, &natives);
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "system" fn AmxUnload(amx: *mut samp::raw::types::AMX) {
             samp::interlayer::amx_unload(amx);
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "system" fn Supports() -> u32 {
             let constructor = || {
                 #(#block)*
@@ -93,7 +94,7 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
             samp::interlayer::supports()
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "system" fn ProcessTick() {
             samp::interlayer::process_tick();
         }

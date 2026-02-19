@@ -2,6 +2,7 @@
 use bitflags::bitflags;
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Supports: u32 {
         const VERSION = 512;
         const AMX_NATIVES = 0x10000;
@@ -25,6 +26,7 @@ impl From<ServerData> for isize {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct AmxFlags: u16 {
         const DEBUG = 0x02;
         const COMPACT = 0x04;

@@ -5,8 +5,8 @@ authors = ["ZOTTCE <zottce@gmail.com>"]
 description = "Tools to develop SA:MP plugins"
 license = "MIT"
 repository = "https://github.com/zottce/samp-rs/"
-readme = "../readme.md"
-edition = "2018"
+readme = "../README.md"
+edition = "2024"
 
 [features]
 default = []
@@ -15,7 +15,7 @@ encoding = ["samp-sdk/encoding"]
 [dependencies]
 samp-sdk = { path = "../samp-sdk", version = "0.9.2" }
 samp-codegen = { path = "../samp-codegen", version = "0.1.1" }
-fern = "0.5.7"
+fern = "0.7"
 
 [package.metadata.docs.rs]
 features = ["encoding"]

@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["Args","A wrapper of a list of arguments of a native function."]]});

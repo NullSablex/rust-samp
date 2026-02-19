@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["set_default_encoding",""]],"static":[["WINDOWS_1251","The windows-1251 encoding."],["WINDOWS_1252","The windows-1252 encoding."]]});

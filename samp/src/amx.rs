@@ -49,7 +49,7 @@ pub fn get<'a>(ident: AmxIdent) -> Option<&'a Amx> {
 }
 
 #[inline]
-pub fn add<'a>(amx: *mut AMX) {
+pub fn add(amx: *mut AMX) {
     let rt = Runtime::get();
     rt.insert_amx(amx);
 }

@@ -5,19 +5,16 @@ authors = ["ZOTTCE <zottce@gmail.com>"]
 description = "Bindings for C SA:MP SDK"
 license = "MIT"
 repository = "https://github.com/zottce/samp-rs/"
-readme = "readme.md"
-edition = "2018"
+readme = "../README.md"
+edition = "2024"
 
 [features]
 default = []
 encoding = ["encoding_rs"]
 
 [dependencies]
-bitflags = "1.0.4"
-encoding_rs = { version = "0.8.17", optional = true }
-
-[build-dependencies]
-colored = "1.7.0"
+bitflags = "2.10"
+encoding_rs = { version = "0.8", optional = true }
 
 [package.metadata.docs.rs]
 features = ["encoding"]
