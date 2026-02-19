@@ -1,6 +1,12 @@
 # Changelog
 
-## [v1.0.0] - NullSablex (fork)
+## [v1.0.1]
+
+- Atualizado repositório, versões e autoria nos Cargo.toml de todos os crates
+
+---
+
+## [v1.0.0]
 
 ### Correções pós-release
 - Corrigido nome do projeto de "Rust-SAMP" para "rust-samp" no README e LICENSE
