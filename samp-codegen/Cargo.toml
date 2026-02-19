@@ -1,10 +1,10 @@
 [package]
 name = "samp-codegen"
-version = "0.1.2"
-authors = ["ZOTTCE <zottce@gmail.com>"]
-description = "Codegen for samp-rs"
+version = "1.0.0"
+authors = ["ZOTTCE <zottce@gmail.com>", "NullSablex"]
+description = "Codegen for rust-samp"
 license = "MIT"
-repository = "https://github.com/zottce/samp-rs/"
+repository = "https://github.com/NullSablex/rust-samp"
 readme = "../README.md"
 edition = "2024"
 
