@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased] - NullSablex (fork)
+## [v1.0.0] - NullSablex (fork)
+
+### Correções pós-release
+- Corrigido nome do projeto de "Rust-SAMP" para "rust-samp" no README e LICENSE
+- Corrigido doctests marcados como `compile_fail` que passaram a compilar com as dependências atualizadas (`compile_fail` → `no_run`)
+- Corrigido `#[no_mangle]` → `#[unsafe(no_mangle)]` nos doctests do samp-sdk (edition 2024)
 
 ### Modernização
 - Atualizado Rust edition de 2018 para **2024**
