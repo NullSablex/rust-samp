@@ -45,7 +45,7 @@ impl Amx {
     ///
     /// static mut AMX_EXPORTS: usize = 0;
     ///
-    /// #[no_mangle]
+    /// #[unsafe(no_mangle)]
     /// pub extern "system" fn Load(server_data: *const usize) -> i32 {
     ///     unsafe {
     ///         AMX_EXPORTS = server_data.offset(ServerData::AmxExports.into()).read();
@@ -54,7 +54,7 @@ impl Amx {
     ///     return 1;
     /// }
     ///
-    /// #[no_mangle]
+    /// #[unsafe(no_mangle)]
     /// pub extern "system" fn AmxLoad(amx_ptr: *mut AMX) {
     ///     let _amx = Amx::new(amx_ptr, unsafe { AMX_EXPORTS });
     /// }
@@ -72,7 +72,7 @@ impl Amx {
     ///
     /// use std::ffi::CString;
     ///
-    /// #[no_mangle]
+    /// #[unsafe(no_mangle)]
     /// pub extern "system" fn AmxLoad(amx_ptr: *mut AMX) {
     /// #   let amx_exports = 0;
     ///     // let amx_exports = ...; // see `Amx::new()` example.
