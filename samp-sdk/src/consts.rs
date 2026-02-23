@@ -66,3 +66,65 @@ impl From<i32> for AmxExecIdx {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn amx_exec_idx_main_roundtrip() {
+        assert_eq!(i32::from(AmxExecIdx::Main), -1);
+        assert_eq!(AmxExecIdx::from(-1), AmxExecIdx::Main);
+    }
+
+    #[test]
+    fn amx_exec_idx_continue_roundtrip() {
+        assert_eq!(i32::from(AmxExecIdx::Continue), -2);
+        assert_eq!(AmxExecIdx::from(-2), AmxExecIdx::Continue);
+    }
+
+    #[test]
+    fn amx_exec_idx_userdef_roundtrip() {
+        for idx in [0, 1, 10, 100, i32::MAX] {
+            assert_eq!(AmxExecIdx::from(idx), AmxExecIdx::UserDef(idx));
+            assert_eq!(i32::from(AmxExecIdx::UserDef(idx)), idx);
+        }
+    }
+
+    #[test]
+    fn server_data_offsets() {
+        assert_eq!(isize::from(ServerData::Logprintf), 0);
+        assert_eq!(isize::from(ServerData::AmxExports), 16);
+        assert_eq!(isize::from(ServerData::CallPublicFs), 17);
+        assert_eq!(isize::from(ServerData::CallPublicGm), 18);
+    }
+
+    #[test]
+    fn supports_flags_combine() {
+        let flags = Supports::VERSION | Supports::AMX_NATIVES;
+        assert!(flags.contains(Supports::VERSION));
+        assert!(flags.contains(Supports::AMX_NATIVES));
+        assert!(!flags.contains(Supports::PROCESS_TICK));
+    }
+
+    #[test]
+    fn supports_with_process_tick() {
+        let flags = Supports::VERSION | Supports::AMX_NATIVES | Supports::PROCESS_TICK;
+        assert!(flags.contains(Supports::PROCESS_TICK));
+    }
+
+    #[test]
+    fn amx_flags_combine() {
+        let flags = AmxFlags::DEBUG | AmxFlags::COMPACT;
+        assert!(flags.contains(AmxFlags::DEBUG));
+        assert!(flags.contains(AmxFlags::COMPACT));
+        assert!(!flags.contains(AmxFlags::JITC));
+    }
+
+    #[test]
+    fn amx_flags_empty() {
+        let flags = AmxFlags::empty();
+        assert!(!flags.contains(AmxFlags::DEBUG));
+        assert!(flags.is_empty());
+    }
+}

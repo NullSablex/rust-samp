@@ -43,7 +43,7 @@ pub fn enable_process_tick() {
 /// Get a fern [`Dispatch`] and disable auto installing logger.
 ///
 /// # Example
-/// ```rust,compile_fail
+/// ```rust,no_run
 /// use samp::initialize_plugin;
 /// use samp::prelude::*;
 ///

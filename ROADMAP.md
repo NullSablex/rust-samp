@@ -25,6 +25,6 @@ Metas e objetivos para o desenvolvimento do rust-samp.
 
 ## Testes
 
-- [ ] Validação em produção (em andamento)
-- [ ] Avaliar viabilidade de mock do AMX para testes unitários
-- [ ] **[Longo prazo]** Implementar testes unitários para componentes isoláveis
+- [x] Validação em produção (em andamento)
+- [x] Avaliar viabilidade de mock do AMX para testes unitários
+- [x] **[Longo prazo]** Implementar testes unitários para componentes isoláveis
