@@ -122,7 +122,18 @@ impl<'amx> UnsizedBuffer<'amx> {
     ///     }
     /// }
     /// ```
+    /// # Safety Note
+    /// `len` must not exceed the actual number of cells allocated in the AMX heap.
+    /// Passing a `len` larger than the real buffer causes undefined behavior.
     pub fn into_sized_buffer(self, len: usize) -> Buffer<'amx> {
+        const MAX_BUFFER_CELLS: usize = 1024 * 1024;
+        debug_assert!(
+            len <= MAX_BUFFER_CELLS,
+            "into_sized_buffer() recebeu len={} acima do limite de {}",
+            len,
+            MAX_BUFFER_CELLS
+        );
+        let len = len.min(MAX_BUFFER_CELLS);
         Buffer::new(self.inner, len)
     }
 

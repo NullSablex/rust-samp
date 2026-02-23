@@ -187,4 +187,30 @@ mod tests {
         let err = AmxError::General;
         let _: &dyn std::error::Error = &err;
     }
+
+    #[test]
+    fn memory_access_display() {
+        let err = AmxError::MemoryAccess;
+        assert_eq!(format!("{err}"), "Invalid memory access");
+    }
+
+    #[test]
+    fn memory_error_display() {
+        let err = AmxError::Memory;
+        assert_eq!(format!("{err}"), "Out of memory");
+    }
+
+    #[test]
+    fn amx_result_ok() {
+        let result: AmxResult<i32> = Ok(42);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn amx_result_err() {
+        let result: AmxResult<i32> = Err(AmxError::General);
+        assert!(result.is_err());
+        let err = AmxError::General;
+        assert_eq!(format!("{err}"), "General error (unknown or unspecific error)");
+    }
 }

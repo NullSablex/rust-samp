@@ -140,9 +140,13 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     let reg_native = quote! {
         #vis fn #reg_name() -> samp::raw::types::AMX_NATIVE_INFO {
             samp::raw::types::AMX_NATIVE_INFO {
-                name: std::ffi::CString::new(#amx_name)
-                    .expect("nome de native não pode conter bytes nulos")
-                    .into_raw(),
+                // Leak intencional: o nome do native deve viver para sempre
+                // pois o servidor mantém referência ao ponteiro.
+                name: Box::leak(
+                    std::ffi::CString::new(#amx_name)
+                        .expect("nome de native não pode conter bytes nulos")
+                        .into_boxed_c_str()
+                ).as_ptr() as *mut std::os::raw::c_char,
                 func: Self::#native_name,
             }
         }

@@ -1,5 +1,77 @@
 # Changelog
 
+## [v2.1.0]
+
+### Segurança
+
+- **[CRITICAL]** Corrigido off-by-one em `Args::get()` que permitia leitura fora dos limites (CWE-125)
+- **[CRITICAL]** Adicionada validação de ponteiro nulo em `Amx::get_ref()` após chamada FFI (CWE-416)
+- **[HIGH]** Proteção contra integer overflow em `Amx::allot()` com validação de `cells > i32::MAX` (CWE-190)
+- **[HIGH]** Bounds checking em packed string parsing para evitar leitura além do buffer (CWE-125)
+- **[HIGH]** Corrigido `AtomicPtr` ordering de `Relaxed` para `Release/Acquire` em `encoding.rs` (CWE-362)
+- **[MEDIUM]** Adicionado `debug_assert` de ponteiro nulo e alinhamento em `Ref::new()` (CWE-843)
+- **[MEDIUM]** Validação de endereço em `Amx::release()` antes de modificar heap (CWE-763)
+- **[MEDIUM]** Validação de ponteiro de função em `from_table()` do exports (CWE-476)
+- **[MEDIUM]** Eliminado undefined behavior em `Runtime` via `UnsafeCell<RuntimeInner>` (CWE-362)
+- **[MEDIUM]** Validação de tamanho em `UnsizedBuffer::into_sized_buffer()` com limite de 1MB (CWE-120)
+- **[LOW]** Proteção contra overflow em `Args::count()` com valores negativos (CWE-190)
+- **[LOW]** Corrigido `AmxString::new()` usando `bytes.len()` ao invés de `buffer.len()` (CWE-170)
+- **[LOW]** Proteção contra OOM em alocação de strings com `MAX_STRING_LEN` de 1MB (CWE-20)
+- **[LOW]** Memory leak de nomes de natives tornado explícito via `Box::leak()` (CWE-401)
+
+### Testes
+
+- Adicionados testes para `Args`: `count_with_zero`, `count_with_negative`, `count_with_valid_args`, `get_out_of_bounds`, `reset`
+- Adicionados testes para `encoding`: `default_encoding_is_windows_1252`, `set_and_get_encoding`
+- Adicionados testes para `AmxError`: `memory_access_display`, `memory_error_display`, `amx_result_ok`, `amx_result_err`
+- Total: 32 testes unitários + 27 doctests
+
+### CI/CD
+
+- Adicionado `cargo audit` ao workflow para detecção de CVEs em dependências
+
+### Interno
+
+- `Runtime` refatorado com `UnsafeCell<RuntimeInner>` para interior mutability segura
+- `Runtime::get()` agora retorna `&'static Runtime` (imutável) ao invés de `&'static mut`
+- Métodos mutáveis do `Runtime` agora usam `&self` com interior mutability
+- `CString::into_raw()` em natives substituído por `Box::leak(CString.into_boxed_c_str())`
+
+### Versões
+
+- `samp-sdk`: 2.0.0 → 2.1.0
+- `samp`: 2.0.0 → 2.1.0
+
+---
+
+## [v2.0.0]
+
+### CI/CD
+
+- Adicionado build cross-platform i686 no GitHub Actions (Linux + Windows)
+- Configurado `Swatinem/rust-cache` para cache de dependências
+- Adicionado `cargo clippy` com `-D warnings` ao workflow
+- Upload de artefatos (`.so`/`.dll`) em pushes para master
+
+### Tratamento de Erros
+
+- Validação de ponteiros em blocos `unsafe` do SDK
+- Mensagens de erro em português nas macros procedurais
+- Uso de `Result` em mais pontos da API pública
+
+### Testes
+
+- Testes unitários para `AmxPrimitive`, `AmxError`, `consts`, `Exports`
+- Correção de doctests (`compile_fail` → `no_run` onde necessário)
+- 21 testes unitários + 27 doctests
+
+### Documentação
+
+- Documentação completa com mdBook (13 capítulos em português)
+- Guias: introdução, primeiro plugin, anatomia, natives, tipos Amx, cells/memória, encoding, erros, logging, exemplos avançados, migração, referência API
+
+---
+
 ## [v1.0.1]
 
 - Atualizado repositório, versões e autoria nos Cargo.toml de todos os crates

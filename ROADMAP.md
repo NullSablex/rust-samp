@@ -28,3 +28,21 @@ Metas e objetivos para o desenvolvimento do rust-samp.
 - [x] Validação em produção (em andamento)
 - [x] Avaliar viabilidade de mock do AMX para testes unitários
 - [x] **[Longo prazo]** Implementar testes unitários para componentes isoláveis
+
+## Segurança
+
+- [x] Auditoria CWE/CVSS do SDK (14 findings identificados)
+- [x] Correção de off-by-one em Args::get() (CWE-125)
+- [x] Validação de ponteiro nulo em get_ref() (CWE-416)
+- [x] Proteção contra integer overflow em allot() (CWE-190)
+- [x] Bounds checking em packed string parsing (CWE-125)
+- [x] Ordering correto em AtomicPtr (CWE-362)
+- [x] Validação de ponteiros em Ref::new() e from_table() (CWE-476/843)
+- [x] Proteção contra OOM em alocação de strings (CWE-20)
+- [x] Validação em release() e count() (CWE-763/190)
+- [x] Testes de segurança para args, encoding e error
+- [x] Adicionar cargo audit ao CI
+- [x] Eliminar UB em Runtime via UnsafeCell (CWE-362)
+- [x] Leak explícito de nomes de natives com Box::leak (CWE-401)
+- [x] Refinamento de bounds check em packed string (CWE-125)
+- [x] Validação de tamanho em into_sized_buffer() (CWE-120)

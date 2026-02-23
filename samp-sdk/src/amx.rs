@@ -103,12 +103,20 @@ impl Amx {
     }
 
     pub(crate) fn allot<T: Sized + AmxPrimitive>(&self, cells: usize) -> AmxResult<Ref<'_, T>> {
+        if cells > i32::MAX as usize {
+            return Err(AmxError::Memory);
+        }
+
         let allot = Allot::from_table(self.fn_table);
 
         let mut amx_addr = 0;
         let mut phys_addr = 0;
 
         amx_try!(allot(self.ptr, cells as i32, &mut amx_addr, &mut phys_addr));
+
+        if phys_addr == 0 {
+            return Err(AmxError::Memory);
+        }
 
         unsafe { Ok(Ref::new(amx_addr, phys_addr as *mut T)) }
     }
@@ -246,6 +254,10 @@ impl Amx {
 
         amx_try!(get_addr(self.ptr, address, &mut dest_addr));
 
+        if dest_addr.is_null() {
+            return Err(AmxError::MemoryAccess);
+        }
+
         unsafe { Ok(Ref::new(address, dest_addr as *mut T)) }
     }
 
@@ -253,7 +265,7 @@ impl Amx {
     pub(crate) fn release(&self, address: i32) {
         if let Some(mut amx) = self.amx() {
             let amx = unsafe { amx.as_mut() };
-            if amx.hea > address {
+            if address >= 0 && amx.hea > address {
                 amx.hea = address;
             }
         }

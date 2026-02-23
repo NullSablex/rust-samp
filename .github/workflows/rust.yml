@@ -50,6 +50,10 @@ jobs:
     - name: Run clippy
       run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
 
+    - name: Security audit
+      if: runner.os == 'Linux'
+      run: cargo install cargo-audit --locked && cargo audit
+
     - name: Upload artifact
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
       uses: actions/upload-artifact@v4

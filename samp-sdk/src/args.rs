@@ -83,7 +83,7 @@ impl<'a> Args<'a> {
     /// }
     /// ```
     pub fn get<T: AmxCell<'a> + 'a>(&self, offset: usize) -> Option<T> {
-        if offset > self.count() {
+        if offset >= self.count() {
             return None;
         }
 
@@ -99,6 +99,59 @@ impl<'a> Args<'a> {
 
     /// Get count of arguments in the list.
     pub fn count(&self) -> usize {
-        unsafe { (self.args.read() / 4) as usize }
+        let raw = unsafe { self.args.read() };
+        if raw <= 0 {
+            return 0;
+        }
+        (raw / 4) as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_with_zero_returns_zero() {
+        let data: [i32; 1] = [0];
+        let amx = Amx::new(std::ptr::null_mut(), 0);
+        let args = Args::new(&amx, data.as_ptr());
+        assert_eq!(args.count(), 0);
+    }
+
+    #[test]
+    fn count_with_negative_returns_zero() {
+        let data: [i32; 1] = [-8];
+        let amx = Amx::new(std::ptr::null_mut(), 0);
+        let args = Args::new(&amx, data.as_ptr());
+        assert_eq!(args.count(), 0);
+    }
+
+    #[test]
+    fn count_with_valid_args() {
+        // 3 argumentos = 12 bytes (3 * 4)
+        let data: [i32; 4] = [12, 100, 200, 300];
+        let amx = Amx::new(std::ptr::null_mut(), 0);
+        let args = Args::new(&amx, data.as_ptr());
+        assert_eq!(args.count(), 3);
+    }
+
+    #[test]
+    fn get_out_of_bounds_returns_none() {
+        let data: [i32; 2] = [4, 42]; // 1 argumento
+        let amx = Amx::new(std::ptr::null_mut(), 0);
+        let args = Args::new(&amx, data.as_ptr());
+        // offset == count deve retornar None
+        assert!(args.get::<crate::cell::Ref<i32>>(1).is_none());
+    }
+
+    #[test]
+    fn reset_resets_offset() {
+        let data: [i32; 1] = [0];
+        let amx = Amx::new(std::ptr::null_mut(), 0);
+        let mut args = Args::new(&amx, data.as_ptr());
+        args.offset = 5;
+        args.reset();
+        assert_eq!(args.offset, 0);
     }
 }

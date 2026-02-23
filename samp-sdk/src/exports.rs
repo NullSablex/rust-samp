@@ -16,6 +16,11 @@ macro_rules! impl_export {
 
                 unsafe {
                     let ptr = table.offset(Self::OFFSET);
+                    assert!(
+                        (ptr as *const usize).read() != 0,
+                        "from_table() função no offset {} é nula",
+                        Self::OFFSET
+                    );
                     (ptr as *const Self::Output).read()
                 }
             }

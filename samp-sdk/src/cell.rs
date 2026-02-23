@@ -39,6 +39,12 @@ impl<'amx, T: Sized + AmxPrimitive> Ref<'amx, T> {
     /// [`Args`]: ../args/struct.Args.html
     /// [`Amx::get_ref`]: ../amx/struct.Amx.html#method.get_ref
     pub unsafe fn new(amx_addr: i32, phys_addr: *mut T) -> Ref<'amx, T> {
+        debug_assert!(!phys_addr.is_null(), "Ref::new() recebeu ponteiro nulo");
+        debug_assert!(
+            (phys_addr as usize).is_multiple_of(std::mem::align_of::<T>()),
+            "Ref::new() recebeu ponteiro desalinhado para {}",
+            std::any::type_name::<T>()
+        );
         Ref {
             amx_addr,
             phys_addr,
