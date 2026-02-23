@@ -10,12 +10,12 @@ Metas e objetivos para o desenvolvimento do rust-samp.
 
 ## Documentação
 
-- [ ] Definir formato (mdBook ou Wiki do GitHub)
-- [ ] Guia de introdução: como criar um plugin do zero
-- [ ] Referência da API: tipos, traits e macros principais
-- [ ] Guia de encoding: como usar Windows-1251/1252
-- [ ] Exemplos comentados além do plugin-example
-- [ ] Documentar funções e módulos públicos do samp-sdk
+- [x] Definir formato (mdBook ou Wiki do GitHub)
+- [x] Guia de introdução: como criar um plugin do zero
+- [x] Referência da API: tipos, traits e macros principais
+- [x] Guia de encoding: como usar Windows-1251/1252
+- [x] Exemplos comentados além do plugin-example
+- [x] Documentar funções e módulos públicos do samp-sdk
 
 ## Tratamento de Erros
 
