@@ -10,6 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 samp = { path = "../samp", features = ["encoding"] }
-memcache = "0.19"
+memcache = { version = "0.19", default-features = false }
 log = "0.4"
 fern = "0.7"
