@@ -2,8 +2,8 @@ use samp_sdk::consts::{ServerData, Supports};
 use samp_sdk::raw::{functions::Logprintf, types::AMX};
 
 use std::collections::HashMap;
-use std::ptr::NonNull;
 use std::ffi::CString;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::amx::{Amx, AmxIdent};
@@ -47,6 +47,10 @@ impl Runtime {
 
     #[inline]
     pub fn amx_exports(&self) -> usize {
+        assert!(
+            !self.server_exports.is_null(),
+            "server_exports não inicializado"
+        );
         unsafe {
             self.server_exports
                 .offset(ServerData::AmxExports.into())
@@ -56,11 +60,15 @@ impl Runtime {
 
     #[inline]
     pub fn logger(&self) -> Logprintf {
+        assert!(
+            !self.server_exports.is_null(),
+            "server_exports não inicializado"
+        );
         unsafe {
             (self.server_exports.offset(ServerData::Logprintf.into()) as *const Logprintf).read()
         }
     }
-    
+
     pub fn disable_default_logger(&mut self) {
         self.logger_enabled = false;
     }
@@ -68,7 +76,7 @@ impl Runtime {
     pub fn log<T: std::fmt::Display>(&self, message: T) {
         let log_fn = self.logger();
         let msg = format!("{}", message);
-        
+
         if let Ok(cstr) = CString::new(msg) {
             log_fn(cstr.as_ptr());
         }
@@ -120,17 +128,31 @@ impl Runtime {
 
     #[inline]
     pub fn get() -> &'static mut Runtime {
-        unsafe { &mut *RUNTIME.load(Ordering::Acquire) }
+        let ptr = RUNTIME.load(Ordering::Acquire);
+        assert!(
+            !ptr.is_null(),
+            "Runtime::get() chamado antes de Runtime::initialize()"
+        );
+        unsafe { &mut *ptr }
     }
 
     #[inline]
     pub fn plugin() -> &'static mut dyn SampPlugin {
-        unsafe { (*RUNTIME.load(Ordering::Acquire)).plugin.as_mut().unwrap().as_mut() }
+        let rt = Runtime::get();
+        unsafe {
+            rt.plugin
+                .as_mut()
+                .expect("Runtime::plugin() chamado antes de set_plugin()")
+                .as_mut()
+        }
     }
 
     #[inline]
     pub fn plugin_cast<T: SampPlugin>() -> NonNull<T> {
         let rt = Runtime::get();
-        rt.plugin.as_ref().unwrap().cast()
+        rt.plugin
+            .as_ref()
+            .expect("Runtime::plugin_cast() chamado antes de set_plugin()")
+            .cast()
     }
 }

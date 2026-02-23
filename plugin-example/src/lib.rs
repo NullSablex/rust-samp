@@ -4,7 +4,7 @@ use samp::error::AmxResult;
 use samp::plugin::SampPlugin;
 use samp::{initialize_plugin, native};
 
-use log::{info, error, debug};
+use log::{debug, error, info};
 
 use memcache::Client;
 
@@ -45,7 +45,11 @@ impl Memcached {
 
     #[native(name = "Memcached_Get")]
     pub fn get(
-        &mut self, _: &Amx, con: usize, key: AmxString, mut value: Ref<i32>,
+        &mut self,
+        _: &Amx,
+        con: usize,
+        key: AmxString,
+        mut value: Ref<i32>,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
             match self.clients[con].get(&key.to_string()) {
@@ -63,7 +67,12 @@ impl Memcached {
 
     #[native(name = "Memcached_GetString")]
     pub fn get_string(
-        &mut self, _: &Amx, con: usize, key: AmxString, buffer: UnsizedBuffer, size: usize,
+        &mut self,
+        _: &Amx,
+        con: usize,
+        key: AmxString,
+        buffer: UnsizedBuffer,
+        size: usize,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
             match self.clients[con].get::<String>(&key.to_string()) {
@@ -83,7 +92,12 @@ impl Memcached {
 
     #[native(name = "Memcached_Set")]
     pub fn set(
-        &mut self, _: &Amx, con: usize, key: AmxString, value: i32, expire: u32,
+        &mut self,
+        _: &Amx,
+        con: usize,
+        key: AmxString,
+        value: i32,
+        expire: u32,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
             match self.clients[con].set(&key.to_string(), value, expire) {
@@ -97,7 +111,12 @@ impl Memcached {
 
     #[native(name = "Memcached_SetString")]
     pub fn set_string(
-        &mut self, _: &Amx, con: usize, key: AmxString, value: AmxString, expire: u32,
+        &mut self,
+        _: &Amx,
+        con: usize,
+        key: AmxString,
+        value: AmxString,
+        expire: u32,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
             match self.clients[con].set(&key.to_string(), value.to_string(), expire) {
@@ -111,7 +130,11 @@ impl Memcached {
 
     #[native(name = "Memcached_Increment")]
     pub fn increment(
-        &mut self, _: &Amx, con: usize, key: AmxString, value: i32,
+        &mut self,
+        _: &Amx,
+        con: usize,
+        key: AmxString,
+        value: i32,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
             match self.clients[con].increment(&key.to_string(), value as u64) {
@@ -180,7 +203,7 @@ initialize_plugin!(
             .chain(samp_logger)
             .chain(trace_level)
             .apply();
-        
+
         return Memcached {
             clients: Vec::new(),
         };

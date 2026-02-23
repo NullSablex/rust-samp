@@ -19,9 +19,9 @@ Metas e objetivos para o desenvolvimento do rust-samp.
 
 ## Tratamento de Erros
 
-- [ ] Revisar blocos `unsafe` que não validam ponteiros
-- [ ] Melhorar mensagens de erro nas macros procedurais
-- [ ] Avaliar uso de `Result` em mais pontos da API pública
+- [x] Revisar blocos `unsafe` que não validam ponteiros
+- [x] Melhorar mensagens de erro nas macros procedurais
+- [x] Avaliar uso de `Result` em mais pontos da API pública
 
 ## Testes
 

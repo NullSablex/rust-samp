@@ -3,7 +3,7 @@ use quote::quote;
 
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{bracketed, parse_macro_input, Block, Ident, Path, Result, Stmt, Token};
+use syn::{Block, Ident, Path, Result, Stmt, Token, bracketed, parse_macro_input};
 
 use crate::REG_PREFIX;
 
@@ -51,10 +51,7 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         .map(|path| {
             if let Some(last_part) = path.segments.last_mut() {
                 let span = last_part.ident.span();
-                last_part.ident = Ident::new(
-                    &format!("{}{}", REG_PREFIX, last_part.ident),
-                    span,
-                );
+                last_part.ident = Ident::new(&format!("{}{}", REG_PREFIX, last_part.ident), span);
             }
             quote!(#path(),)
         })

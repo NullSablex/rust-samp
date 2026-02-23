@@ -97,6 +97,9 @@ pub trait AmxExt {
 impl AmxExt for Amx {
     #[inline]
     fn ident(&self) -> AmxIdent {
-        self.amx().as_ptr().into()
+        self.amx()
+            .expect("Amx::ident() chamado com ponteiro nulo")
+            .as_ptr()
+            .into()
     }
 }
