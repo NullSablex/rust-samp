@@ -3,7 +3,7 @@ use quote::{quote, quote_spanned};
 
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, Error, FnArg, Ident, ItemFn, LitStr, Pat, Result, Token};
+use syn::{Error, FnArg, Ident, ItemFn, LitStr, Pat, Result, Token, parse_macro_input};
 
 use crate::NATIVE_PREFIX;
 use crate::REG_PREFIX;
@@ -69,17 +69,21 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     });
 
     let args_parsing: proc_macro2::TokenStream = if !native.raw {
-        args.skip(2).filter_map(|arg| {
-            match arg {
+        args.skip(2)
+            .filter_map(|arg| match arg {
                 FnArg::Typed(pat_type) => {
                     if let Pat::Ident(pat_ident) = &*pat_type.pat {
                         let ident = &pat_ident.ident;
-                        Some(quote_spanned!{
+                        Some(quote_spanned! {
                             pat_type.span() =>
                                 let #ident = match args.next_arg() {
                                     Some(#ident) => #ident,
                                     None => {
-                                        println!("error: couldn't parse variable {:?} in {:?} function.", stringify!(#ident), #amx_name);
+                                        log::error!(
+                                            "[{}] falha ao interpretar argumento '{}'",
+                                            #amx_name,
+                                            stringify!(#ident),
+                                        );
                                         return 0;
                                     }
                                 };
@@ -87,10 +91,10 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
                     } else {
                         None
                     }
-                },
+                }
                 _ => None,
-            }
-        }).collect()
+            })
+            .collect()
     } else {
         proc_macro2::TokenStream::new()
     };
@@ -109,7 +113,7 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
                 Some(amx) => amx,
                 None => {
                     samp::amx::add(amx);  // For GDK
-                    samp::amx::get(amx_ident).unwrap()
+                    samp::amx::get(amx_ident).expect("AMX não encontrado após inserção")
                 }
             };
 
@@ -125,7 +129,7 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
                     },
 
                     Err(err) => {
-                        println!("error: {}", err);
+                        log::error!("[{}] {}", #amx_name, err);
                         return 0;
                     }
                 }
@@ -136,7 +140,13 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     let reg_native = quote! {
         #vis fn #reg_name() -> samp::raw::types::AMX_NATIVE_INFO {
             samp::raw::types::AMX_NATIVE_INFO {
-                name: std::ffi::CString::new(#amx_name).unwrap().into_raw(),
+                // Leak intencional: o nome do native deve viver para sempre
+                // pois o servidor mantém referência ao ponteiro.
+                name: Box::leak(
+                    std::ffi::CString::new(#amx_name)
+                        .expect("nome de native não pode conter bytes nulos")
+                        .into_boxed_c_str()
+                ).as_ptr() as *mut std::os::raw::c_char,
                 func: Self::#native_name,
             }
         }

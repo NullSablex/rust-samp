@@ -110,3 +110,107 @@ impl From<i32> for AmxError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_code_maps_all_known_errors() {
+        let cases: &[(i32, &str)] = &[
+            (1, "Exit"),
+            (2, "Assert"),
+            (3, "StackError"),
+            (4, "Bounds"),
+            (5, "MemoryAccess"),
+            (6, "InvalidInstruction"),
+            (7, "StackLow"),
+            (8, "HeapLow"),
+            (9, "Callback"),
+            (10, "Native"),
+            (11, "Divide"),
+            (12, "Sleep"),
+            (13, "InvalidState"),
+            (16, "Memory"),
+            (17, "Format"),
+            (18, "Version"),
+            (19, "NotFound"),
+            (20, "Index"),
+            (21, "Debug"),
+            (22, "Init"),
+            (23, "UserData"),
+            (24, "InitJit"),
+            (25, "Params"),
+            (26, "Domain"),
+            (27, "General"),
+            (28, "Overlay"),
+        ];
+
+        for &(code, expected_name) in cases {
+            let err = AmxError::from(code);
+            assert_eq!(
+                format!("{err:?}"),
+                expected_name,
+                "código {code} deveria mapear para {expected_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_codes_map_to_unknown() {
+        for code in [0, 14, 15, 29, 100, -1, i32::MAX] {
+            assert!(
+                matches!(AmxError::from(code), AmxError::Unknown),
+                "código {code} deveria ser Unknown"
+            );
+        }
+    }
+
+    #[test]
+    fn display_messages_are_not_empty() {
+        let errors = [
+            AmxError::Exit,
+            AmxError::Bounds,
+            AmxError::Divide,
+            AmxError::NotFound,
+            AmxError::Unknown,
+        ];
+
+        for err in errors {
+            let msg = format!("{err}");
+            assert!(!msg.is_empty(), "{err:?} tem mensagem vazia");
+        }
+    }
+
+    #[test]
+    fn implements_std_error() {
+        let err = AmxError::General;
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn memory_access_display() {
+        let err = AmxError::MemoryAccess;
+        assert_eq!(format!("{err}"), "Invalid memory access");
+    }
+
+    #[test]
+    fn memory_error_display() {
+        let err = AmxError::Memory;
+        assert_eq!(format!("{err}"), "Out of memory");
+    }
+
+    #[test]
+    fn amx_result_ok() {
+        let result: AmxResult<i32> = Ok(42);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn amx_result_err() {
+        let result: AmxResult<i32> = Err(AmxError::General);
+        assert!(result.is_err());
+        let err = AmxError::General;
+        assert_eq!(format!("{err}"), "General error (unknown or unspecific error)");
+    }
+}

@@ -11,7 +11,17 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+            artifact: target/i686-unknown-linux-gnu/debug/libplugin.so
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            artifact: target/i686-pc-windows-msvc/debug/plugin.dll
+
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
@@ -19,31 +29,34 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: i686-unknown-linux-gnu
+        targets: ${{ matrix.target }}
 
-    - name: Cache cargo registry
-      uses: actions/cache@v3
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo index
-      uses: actions/cache@v3
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
     - name: Cache cargo build
-      uses: actions/cache@v3
+      uses: Swatinem/rust-cache@v2
       with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+        cache-all-crates: true
+        prefix-key: "v1"
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --target ${{ matrix.target }}
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose --target ${{ matrix.target }}
 
     - name: Run clippy
-      run: cargo clippy --all-targets -- -D warnings
+      run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
+
+    - name: Security audit
+      if: runner.os == 'Linux'
+      run: cargo install cargo-audit --locked && cargo audit
+
+    - name: Upload artifact
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: actions/upload-artifact@v4
+      with:
+        name: plugin-${{ matrix.target }}
+        path: ${{ matrix.artifact }}

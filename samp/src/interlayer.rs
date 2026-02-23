@@ -25,7 +25,7 @@ pub fn amx_load(amx: *mut AMX, natives: &[AMX_NATIVE_INFO]) {
     let rt = Runtime::get();
     let plugin = Runtime::plugin();
 
-    let amx = rt.insert_amx(amx).unwrap();
+    let amx = rt.insert_amx(amx).expect("falha ao inserir AMX no runtime");
     let _ = amx.register(natives); // don't care about errors, that function always raises errors.
 
     plugin.on_amx_load(amx);

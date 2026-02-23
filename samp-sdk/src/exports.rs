@@ -11,10 +11,16 @@ macro_rules! impl_export {
 
             #[inline(always)]
             fn from_table(fn_table: usize) -> Self::Output {
+                assert!(fn_table != 0, "from_table() recebeu fn_table nulo");
                 let table = fn_table as *const usize;
 
                 unsafe {
                     let ptr = table.offset(Self::OFFSET);
+                    assert!(
+                        (ptr as *const usize).read() != 0,
+                        "from_table() função no offset {} é nula",
+                        Self::OFFSET
+                    );
                     (ptr as *const Self::Output).read()
                 }
             }

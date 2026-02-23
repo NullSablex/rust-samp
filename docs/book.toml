@@ -1,0 +1,11 @@
+[book]
+title = "rust-samp"
+authors = ["NullSablex"]
+language = "pt-BR"
+description = "Guia completo para criar plugins SA-MP com Rust"
+
+[build]
+build-dir = "target/book"
+
+[output.html]
+git-repository-url = "https://github.com/NullSablex/rust-samp"

@@ -93,3 +93,69 @@ impl AmxCell<'_> for bool {
 
 unsafe impl AmxPrimitive for f32 {}
 unsafe impl AmxPrimitive for bool {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i32_as_cell_identity() {
+        for v in [0, 1, -1, 42, i32::MAX, i32::MIN] {
+            assert_eq!(v.as_cell(), v);
+        }
+    }
+
+    #[test]
+    fn f32_as_cell_preserves_bits() {
+        for v in [0.0f32, 1.0, -1.0, 42.5, f32::MAX, f32::MIN, f32::EPSILON] {
+            let cell = v.as_cell();
+            let recovered = f32::from_bits(cell as u32);
+            assert_eq!(v, recovered, "f32 {v} não preservou bits");
+        }
+    }
+
+    #[test]
+    fn bool_as_cell() {
+        assert_eq!(true.as_cell(), 1);
+        assert_eq!(false.as_cell(), 0);
+    }
+
+    #[test]
+    fn u8_as_cell() {
+        assert_eq!(0u8.as_cell(), 0);
+        assert_eq!(255u8.as_cell(), 255);
+    }
+
+    #[test]
+    fn i8_as_cell() {
+        assert_eq!(0i8.as_cell(), 0);
+        assert_eq!((-1i8).as_cell(), -1);
+        assert_eq!(127i8.as_cell(), 127);
+    }
+
+    #[test]
+    fn u16_as_cell() {
+        assert_eq!(0u16.as_cell(), 0);
+        assert_eq!(65535u16.as_cell(), 65535);
+    }
+
+    #[test]
+    fn i16_as_cell() {
+        assert_eq!(0i16.as_cell(), 0);
+        assert_eq!((-1i16).as_cell(), -1);
+    }
+
+    #[test]
+    fn ref_delegates_to_inner() {
+        let val = 42i32;
+        let r = &val;
+        assert_eq!(r.as_cell(), 42);
+    }
+
+    #[test]
+    fn mut_ref_delegates_to_inner() {
+        let mut val = 42i32;
+        let r = &mut val;
+        assert_eq!(r.as_cell(), 42);
+    }
+}

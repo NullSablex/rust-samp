@@ -3,9 +3,9 @@ use std::fmt;
 
 use super::{AmxCell, Buffer, UnsizedBuffer};
 use crate::amx::Amx;
-use crate::error::AmxResult;
 #[cfg(feature = "encoding")]
 use crate::encoding;
+use crate::error::AmxResult;
 
 const MAX_UNPACKED: i32 = 0x00FF_FFFF;
 
@@ -31,19 +31,28 @@ impl<'amx> AmxString<'amx> {
         buffer[bytes.len()] = 0;
 
         AmxString {
-            len: buffer.len(),
+            len: bytes.len(),
             inner: buffer,
         }
     }
 
     /// Convert an AMX string to a `Vec<u8>`.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut vec = Vec::with_capacity(self.len);
+        const MAX_STRING_LEN: usize = 1024 * 1024;
+        let len = self.len.min(MAX_STRING_LEN);
+        let mut vec = Vec::with_capacity(len);
+
         // packed string
         if self.inner[0] > MAX_UNPACKED {
-            let mut ptr = self.inner.as_ptr();
+            let base = self.inner.as_ptr();
+            let max_cells = self.inner.len();
+            let mut ptr = base;
             let mut mark = 3;
-            for _ in 0..self.len {
+            for _ in 0..len {
+                let offset = unsafe { ptr.offset_from(base) } as usize;
+                if offset >= max_cells {
+                    break;
+                }
                 let ch = (unsafe { *ptr } >> (mark * 8)) as u8;
                 if ch == b'\0' {
                     break;
@@ -52,10 +61,15 @@ impl<'amx> AmxString<'amx> {
                 mark = (mark + 3) % 4;
                 if mark == 3 {
                     ptr = unsafe { ptr.add(1) };
+                    // verificar bounds após avançar o ponteiro
+                    let new_offset = unsafe { ptr.offset_from(base) } as usize;
+                    if new_offset >= max_cells {
+                        break;
+                    }
                 }
             }
         } else {
-            for item in self.inner.iter().take(self.len) {
+            for item in self.inner.iter().take(len) {
                 vec.push(*item as u8);
             }
         }
@@ -168,7 +182,7 @@ impl fmt::Display for AmxString<'_> {
 pub fn put_in_buffer(buffer: &mut Buffer, string: &str) -> AmxResult<()> {
     #[cfg(feature = "encoding")]
     let bytes = encoding::get().encode(string).0;
-    
+
     #[cfg(not(feature = "encoding"))]
     let bytes = std::borrow::Cow::from(string.as_bytes());
 
