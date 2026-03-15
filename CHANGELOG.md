@@ -1,5 +1,50 @@
 # Changelog
 
+## [v2.2.0]
+
+### Novidades em relação à v2.1.0
+
+**AmxString**
+- Implementa `Deref<Target=str>`: todos os métodos de `&str` disponíveis diretamente — `name.starts_with("x")`, `name.contains("y")`, `format!("{name}")`, etc.
+- Decodificação lazy via `OnceCell<String>`: a `String` só é alocada no primeiro acesso via `Deref`, não na construção. Natives que não usam a string como `&str` não pagam o custo.
+- `PartialEq<str>`, `PartialEq<&str>`, `PartialEq<String>`: comparação direta com literais — `if name == "Admin"` sem conversão
+- `as_str() -> &str`: alternativa explícita a `&*name` / `&name`, autodocumentada para quem não conhece Deref
+
+**Buffer tipado**
+- `CellConvert` trait: conversão `i32 ↔ T` sem precisar de contexto AMX — implementado para todos os primitivos (`i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `usize`, `isize`, `f32`, `bool`)
+- `Buffer::get_as::<T>(index) -> Option<T>` — lê uma célula e converte para o tipo desejado; `None` se fora dos limites
+- `Buffer::set_as::<T>(index, value) -> bool` — converte e escreve; `false` se fora dos limites
+- `Buffer::iter_as::<T>()` — iterador tipado sobre todas as células; combina com `sum`, `any`, `filter_map`, etc.
+- Sem custo de abstração: `f32[]` e `bool[]` do Pawn acessíveis sem manipulação manual de bits
+
+**Strings de saída**
+- `Buffer::write_str(&mut self, s: &str) -> AmxResult<()>` — substitui `put_in_buffer` diretamente
+- `UnsizedBuffer::write_str(self, max_len, s) -> AmxResult<()>` — combina `into_sized_buffer` + `put_in_buffer` em um passo com propagação de erro via `?`
+
+**Simplificação de plugins**
+- `#[derive(SampPlugin)]` gera `impl SampPlugin for T {}` para structs sem overrides
+- `initialize_plugin!(type: T, natives: [...])` usa `Default::default()` como construtor — elimina o bloco construtor quando não há lógica de inicialização
+
+**Exemplos**
+- `example-hello` — plugin mínimo: demonstra `#[derive(SampPlugin)]`, `initialize_plugin!(type:)`, `AmxString` via Deref e `UnsizedBuffer::write_str`
+- `example-counter` — plugin stateful: demonstra `impl SampPlugin` com `on_load`/`process_tick`, múltiplas natives, `Ref<i32>` para saída por referência e bloco construtor completo
+- `plugin-example` mantido como referência avançada (memcache, encoding, logging completo)
+
+**Documentação**
+- Guia de migração v2.1.0 → v2.2.0 com diff antes/depois para cada mudança de API
+- `docs/src/natives.md`: seção de arrays tipados clarifica que `get_as`/`set_as` não exigem import de `CellConvert`; admonitions para `AmxString` lazy, `write_str` e distinção `AmxCell` vs `CellConvert`
+- `docs/src/anatomia-plugin.md`: documentadas as duas formas do `initialize_plugin!` com tabela de quando usar cada
+- `docs/src/primeiro-plugin.md`: exemplos atualizados para a nova API
+
+**CI/CD**
+- Job `bench` com baseline histórico persistente: salva resultado de cada run via `actions/cache`, compara com `critcmp` (threshold 5%) e reporta regressões no log
+
+**Testes e benchmarks**
+- 59 testes unitários + 24 doctests (antes: 32 + 5)
+- Benchmarks `criterion` para unpacked, packed, `write_str`, `Deref` lazy vs cacheado, e baseline sem AMX
+
+---
+
 ## [v2.1.0]
 
 ### Segurança

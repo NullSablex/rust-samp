@@ -25,13 +25,15 @@ pub trait SampPlugin {
 }
 ```
 
-### Ordem de execução
+Como todos os métodos têm implementação padrão vazia, um plugin sem overrides não precisa escrever `impl SampPlugin` manualmente — use o derive:
 
-1. **`on_load`** — Uma vez, quando o servidor inicia e carrega o plugin
-2. **`on_amx_load`** — Cada vez que um script PAWN é carregado (gamemode, filterscripts)
-3. **`process_tick`** — A cada tick do servidor (se habilitado)
-4. **`on_amx_unload`** — Quando um script PAWN é descarregado
-5. **`on_unload`** — Uma vez, quando o servidor encerra
+```rust
+#[derive(SampPlugin, Default)]
+struct MeuPlugin;
+```
+
+> [!NOTE]
+> `#[derive(SampPlugin)]` gera exatamente `impl SampPlugin for MeuPlugin {}`. Se você precisar sobrescrever qualquer método (ex: `on_load`), escreva o `impl` manualmente e remova o derive.
 
 ### Estado do plugin
 
@@ -51,13 +53,46 @@ impl SampPlugin for MeuPlugin {
 }
 ```
 
+### Ordem de execução
+
+1. **`initialize_plugin! { ... }`** — cria a instância do plugin
+2. **`on_load`** — uma vez, quando o servidor inicia e carrega o plugin
+3. **`on_amx_load`** — cada vez que um script PAWN é carregado
+4. **`process_tick`** — a cada tick do servidor (se habilitado)
+5. **`on_amx_unload`** — quando um script PAWN é descarregado
+6. **`on_unload`** — uma vez, quando o servidor encerra
+
 ## O macro initialize_plugin!
 
 `initialize_plugin!` faz duas coisas:
 1. Registra suas funções nativas no servidor
-2. Executa código de inicialização e cria a instância do plugin
+2. Cria a instância do plugin
 
-### Sintaxe completa
+Existem duas formas:
+
+### Forma simples — `type: T`
+
+Para plugins sem lógica de inicialização. Usa `Default::default()` como construtor:
+
+```rust
+#[derive(SampPlugin, Default)]
+struct MeuPlugin;
+
+initialize_plugin!(
+    type: MeuPlugin,
+    natives: [
+        MeuPlugin::funcao_a,
+        MeuPlugin::funcao_b,
+    ],
+);
+```
+
+> [!TIP]
+> Esta é a forma recomendada para novos plugins. Elimina código boilerplate quando não há nenhuma configuração necessária no início.
+
+### Forma completa — bloco construtor
+
+Para plugins que precisam configurar logging, encoding, `process_tick`, ou qualquer lógica antes de retornar a instância:
 
 ```rust
 initialize_plugin!(
@@ -66,10 +101,8 @@ initialize_plugin!(
         MeuPlugin::funcao_b,
     ],
     {
-        // Código de inicialização (opcional):
-        // - Configurar encoding
-        // - Configurar logging
-        // - Habilitar process_tick
+        samp::plugin::enable_process_tick();
+        samp::encoding::set_default_encoding(samp::encoding::WINDOWS_1251);
 
         return MeuPlugin {
             jogadores_online: 0,
@@ -79,11 +112,18 @@ initialize_plugin!(
 );
 ```
 
+> [!IMPORTANT]
+> O bloco construtor **deve** terminar com `return <instância>;`. Qualquer código antes do `return` é executado uma única vez durante o carregamento do plugin.
+
 ### Sem natives
 
 Se o plugin não registra natives (apenas reage a eventos):
 
 ```rust
+// Forma simples
+initialize_plugin!(type: MeuPlugin, natives: []);
+
+// Forma completa
 initialize_plugin!({
     return MeuPlugin;
 });
@@ -91,7 +131,7 @@ initialize_plugin!({
 
 ## Habilitando process_tick
 
-Por padrão, `process_tick` não é chamado. Para habilitá-lo:
+Por padrão, `process_tick` não é chamado. Para habilitá-lo, chame dentro do bloco construtor:
 
 ```rust
 initialize_plugin!(

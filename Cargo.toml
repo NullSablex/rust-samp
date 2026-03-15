@@ -5,4 +5,6 @@ members = [
     "samp-sdk",
     "samp",
     "plugin-example",
+    "example-hello",
+    "example-counter",
 ]

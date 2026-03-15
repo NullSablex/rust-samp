@@ -10,7 +10,7 @@ pub mod repr;
 pub mod string;
 
 pub use buffer::{Buffer, UnsizedBuffer};
-pub use repr::{AmxCell, AmxPrimitive};
+pub use repr::{AmxCell, AmxPrimitive, CellConvert};
 pub use string::AmxString;
 
 /// A reference to a cell in the [`Amx`].

@@ -11,17 +11,12 @@ Toolkit em Rust para desenvolvimento de plugins de servidor [SA-MP](http://sa-mp
 
 - Derive de funções nativas SA-MP com o atributo `#[native]`
 - Parsing automático de argumentos do AMX para tipos Rust
+- `AmxString` com `Deref<Target=str>` — use diretamente como `&str`, sem `.to_string()`
+- Arrays tipados com `Buffer::get_as::<f32>()` / `set_as::<bool>()` — sem manipulação de bits
+- Criação de plugins simplificada com `#[derive(SampPlugin)]` e `initialize_plugin!(type: T, ...)`
 - Suporte a encoding de strings (Windows-1251, Windows-1252)
 - Logging integrado via `fern` e `log`
 - Abstrações seguras sobre a API bruta do AMX
-
-## Estrutura do Projeto
-
-| Crate | Descrição |
-|---|---|
-| `samp` | Crate principal que une tudo (é o que você precisa) |
-| `samp-codegen` | Macros procedurais que geram funções FFI `extern "C"` |
-| `samp-sdk` | Tipos e bindings de baixo nível para a máquina virtual AMX |
 
 ## Começando
 
@@ -41,39 +36,68 @@ Toolkit em Rust para desenvolvimento de plugins de servidor [SA-MP](http://sa-mp
    ```
 
 3. Escreva seu plugin:
+
+   **Forma simples** — para plugins sem lógica de inicialização:
    ```rust
    use samp::prelude::*;
-   use samp::{native, initialize_plugin};
+   use samp::{native, initialize_plugin, SampPlugin};
 
-   struct Plugin;
+   #[derive(SampPlugin, Default)]
+   struct MeuPlugin;
 
-   impl SampPlugin for Plugin {
-       fn on_load(&mut self) {
-           println!("Plugin carregado.");
-       }
-   }
-
-   impl Plugin {
-       #[native(name = "TestNative")]
-       fn my_native(&mut self, _amx: &Amx, text: AmxString) -> AmxResult<bool> {
-           let text = text.to_string();
-           println!("rust plugin: {}", text);
+   impl MeuPlugin {
+       #[native(name = "RustSayHello")]
+       fn say_hello(&mut self, _amx: &Amx, name: AmxString) -> AmxResult<bool> {
+           // AmxString implementa Deref<Target=str> — use como &str diretamente
+           println!("Olá, {}!", &*name);
            Ok(true)
        }
    }
 
    initialize_plugin!(
-       natives: [Plugin::my_native],
+       type: MeuPlugin,
+       natives: [MeuPlugin::say_hello],
+   );
+   ```
+
+   **Forma completa** — quando há lógica de inicialização (logging, encoding, etc.):
+   ```rust
+   use samp::prelude::*;
+   use samp::{native, initialize_plugin};
+
+   struct MeuPlugin {
+       contagem: u32,
+   }
+
+   impl SampPlugin for MeuPlugin {
+       fn on_load(&mut self) {
+           println!("Plugin carregado.");
+       }
+   }
+
+   impl MeuPlugin {
+       #[native(name = "Incrementar")]
+       fn incrementar(&mut self, _amx: &Amx) -> AmxResult<i32> {
+           self.contagem += 1;
+           Ok(self.contagem as i32)
+       }
+   }
+
+   initialize_plugin!(
+       natives: [MeuPlugin::incrementar],
        {
-           let plugin = Plugin;
-           return plugin;
+           samp::plugin::enable_process_tick();
+           return MeuPlugin { contagem: 0 };
        }
    );
    ```
 
+> [!TIP]
+> Use a forma `type: T` sempre que seu plugin não precisar de configuração no `on_load`. Ela elimina o bloco construtor e usa `Default::default()` automaticamente.
+
 ## Migração de Versões Anteriores
 
-Veja o [guia de migração](migration.md) para atualizar do `samp_sdk` para o `samp`.
+Veja o [guia de migração](migration.md) para atualizar plugins de versões anteriores.
 
 ## Exemplos
 
