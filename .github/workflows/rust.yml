@@ -31,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -63,7 +63,7 @@ jobs:
 
     - name: Upload artifact
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: plugin-${{ matrix.target }}
         path: ${{ matrix.artifact }}
@@ -82,7 +82,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -99,7 +99,7 @@ jobs:
         prefix-key: "v1-bench"
 
     - name: Restore benchmark baseline
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: target/criterion
         key: bench-baseline-main
@@ -108,7 +108,7 @@ jobs:
 
     - name: Run benchmarks
       run: |
-        cargo bench --target i686-unknown-linux-gnu -- --save-baseline new 2>&1 | tee bench_results.txt
+        cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- --save-baseline new 2>&1 | tee bench_results.txt
 
     - name: Compare against baseline
       run: |
@@ -135,13 +135,13 @@ jobs:
         done
 
     - name: Save benchmark baseline
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: target/criterion
         key: bench-baseline-${{ github.sha }}
 
     - name: Upload benchmark results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: bench-results
         path: |
