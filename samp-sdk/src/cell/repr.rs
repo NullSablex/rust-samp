@@ -33,6 +33,49 @@ where
 {
 }
 
+/// Converts between a Rust type and a raw 32-bit AMX cell value.
+///
+/// Unlike [`AmxCell`], this trait does not require an [`Amx`] context, making it
+/// suitable for bulk array operations on [`Buffer`] without an AMX reference.
+///
+/// # When to use each trait
+///
+/// | Trait | Use case | Needs `&Amx`? |
+/// |-------|----------|--------------|
+/// | [`AmxCell`] | Argument of a `#[native]` function | Yes (for complex types) |
+/// | `CellConvert` | Element of a `Buffer` array | No |
+///
+/// > **You rarely need to import or implement `CellConvert` directly.**
+/// > The common entry point is [`Buffer::get_as`] and [`Buffer::set_as`],
+/// > which use this trait internally.
+///
+/// Implemented for all primitive types supported by the AMX VM:
+/// `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `usize`, `isize`, `f32`, `bool`.
+///
+/// # Example
+/// ```rust,no_run
+/// # use samp_sdk::cell::Buffer;
+/// // No need to import CellConvert — just call the methods on Buffer
+/// fn scale_floats(buf: &mut Buffer, factor: f32) {
+///     for i in 0..buf.len() {
+///         if let Some(v) = buf.get_as::<f32>(i) {
+///             buf.set_as(i, v * factor);
+///         }
+///     }
+/// }
+/// ```
+///
+/// [`Buffer::get_as`]: crate::cell::Buffer::get_as
+/// [`Buffer::set_as`]: crate::cell::Buffer::set_as
+/// [`Buffer`]: crate::cell::Buffer
+/// [`Amx`]: crate::amx::Amx
+pub trait CellConvert: Sized {
+    /// Decode a raw AMX cell into this type.
+    fn from_cell(raw: i32) -> Self;
+    /// Encode this value as a raw AMX cell.
+    fn into_cell(self) -> i32;
+}
+
 impl<'a, T: AmxCell<'a>> AmxCell<'a> for &'a T {
     fn as_cell(&self) -> i32 {
         (**self).as_cell()
@@ -54,6 +97,18 @@ macro_rules! impl_for_primitive {
 
             fn as_cell(&self) -> i32 {
                 *self as i32
+            }
+        }
+
+        impl CellConvert for $type {
+            #[inline]
+            fn from_cell(raw: i32) -> Self {
+                raw as Self
+            }
+
+            #[inline]
+            fn into_cell(self) -> i32 {
+                self as i32
             }
         }
 
@@ -80,6 +135,18 @@ impl AmxCell<'_> for f32 {
     }
 }
 
+impl CellConvert for f32 {
+    #[inline]
+    fn from_cell(raw: i32) -> Self {
+        f32::from_bits(raw as u32)
+    }
+
+    #[inline]
+    fn into_cell(self) -> i32 {
+        f32::to_bits(self).cast_signed()
+    }
+}
+
 impl AmxCell<'_> for bool {
     fn from_raw(_amx: &Amx, cell: i32) -> AmxResult<bool> {
         // just to be sure that boolean value will be correct I don't use there `std::mem::transmute` or `as` keyword.
@@ -88,6 +155,18 @@ impl AmxCell<'_> for bool {
 
     fn as_cell(&self) -> i32 {
         i32::from(*self)
+    }
+}
+
+impl CellConvert for bool {
+    #[inline]
+    fn from_cell(raw: i32) -> Self {
+        raw != 0
+    }
+
+    #[inline]
+    fn into_cell(self) -> i32 {
+        i32::from(self)
     }
 }
 

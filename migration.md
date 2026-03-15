@@ -1,106 +1,69 @@
-# what's new
-* replace a `new_plugin!` decl macro with a `initialize_plugin!` proc macro.
-* replace a `define_native!` decl macro with a `#[native]` attribute.
-* new `AmxCell` trait that allows convert Rust types to AMX types.
+# Guia de Migração
 
-# migration guide
-* change `samp_sdk = "*"` in `Cargo.toml` to `samp = "0.1.0"`.
-* export the prelude module `use samp::prelude::*`.
-* remove `new_plugin!` call to `initialize_plugin!`
-* delete all `define_native!` calls.
+Para o guia completo de migração entre todas as versões, veja [docs/src/migracao.md](docs/src/migracao.md).
 
-### your old code
+## Migração rápida: samp_sdk legado → v2.2.0
+
+### O que mudou
+
+| Antes | Agora |
+|-------|-------|
+| `samp_sdk = "*"` | `samp = { git = "https://github.com/NullSablex/rust-samp.git" }` |
+| `new_plugin!(Plugin)` | `initialize_plugin!(type: T, natives: [...])` |
+| `define_native!(name, args)` | `#[native(name = "Name")]` |
+| `impl Default for Plugin` + `new_plugin!` | `#[derive(SampPlugin, Default)]` |
+| `AMX` (raw) | `Amx` (wrapper seguro) |
+| `Cell` | `i32`, `Ref<T>`, `AmxString` |
+| `string.to_string()` | `&*string` (via `Deref<Target=str>`) |
+| `f32::from_bits(buf[i] as u32)` | `buf.get_as::<f32>(i)` |
+
+### Antes
+
 ```rust
 use samp_sdk::new_plugin;
-use samp_sdk::...;
 
-// native definitions
 define_native!(my_native, string: String);
-define_native!(raw_native as raw);
 
-pub struct Plugin {
-    <.. code ..>
-}
+pub struct Plugin;
 
 impl Plugin {
     fn load(&self) {
-        let natives = natives! {
-            "MyNative" => my_native,
-            "RawNative" => raw_native
-        };
-
+        let natives = natives! { "MyNative" => my_native };
         amx.register(&natives);
-
-        <.. code ..>
-    }
-
-    fn unload(&self) { 
-        <.. code ..> 
     }
 
     fn my_native(&self, amx: &AMX, string: String) -> AmxResult<Cell> {
-        <.. code ..>
-    }
-
-    fn raw_native(&self, amx: &AMX, args: *mut Cell) -> AmxResult<Cell> {
-        <.. code ..>
+        println!("{}", string);
+        Ok(1)
     }
 }
 
 impl Default for Plugin {
-    fn default() -> Plugin {
-        Plugin {
-            <.. code ..>
-        }
-    }
+    fn default() -> Plugin { Plugin }
 }
 
 new_plugin!(Plugin);
 ```
-### your new code
+
+### Agora
+
 ```rust
 use samp::prelude::*;
-use samp::args::Args;
+use samp::{native, initialize_plugin, SampPlugin};
 
-struct Plugin {
-    <.. code ..>
-}
+#[derive(SampPlugin, Default)]
+struct Plugin;
 
 impl Plugin {
     #[native(name = "MyNative")]
-    fn my_native(&mut self, amx: &Amx, string: AmxString) -> AmxResult<bool> {
-        let string = string.to_string(); // convert AmxString to rust String
-        <.. code ..>
-    }
-
-    #[native(name = "RawNative", raw)]
-    fn raw_native(&mut self, amx: &Amx, args: Args) -> AmxResult<f32> {
-        <.. code ..>
-    }
-}
-
-impl SampPlugin for Plugin {
-    fn on_load(&mut self) {
-        // no more calls to Amx::register.
-        <.. code ..> 
-    }
-
-    fn on_unload(&mut self) {
-        <.. code ..>
+    fn my_native(&mut self, _amx: &Amx, string: AmxString) -> AmxResult<bool> {
+        println!("{}", &*string);
+        Ok(true)
     }
 }
 
 initialize_plugin!(
-    natives: [
-        Plugin::my_native,
-        Plugin::raw_native,
-    ],
-    {
-        let plugin = Plugin {
-            <.. code ..>
-        };
-
-        return plugin;
-    }
+    type: Plugin,
+    natives: [Plugin::my_native],
 );
 ```

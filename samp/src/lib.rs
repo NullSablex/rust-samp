@@ -1,55 +1,55 @@
-//! samp is a tool to develop plugins for [samp](http://sa-mp.com) servers written in rust.
+//! samp is a toolkit to develop SA:MP server plugins in Rust.
 //!
-//! # project structure
-//! * `samp` is a glue between crates described below (that's what you need).
-//! * `samp-codegen` generates raw `extern "C"` functions and does whole nasty job.
-//! * `samp-sdk` contains all types to work with amx.
+//! # Estrutura
+//! * `samp` — glue entre os crates abaixo (é o que você precisa).
+//! * `samp-codegen` — gera `extern "C"` e cuida do lado feio.
+//! * `samp-sdk` — todos os tipos para interagir com a VM AMX.
 //!
-//! # usage
-//! * [install](https://rustup.rs) rust compiler (supports only `i686` os versions because of samp server arch).
-//! * add in your `Cargo.toml` this:
+//! # Uso mínimo
 //! ```toml
 //! [lib]
-//! crate-type = ["cdylib"] # or dylib
+//! crate-type = ["cdylib"]
 //!
 //! [dependencies]
-//! samp = "0.2.5"
+//! samp = { git = "https://github.com/NullSablex/rust-samp" }
 //! ```
-//! * write your first plugin
 //!
-//! # examples
-//! * simple memcache plugin in `plugin-example` folder.
-//! * your `lib.rs` file
+//! # Exemplo
 //! ```rust,no_run
-//! use samp::prelude::*; // export most useful types
-//! use samp::{native, initialize_plugin}; // codegen macros
+//! use samp::prelude::*;
+//! use samp::{native, initialize_plugin, SampPlugin};
 //!
-//! struct Plugin;
+//! // #[derive(SampPlugin)] gera impl SampPlugin para structs sem overrides
+//! #[derive(SampPlugin, Default)]
+//! struct MyPlugin;
 //!
-//! impl SampPlugin for Plugin {
-//!     // this function executed when samp server loads your plugin
-//!     fn on_load(&mut self) {
-//!         println!("Plugin is loaded.");
-//!     }
-//! }
-//!
-//! impl Plugin {
-//!     #[native(name = "TestNative")]
-//!     fn my_native(&mut self, _amx: &Amx, text: AmxString) -> AmxResult<bool> {
-//!         let text = text.to_string(); // convert amx string into rust string
-//!         println!("rust plugin: {}", text);
-//!
+//! impl MyPlugin {
+//!     #[native(name = "Greet")]
+//!     fn greet(&mut self, _amx: &Amx, name: AmxString) -> AmxResult<bool> {
+//!         // Deref<Target=str> — métodos de &str disponíveis diretamente
+//!         if name.starts_with("Admin") {
+//!             println!("[VIP] Bem-vindo, {}!", &*name);
+//!         } else {
+//!             println!("Olá, {}!", &*name);
+//!         }
 //!         Ok(true)
 //!     }
 //! }
 //!
+//! // Forma curta: usa Default::default() como construtor
 //! initialize_plugin!(
-//!     natives: [Plugin::my_native],
-//!     {
-//!         let plugin = Plugin; // create a plugin object
-//!         return plugin; // return the plugin into runtime
-//!     }
+//!     type: MyPlugin,
+//!     natives: [MyPlugin::greet],
 //! );
+//!
+//! // Forma completa (quando precisa de lógica no construtor):
+//! // initialize_plugin!(
+//! //     natives: [MyPlugin::greet],
+//! //     {
+//! //         samp::plugin::enable_process_tick();
+//! //         return MyPlugin;
+//! //     }
+//! // );
 //! ```
 
 pub mod amx;
@@ -59,16 +59,21 @@ pub mod plugin;
 pub(crate) mod runtime;
 
 pub use samp_codegen::{initialize_plugin, native};
+/// Re-exportação do derive macro `#[derive(SampPlugin)]`.
+///
+/// Gera `impl SampPlugin for T {}` automaticamente para structs sem overrides.
+/// Para structs que precisam sobrescrever métodos, use `impl SampPlugin for T` manualmente.
+pub use samp_codegen::SampPlugin;
 pub use samp_sdk::exec_public;
-pub use samp_sdk::{args, cell, consts, error, exports, raw}; // macros
+pub use samp_sdk::{args, cell, consts, error, exports, raw};
 
 #[cfg(feature = "encoding")]
 pub use samp_sdk::encoding;
 
 pub mod prelude {
-    //! Most used imports.
+    //! Importações mais usadas em plugins.
     pub use crate::amx::{Amx, AmxExt};
-    pub use crate::cell::{AmxCell, AmxString, Buffer, Ref, UnsizedBuffer};
+    pub use crate::cell::{AmxCell, AmxString, Buffer, CellConvert, Ref, UnsizedBuffer};
     pub use crate::error::AmxResult;
     pub use crate::plugin::SampPlugin;
 }

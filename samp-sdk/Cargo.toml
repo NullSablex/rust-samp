@@ -1,6 +1,6 @@
 [package]
 name = "samp-sdk"
-version = "2.1.0"
+version = "2.2.0"
 authors = ["ZOTTCE <zottce@gmail.com>", "NullSablex"]
 description = "Bindings for C SA:MP SDK"
 license = "MIT"
@@ -15,6 +15,13 @@ encoding = ["encoding_rs"]
 [dependencies]
 bitflags = "2.10"
 encoding_rs = { version = "0.8", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "string_bench"
+harness = false
 
 [package.metadata.docs.rs]
 features = ["encoding"]

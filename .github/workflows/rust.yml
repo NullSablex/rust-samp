@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [ "master" ]
 
+permissions:
+  contents: read   # checkout
+  actions: write   # upload-artifact + rust-cache (gravação de cache)
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Build, teste e lint cross-platform (i686)
+  # ---------------------------------------------------------------------------
   build:
     strategy:
       matrix:
@@ -60,3 +67,84 @@ jobs:
       with:
         name: plugin-${{ matrix.target }}
         path: ${{ matrix.artifact }}
+
+  # ---------------------------------------------------------------------------
+  # Benchmarks — Linux i686, push para master
+  #
+  # Fluxo de baseline:
+  #   1. Restaura o baseline salvo do run anterior (via cache)
+  #   2. Executa benchmarks salvando como "new"
+  #   3. Se baseline "main" existe, compara com critcmp e imprime regressões
+  #   4. Promove "new" → "main" e salva no cache para o próximo run
+  # ---------------------------------------------------------------------------
+  bench:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: i686-unknown-linux-gnu
+
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+
+    - name: Cache cargo build
+      uses: Swatinem/rust-cache@v2
+      with:
+        cache-all-crates: true
+        prefix-key: "v1-bench"
+
+    - name: Restore benchmark baseline
+      uses: actions/cache/restore@v4
+      with:
+        path: target/criterion
+        key: bench-baseline-main
+        # Aceita qualquer baseline salvo anteriormente se não houver correspondência exata
+        restore-keys: bench-baseline-
+
+    - name: Run benchmarks
+      run: |
+        cargo bench --target i686-unknown-linux-gnu -- --save-baseline new 2>&1 | tee bench_results.txt
+
+    - name: Compare against baseline
+      run: |
+        if [ -d target/criterion ]; then
+          # Verifica se existe um baseline "main" para comparar
+          HAS_MAIN=$(find target/criterion -name "estimates.json" -path "*/main/*" | head -1)
+          if [ -n "$HAS_MAIN" ]; then
+            echo "Comparando com baseline anterior..."
+            cargo install critcmp --locked --quiet
+            # --threshold 5: reporta mudanças >= 5%
+            critcmp main new --threshold 5 | tee bench_comparison.txt || true
+          else
+            echo "Nenhum baseline anterior encontrado — este run será o primeiro."
+          fi
+        fi
+
+    - name: Promote new baseline to main
+      run: |
+        # Copia resultados do baseline "new" para "main" (sobrescreve)
+        find target/criterion -type d -name "new" | while read dir; do
+          main_dir="${dir%/new}/main"
+          rm -rf "$main_dir"
+          cp -r "$dir" "$main_dir"
+        done
+
+    - name: Save benchmark baseline
+      uses: actions/cache/save@v4
+      with:
+        path: target/criterion
+        key: bench-baseline-${{ github.sha }}
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-results
+        path: |
+          bench_results.txt
+          bench_comparison.txt
+          target/criterion/

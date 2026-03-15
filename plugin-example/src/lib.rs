@@ -34,7 +34,8 @@ struct Memcached {
 impl Memcached {
     #[native(name = "Memcached_Connect")]
     pub fn connect(&mut self, _: &Amx, address: AmxString) -> AmxResult<MemcacheResult> {
-        match Client::connect(address.to_string()) {
+        // Deref<Target=str>: address em vez de address.to_string()
+        match Client::connect(&*address) {
             Ok(client) => {
                 self.clients.push(client);
                 Ok(MemcacheResult::Success(self.clients.len() as i32 - 1))
@@ -52,7 +53,7 @@ impl Memcached {
         mut value: Ref<i32>,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
-            match self.clients[con].get(&key.to_string()) {
+            match self.clients[con].get(&key) {
                 Ok(Some(data)) => {
                     *value = data;
                     Ok(MemcacheResult::Success(1))
@@ -75,11 +76,10 @@ impl Memcached {
         size: usize,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
-            match self.clients[con].get::<String>(&key.to_string()) {
+            match self.clients[con].get::<String>(&key) {
                 Ok(Some(data)) => {
-                    let mut buffer = buffer.into_sized_buffer(size);
-                    let _ = samp::cell::string::put_in_buffer(&mut buffer, &data);
-
+                    // write_str: combina into_sized_buffer + put_in_buffer em um passo
+                    buffer.write_str(size, &data)?;
                     Ok(MemcacheResult::Success(1))
                 }
                 Ok(None) => Ok(MemcacheResult::NoData),
@@ -100,7 +100,7 @@ impl Memcached {
         expire: u32,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
-            match self.clients[con].set(&key.to_string(), value, expire) {
+            match self.clients[con].set(&key, value, expire) {
                 Ok(_) => Ok(MemcacheResult::Success(1)),
                 Err(_) => Ok(MemcacheResult::NoKey),
             }
@@ -119,7 +119,10 @@ impl Memcached {
         expire: u32,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
-            match self.clients[con].set(&key.to_string(), value.to_string(), expire) {
+            // &key: auto-deref &AmxString → &str (parâmetro key espera &str)
+            // &*value: explícito — o valor precisa de ToMemcacheValue, implementado para
+            //          &str mas não para &AmxString, então &*value força o tipo correto
+            match self.clients[con].set(&key, &*value, expire) {
                 Ok(_) => Ok(MemcacheResult::Success(1)),
                 Err(_) => Ok(MemcacheResult::NoKey),
             }
@@ -137,7 +140,7 @@ impl Memcached {
         value: i32,
     ) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
-            match self.clients[con].increment(&key.to_string(), value as u64) {
+            match self.clients[con].increment(&key, value as u64) {
                 Ok(_) => Ok(MemcacheResult::Success(1)),
                 Err(_) => Ok(MemcacheResult::NoKey),
             }
@@ -149,7 +152,7 @@ impl Memcached {
     #[native(name = "Memcached_Delete")]
     pub fn delete(&mut self, _: &Amx, con: usize, key: AmxString) -> AmxResult<MemcacheResult> {
         if con < self.clients.len() {
-            match self.clients[con].delete(&key.to_string()) {
+            match self.clients[con].delete(&key) {
                 Ok(true) => Ok(MemcacheResult::Success(1)),
                 Ok(false) => Ok(MemcacheResult::NoData),
                 Err(_) => Ok(MemcacheResult::NoKey),
@@ -160,6 +163,7 @@ impl Memcached {
     }
 }
 
+// impl SampPlugin manual porque há lógica em on_load
 impl SampPlugin for Memcached {
     fn on_load(&mut self) {
         info!("that's a info msg");
@@ -180,25 +184,24 @@ initialize_plugin!(
     ],
     {
         samp::plugin::enable_process_tick();
-        samp::encoding::set_default_encoding(samp::encoding::WINDOWS_1251); // Cyrillic
+        samp::encoding::set_default_encoding(samp::encoding::WINDOWS_1251);
 
-        // get a default samp logger (uses samp logprintf).
         let samp_logger = samp::plugin::logger()
-            .level(log::LevelFilter::Info); // logging only info, warn and error messages
+            .level(log::LevelFilter::Info);
 
         let log_file = fern::log_file("myplugin.log").expect("Something wrong!");
 
-        // log trace and debug messages in an another file
         let trace_level = fern::Dispatch::new()
             .level(log::LevelFilter::Trace)
             .chain(log_file);
 
         let _ = fern::Dispatch::new()
             .format(|callback, message, record| {
-                // all messages will be formated like
-                // memcached error: something (error!("something"))
-                // memcached info: some info (info!("some info"))
-                callback.finish(format_args!("memcached {}: {}", record.level().to_string().to_lowercase(), message))
+                callback.finish(format_args!(
+                    "memcached {}: {}",
+                    record.level().to_string().to_lowercase(),
+                    message
+                ))
             })
             .chain(samp_logger)
             .chain(trace_level)
