@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+      - 'docs/requirements.txt'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -30,9 +31,10 @@ jobs:
         with:
           python-version: '3.x'
           cache: pip
+          cache-dependency-path: docs/requirements.txt
 
       - name: Install MkDocs and theme
-        run: pip install 'mkdocs>=1.6' 'mkdocs-material>=9.5' 'pymdown-extensions>=10.7'
+        run: pip install -r docs/requirements.txt
 
       - name: Build site
         run: mkdocs build --strict
