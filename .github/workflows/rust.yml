@@ -115,7 +115,13 @@ jobs:
         restore-keys: bench-baseline-
 
     - name: Run benchmarks
+      shell: bash
       run: |
+        # `set -o pipefail` is required — without it, a failing `cargo bench`
+        # exits non-zero but the pipeline status is taken from `tee` (which
+        # always succeeds), silently swallowing the failure and producing an
+        # empty `target/criterion/` that breaks extract-bench downstream.
+        set -euo pipefail
         cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- --save-baseline new 2>&1 | tee bench_results.txt
 
     - name: Compare against baseline and generate report

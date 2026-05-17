@@ -619,10 +619,13 @@ pub unsafe extern "thiscall" fn uid_get_uid(this: *const u8) -> UID {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(target_env = "msvc"))]
     use crate::omp::types::SemanticVersion;
 
     // Helper functions to assemble vtables in tests.
     // The calling convention varies per ABI: "C" on Itanium (Linux), "thiscall" on MSVC.
+    // On MSVC, methods with no stack args are declared `fn()` (this lives in ECX);
+    // declaring an explicit `_this` would make Rust emit `ret 4` and corrupt the stack.
     #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn test_name(_: *const OmpComponent) -> StringView {
         StringView::from_static("test\0")
@@ -650,7 +653,7 @@ mod tests {
     #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn test_on_ready(_: *mut OmpComponent) {}
     #[cfg(target_env = "msvc")]
-    unsafe extern "thiscall" fn test_on_ready(_: *mut OmpComponent) {}
+    unsafe extern "thiscall" fn test_on_ready() {}
 
     #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn test_on_free(_: *mut OmpComponent, _: *mut OmpComponent) {}
@@ -677,12 +680,12 @@ mod tests {
     #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn test_free(_: *mut OmpComponent) {}
     #[cfg(target_env = "msvc")]
-    unsafe extern "thiscall" fn test_free(_: *mut OmpComponent) {}
+    unsafe extern "thiscall" fn test_free() {}
 
     #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn test_reset(_: *mut OmpComponent) {}
     #[cfg(target_env = "msvc")]
-    unsafe extern "thiscall" fn test_reset(_: *mut OmpComponent) {}
+    unsafe extern "thiscall" fn test_reset() {}
 
     #[cfg(not(target_env = "msvc"))]
     fn make_vtable() -> IComponentVTable {
@@ -814,6 +817,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_env = "msvc"))]
     fn comp_supported_version_is_one() {
         let vt = make_vtable();
         let uvt = make_uid_vtable();
@@ -821,7 +825,16 @@ mod tests {
         assert_eq!(unsafe { comp_supported_version(&raw const comp) }, 1);
     }
 
+    /// On MSVC `comp_supported_version` takes `this` in `ECX` with no
+    /// stack args (`fn()`); the Rust call site cannot pass `_this`.
     #[test]
+    #[cfg(target_env = "msvc")]
+    fn comp_supported_version_is_one() {
+        assert_eq!(unsafe { comp_supported_version() }, 1);
+    }
+
+    #[test]
+    #[cfg(not(target_env = "msvc"))]
     fn comp_component_type_is_other() {
         let vt = make_vtable();
         let uvt = make_uid_vtable();
@@ -830,5 +843,13 @@ mod tests {
             unsafe { comp_component_type(&raw const comp) },
             ComponentType::Other
         );
+    }
+
+    /// On MSVC `comp_component_type` returns `i32` (the discriminant of
+    /// `ComponentType::Other`) and takes no stack args.
+    #[test]
+    #[cfg(target_env = "msvc")]
+    fn comp_component_type_is_other() {
+        assert_eq!(unsafe { comp_component_type() }, ComponentType::Other as i32);
     }
 }
