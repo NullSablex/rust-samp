@@ -26,15 +26,21 @@ use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::amx::{Amx, AmxIdent};
-use crate::plugin::SampPlugin;
+use crate::plugin::{SampPlugin, TickConfig};
 
 static RUNTIME: AtomicPtr<Runtime> = AtomicPtr::new(std::ptr::null_mut());
 
 struct RuntimeInner {
     plugin: Option<NonNull<dyn SampPlugin + 'static>>,
-    server_tick_enabled: bool,
+    /// Set by `samp::plugin::enable_tick` / `enable_tick_with`. `None`
+    /// means the tick is disabled on both servers (the default).
+    tick_config: Option<TickConfig>,
+    /// Wall-clock timestamp of the previous tick dispatch. Used to compute
+    /// `TickContext::elapsed`. `None` until the first tick fires.
+    last_tick_at: Option<Instant>,
     server_exports: *const usize,
     /// AMX function table obtained from `IPawnComponent` in native Open Multiplayer mode.
     #[cfg(not(feature = "samp-only"))]
@@ -56,8 +62,8 @@ struct RuntimeInner {
     /// available). Processed in `on_ready` when the `fn_table` is stored.
     #[cfg(not(feature = "samp-only"))]
     omp_pending_amx: Vec<*mut AMX>,
-    /// Timer created via `ITimersComponent` to emulate `process_tick` in Open Multiplayer mode.
-    /// Stored so `omp_cleanup` can kill it on shutdown.
+    /// Timer created via `ITimersComponent` to deliver `on_tick` in Open
+    /// Multiplayer mode. Stored so `omp_cleanup` can kill it on shutdown.
     #[cfg(not(feature = "samp-only"))]
     omp_tick_timer: Option<NonNull<ITimer>>,
     /// Tick handler (heap allocated). Released in the timer's `free` callback.
@@ -92,7 +98,8 @@ impl Runtime {
     pub fn initialize() -> &'static Runtime {
         let inner = RuntimeInner {
             plugin: None,
-            server_tick_enabled: false,
+            tick_config: None,
+            last_tick_at: None,
             server_exports: std::ptr::null(),
             #[cfg(not(feature = "samp-only"))]
             omp_amx_exports: None,
@@ -268,7 +275,7 @@ impl Runtime {
     pub fn supports(&self) -> Supports {
         let mut supports = Supports::VERSION | Supports::AMX_NATIVES;
 
-        if self.inner().server_tick_enabled {
+        if self.tick_enabled_for_sa_mp() {
             supports.insert(Supports::PROCESS_TICK);
         }
 
@@ -292,15 +299,43 @@ impl Runtime {
         self.inner().server_exports = exports;
     }
 
-    pub fn enable_server_tick(&self) {
-        self.inner().server_tick_enabled = true;
+    /// Stores the [`TickConfig`] requested by the plugin. Called by
+    /// `samp::plugin::enable_tick` / `enable_tick_with` in the constructor.
+    pub fn set_tick_config(&self, config: TickConfig) {
+        self.inner().tick_config = Some(config);
     }
 
-    /// Only used by the Open Multiplayer bridge in `interlayer::omp_on_ready` to decide
-    /// whether to create the tick timer; in pure `samp-only` the flag stays inaccessible.
+    /// `Some` only after the plugin opted in via `enable_tick*`.
+    #[inline]
+    pub fn tick_config(&self) -> Option<TickConfig> {
+        self.inner().tick_config
+    }
+
+    /// True iff the plugin opted in to the tick **and** allowed SA-MP
+    /// delivery. Used by `Supports()` to decide whether to advertise
+    /// `Supports::PROCESS_TICK`.
+    #[inline]
+    pub fn tick_enabled_for_sa_mp(&self) -> bool {
+        self.tick_config().is_some_and(|c| c.sa_mp)
+    }
+
+    /// Open Multiplayer timer interval, or `None` if the tick is disabled
+    /// on that server. Used by `interlayer::omp_on_ready` to decide whether
+    /// to create the `ITimersComponent` timer and at which interval.
     #[cfg(not(feature = "samp-only"))]
-    pub fn server_tick_enabled(&self) -> bool {
-        self.inner().server_tick_enabled
+    #[inline]
+    pub fn omp_tick_interval(&self) -> Option<Duration> {
+        self.tick_config()
+            .filter(|c| c.omp)
+            .map(|c| c.omp_interval)
+    }
+
+    /// Records the current instant as the latest tick dispatch and returns
+    /// the elapsed time since the previous one (zero on the first call).
+    pub fn record_tick(&self) -> Duration {
+        let now = Instant::now();
+        let prev = self.inner().last_tick_at.replace(now);
+        prev.map(|t| now.duration_since(t)).unwrap_or(Duration::ZERO)
     }
 
     #[inline]

@@ -63,7 +63,7 @@ initialize_plugin!(
 initialize_plugin!(
     natives: [MyPlugin::function_a],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
         return MyPlugin::new();
     }
 );
@@ -111,7 +111,7 @@ struct Stateless;
 ```
 
 When the plugin needs to override any lifecycle hook (`on_load`,
-`on_server_tick`, …), drop the derive and write `impl SampPlugin for T { ... }`
+`on_tick`, …), drop the derive and write `impl SampPlugin for T { ... }`
 by hand.
 
 ## License

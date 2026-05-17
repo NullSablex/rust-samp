@@ -39,19 +39,22 @@ static PAWN_HANDLER_VTABLE: PawnEventHandlerVTable = PawnEventHandlerVTable {
     on_amx_unload: pawn_on_amx_unload,
 };
 
-/// Vtable of our `TimerTimeOutHandler` to emulate `on_server_tick` in Open Multiplayer.
+/// Vtable of our `TimerTimeOutHandler` to deliver `on_tick` on Open Multiplayer.
 #[cfg(not(feature = "samp-only"))]
 static TICK_HANDLER_VTABLE: TimerHandlerVTable = TimerHandlerVTable {
     timeout: tick_handler_timeout,
     free: tick_handler_free,
 };
 
-/// Shared timeout logic — only fires the plugin's tick.
+/// Shared timeout logic — fires the plugin's tick with
+/// [`TickSource::OmpTimer`] as the source.
+///
+/// [`TickSource::OmpTimer`]: crate::plugin::TickSource::OmpTimer
 #[cfg(not(feature = "samp-only"))]
 #[inline]
 fn inner_tick_timeout() {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        server_tick();
+        tick(crate::plugin::TickSource::OmpTimer);
     }));
 }
 
@@ -199,12 +202,19 @@ pub fn amx_unload(amx: *mut AMX) {
     }
 }
 
-/// Fires the plugin's tick callback. Called by the `ProcessTick()` export on SA-MP
-/// and by the `ITimersComponent` handler on native Open Multiplayer.
+/// Fires the plugin's [`on_tick`] callback. Called by the `ProcessTick()`
+/// export on SA-MP and by the `ITimersComponent` handler on native Open
+/// Multiplayer. The caller passes the [`TickSource`] of the dispatch so
+/// the plugin can tell the two apart through `TickContext::source`.
+///
+/// [`on_tick`]: crate::plugin::SampPlugin::on_tick
+/// [`TickSource`]: crate::plugin::TickSource
 #[inline]
-pub fn server_tick() {
-    let plugin = Runtime::plugin();
-    plugin.on_server_tick();
+pub fn tick(source: crate::plugin::TickSource) {
+    let rt = Runtime::get();
+    let elapsed = rt.record_tick();
+    let ctx = crate::plugin::TickContext { elapsed, source };
+    Runtime::plugin().on_tick(ctx);
 }
 
 /// Called by the generated `ComponentEntryPoint` — initializes the runtime in native Open Multiplayer mode.
@@ -319,22 +329,28 @@ pub fn omp_on_ready() {
         }
     }
 
-    // Tick abstraction: if the plugin enabled `on_server_tick` via enable_server_tick(),
-    // create a timer in ITimersComponent that fires every 5ms emulating SA-MP's ProcessTick.
-    if rt.server_tick_enabled()
+    // Tick abstraction: if the plugin opted in to the tick on the Open
+    // Multiplayer side via `enable_tick` / `enable_tick_with`, create a
+    // repeating timer in `ITimersComponent` at the configured interval and
+    // route its timeout into `SampPlugin::on_tick`.
+    if let Some(interval) = rt.omp_tick_interval()
         && let Some(components) = rt.omp_component_list()
     {
         let timers = unsafe { query_timers_component(components) };
         if timers.is_null() {
-            sdk_warn!("ITimersComponent not found — on_server_tick will not be called");
+            sdk_warn!("ITimersComponent not found — on_tick will not be called on Open Multiplayer");
         } else {
             let handler = Box::into_raw(Box::new(TimerTimeOutHandler {
                 vtable: &raw const TICK_HANDLER_VTABLE,
             }));
-            let timer = unsafe { create_repeating_timer(timers, handler, 5) };
+            // `ITimersComponent::create` takes the interval as i64
+            // milliseconds. Clamp to i64::MAX as a defense against absurd
+            // values; in practice intervals are at most a few seconds.
+            let interval_ms = i64::try_from(interval.as_millis()).unwrap_or(i64::MAX);
+            let timer = unsafe { create_repeating_timer(timers, handler, interval_ms) };
             if timer.is_null() {
                 sdk_warn!(
-                    "failed to create timer on ITimersComponent — on_server_tick will not be called"
+                    "failed to create timer on ITimersComponent — on_tick will not be called on Open Multiplayer"
                 );
                 let _ = unsafe { Box::from_raw(handler) };
             } else {
@@ -354,7 +370,7 @@ pub fn omp_on_free() {
 }
 
 /// Open Multiplayer cleanup — disables SDK resources before shutdown:
-///   1. Kills the `on_server_tick` timer (if it was created in `on_ready`).
+///   1. Kills the `on_tick` timer (if it was created in `on_ready`).
 ///   2. Removes the `PawnEventHandler` from the dispatcher.
 ///
 /// Called by `comp_free` before `unload()`. Avoids use-after-free in case the

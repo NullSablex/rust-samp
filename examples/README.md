@@ -31,7 +31,7 @@ server's `plugins/` directory to load it.
 1. [`hello`](hello/) — read this first to see the smallest viable
    plugin (one native, no state, no lifecycle overrides).
 2. [`counter`](counter/) — adds custom state, a hand-written
-   `impl SampPlugin`, the unified `on_server_tick`, and `Ref<T>`
+   `impl SampPlugin`, the unified `on_tick`, and `Ref<T>`
    output by reference.
 3. [`advanced`](advanced/) — combines everything plus the `encoding`
    feature, a custom return type implementing `AmxCell`, and a

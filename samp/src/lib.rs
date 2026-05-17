@@ -49,7 +49,7 @@
 //! // initialize_plugin!(
 //! //     natives: [MyPlugin::greet],
 //! //     {
-//! //         samp::plugin::enable_server_tick();
+//! //         samp::plugin::enable_tick();
 //! //         return MyPlugin;
 //! //     }
 //! // );
@@ -71,7 +71,7 @@ pub use log;
 
 /// Derive macro that generates an empty `impl SampPlugin for T {}` for structs
 /// that do not need to customize any trait method. For structs with logic in
-/// `on_load`/`on_server_tick`/etc, declare `impl SampPlugin for T { ... }`
+/// `on_load`/`on_tick`/etc, declare `impl SampPlugin for T { ... }`
 /// manually instead of using the derive.
 pub use samp_codegen::SampPlugin;
 pub use samp_sdk::exec_public;

@@ -24,9 +24,12 @@ pub trait SampPlugin {
     /// A Pawn script is being unloaded.
     fn on_amx_unload(&mut self, amx: &Amx) {}
 
-    /// Called periodically (~5 ms). Requires
-    /// `samp::plugin::enable_server_tick()` to actually fire.
-    fn on_server_tick(&mut self) {}
+    /// Periodic callback. Requires opting in via
+    /// `samp::plugin::enable_tick()` (or `enable_tick_with(...)`).
+    /// `TickContext::source` distinguishes SA-MP's main-loop tick
+    /// from the SDK-owned Open Multiplayer timer; `TickContext::elapsed`
+    /// is the wall-clock time since the previous dispatch.
+    fn on_tick(&mut self, ctx: TickContext) {}
 
     /// Every Open Multiplayer component has finished initializing.
     /// Compiled only when the `samp-only` feature is **not** active.
@@ -57,7 +60,7 @@ struct MyPlugin;
 ```
 
 > `#[derive(SampPlugin)]` emits exactly `impl SampPlugin for T {}`. If a
-> method needs custom logic (`on_load`, `on_server_tick`, …), write the
+> method needs custom logic (`on_load`, `on_tick`, …), write the
 > impl by hand and drop the derive.
 
 ### Plugin state
@@ -84,7 +87,7 @@ impl SampPlugin for MyPlugin {
 1. `initialize_plugin! { ... }` — instantiate the plugin.
 2. `on_load` — once, after the server loads the plugin.
 3. `on_amx_load` — each time a Pawn script is loaded.
-4. `on_server_tick` — repeatedly, while enabled.
+4. `on_tick` — repeatedly, while enabled.
 5. `on_amx_unload` — each time a Pawn script is unloaded.
 6. `on_unload` — once, before shutdown.
 
@@ -132,7 +135,7 @@ initialize_plugin!(
         MyPlugin::function_b,
     ],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
         samp::encoding::set_default_encoding(samp::encoding::WINDOWS_1251);
 
         return MyPlugin {
@@ -202,28 +205,51 @@ initialize_plugin!(
 );
 ```
 
-## Enabling the server tick
+## Enabling the periodic tick
 
-By default `on_server_tick` is **not** called. Opt in inside the
-constructor block:
+By default `on_tick` is **not** called. Opt in inside the constructor
+block:
 
 ```rust
 initialize_plugin!(
     natives: [],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
         return MyPlugin::default();
     }
 );
 ```
 
-The tick runs at roughly 5 ms on both servers:
+The two servers schedule the callback differently:
 
-- **SA-MP** — the server invokes the `ProcessTick` export, advertised
-  via the `Supports::PROCESS_TICK` flag.
-- **Native Open Multiplayer** — the SDK queries `ITimersComponent` in
-  `on_ready` and creates a repeating timer at 5 ms whose timeout
-  dispatches `on_server_tick`.
+- **SA-MP** — `Supports::PROCESS_TICK` is advertised and the server
+  calls `ProcessTick` on every iteration of its main loop. The
+  cadence is whatever the server is configured for; the SDK has no
+  control over it.
+- **Native Open Multiplayer** — there is no native `ProcessTick`
+  equivalent. The SDK queries `ITimersComponent` in `on_ready` and
+  installs a repeating timer; its timeout dispatches `on_tick`. The
+  interval is configurable.
+
+For custom cadence or per-server control, use the explicit form:
+
+```rust
+use std::time::Duration;
+use samp::plugin::{enable_tick_with, TickConfig};
+
+// Both servers, but 100 ms on Open Multiplayer instead of 5 ms:
+enable_tick_with(TickConfig::new().omp_interval(Duration::from_millis(100)));
+
+// Shortcut: SA-MP only, no Open Multiplayer timer.
+enable_tick_with(TickConfig::sa_mp_only());
+
+// Shortcut: Open Multiplayer only, at the given interval.
+enable_tick_with(TickConfig::omp_only(Duration::from_millis(50)));
+```
+
+`TickContext::source` (passed to `on_tick`) reports
+`TickSource::SaMp` or `TickSource::OmpTimer`, so the same
+method can branch on origin when needed.
 
 ## Lifecycle diagrams
 
@@ -235,7 +261,7 @@ Server start
        ├─ initialize_plugin! { ... }    ← construct the instance
        ├─ on_load()
        ├─ Gamemode loaded → on_amx_load(amx)
-       ├─ [loop] on_server_tick()           (if enabled)
+       ├─ [loop] on_tick(ctx)               (if enabled — cadence dictated by the server)
        ├─ Gamemode unloaded → on_amx_unload(amx)
        └─ on_unload()
 Server shutdown
@@ -250,7 +276,7 @@ Server start
        ├─ on_load()                      ← from comp_on_load(ICore*)
        ├─ on_omp_ready()                 ← every component initialized
        ├─ Script loaded → on_amx_load(amx)
-       ├─ [loop] on_server_tick()         (if enabled — 5 ms ITimer)
+       ├─ [loop] on_tick(ctx)             (if enabled — SDK-owned ITimer at configured interval)
        ├─ on_component_free()             ← another component being released
        ├─ Script unloaded → on_amx_unload(amx)
        └─ on_unload()                    ← from comp_free

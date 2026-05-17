@@ -8,9 +8,9 @@ extra dependencies of `advanced`.
 
 - Plugin state held in the struct (`count`, `max`, `ticks`).
 - Manual `impl SampPlugin` overriding `on_load`, `on_unload`, and
-  `on_server_tick`.
+  `on_tick`.
 - The full `initialize_plugin!` form with a constructor block.
-- `samp::plugin::enable_server_tick()` — opts in to the unified
+- `samp::plugin::enable_tick()` — opts in to the unified
   tick (fires on SA-MP via `ProcessTick`, on native Open Multiplayer
   via a 5 ms `ITimersComponent` timer).
 - `samp::plugin::logger()` — chains the default server log sink into

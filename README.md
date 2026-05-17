@@ -89,14 +89,14 @@ are 32-bit.
 | Path                                      | Highlights                                                                |
 | ----------------------------------------- | ------------------------------------------------------------------------- |
 | [`examples/hello`](examples/hello/)       | Minimal plugin (`#[derive(SampPlugin)]`, `&AmxString`, `write_str`).      |
-| [`examples/counter`](examples/counter/)   | Stateful plugin with `on_server_tick`, `Ref<i32>`, full constructor block.|
+| [`examples/counter`](examples/counter/)   | Stateful plugin with `on_tick`, `Ref<i32>`, full constructor block.|
 | [`examples/advanced`](examples/advanced/) | Memcache plugin: custom `AmxCell`, `encoding` feature, layered `fern`.    |
 
 ## Documentation
 
 Full user docs under [`docs/`](docs/) (MkDocs Material). Starting points:
 
-- [Introduction](docs/introduction.md) and [Setup](docs/setup.md).
+- [Introduction](docs/index.md) and [Setup](docs/setup.md).
 - [First plugin](docs/first-plugin.md) and [Plugin anatomy](docs/plugin-anatomy.md).
 - [Native Open Multiplayer support](docs/omp-native.md).
 - [API reference](docs/api-reference.md) and [Migration guide](docs/migration.md).

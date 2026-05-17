@@ -1,11 +1,15 @@
 //! Bindings for the Open Multiplayer `ITimersComponent` interface.
 //!
-//! Used to emulate the periodic server tick in native Open Multiplayer mode (Open Multiplayer does
-//! not call `process_tick` automatically like SA-MP). The SDK creates a timer
-//! with a 5ms interval in `on_omp_ready` if the plugin opted in via
-//! `samp::plugin::enable_server_tick`; on each timeout, it dispatches
-//! `SampPlugin::on_server_tick`. The plugin writes the callback only once —
-//! it works identically on both servers.
+//! Open Multiplayer has no native `ProcessTick`-equivalent callback for
+//! components. To deliver the SDK's unified [`SampPlugin::on_tick`] on this
+//! server, the `samp` crate installs a repeating timer through this
+//! interface in `on_ready` and routes its timeout into the plugin.
+//!
+//! The interval is whatever the plugin requested via
+//! `samp::plugin::enable_tick_with(TickConfig::new().omp_interval(...))`,
+//! or 5 ms by default (from `enable_tick()`).
+//!
+//! [`SampPlugin::on_tick`]: ../../../samp/plugin/trait.SampPlugin.html#method.on_tick
 //!
 //! ## Primary `ITimersComponent` vtable (19 slots — confirmed via disasm of `Timers.dll`)
 //!

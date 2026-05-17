@@ -18,6 +18,7 @@
 //! ```
 
 use log::info;
+use samp::plugin::TickContext;
 use samp::prelude::*;
 use samp::{initialize_plugin, native};
 
@@ -36,7 +37,7 @@ impl SampPlugin for Counter {
         info!("Counter plugin unloaded. Final value={}", self.count);
     }
 
-    fn on_server_tick(&mut self) {
+    fn on_tick(&mut self, _ctx: TickContext) {
         self.ticks += 1;
         // Logs the state every ~5 seconds (1000 ticks x ~5ms)
         if self.ticks.is_multiple_of(1000) {
@@ -120,7 +121,7 @@ initialize_plugin!(
         Counter::is_at_max,
     ],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
 
         let _ = fern::Dispatch::new()
             .level(log::LevelFilter::Info)

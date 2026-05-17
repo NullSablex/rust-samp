@@ -11,13 +11,14 @@ more advanced features of the SDK.
 
 - A struct that holds plugin state (`count`, `max`, `ticks`).
 - A handwritten `impl SampPlugin` overriding `on_load`, `on_unload`,
-  and `on_server_tick`.
+  and `on_tick`.
 - The full `initialize_plugin!` form with a constructor block that
   enables the unified tick and a custom `fern` dispatch.
 - Multiple natives, including one that writes through `Ref<i32>`.
 
 ```rust
 use log::info;
+use samp::plugin::TickContext;
 use samp::prelude::*;
 use samp::{initialize_plugin, native};
 
@@ -36,7 +37,7 @@ impl SampPlugin for Counter {
         info!("Counter plugin unloaded. Final value={}", self.count);
     }
 
-    fn on_server_tick(&mut self) {
+    fn on_tick(&mut self, _ctx: TickContext) {
         self.ticks += 1;
         if self.ticks.is_multiple_of(1000) {
             info!("Counter tick={} count={}/{}", self.ticks, self.count, self.max);
@@ -66,7 +67,7 @@ initialize_plugin!(
         Counter::get, Counter::set_max, Counter::is_at_max,
     ],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
 
         let _ = fern::Dispatch::new()
             .level(log::LevelFilter::Info)
@@ -217,7 +218,7 @@ initialize_plugin!(
         Memcached::increment, Memcached::delete,
     ],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
         samp::encoding::set_default_encoding(samp::encoding::WINDOWS_1251);
 
         let samp_logger = samp::plugin::logger()
@@ -275,10 +276,12 @@ impl SampPlugin for MyPlugin {
 ### Throttling work inside the tick
 
 ```rust
+use samp::plugin::TickContext;
+
 struct MyPlugin { tick_count: u64 }
 
 impl SampPlugin for MyPlugin {
-    fn on_server_tick(&mut self) {
+    fn on_tick(&mut self, _ctx: TickContext) {
         self.tick_count += 1;
         if self.tick_count.is_multiple_of(1000) {
             self.periodic_work();

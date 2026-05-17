@@ -184,7 +184,7 @@ initialize_plugin!(
         Memcached::delete,
     ],
     {
-        samp::plugin::enable_server_tick();
+        samp::plugin::enable_tick();
         samp::encoding::set_default_encoding(samp::encoding::WINDOWS_1251);
 
         let samp_logger = samp::plugin::logger()

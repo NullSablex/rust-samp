@@ -367,11 +367,13 @@ fn gen_samp_entry_points(
         }
 
         // Export `ProcessTick` is the fixed name the SA-MP server looks up via GetProcAddress.
-        // It cannot be renamed. Internally we call `server_tick`, which dispatches
-        // `SampPlugin::on_server_tick` — unified method for SA-MP and Open Multiplayer.
+        // It cannot be renamed. Internally we forward into `interlayer::tick`
+        // tagged with `TickSource::SaMp` so the plugin's `on_tick` callback
+        // sees `ctx.source == TickSource::SaMp` and can distinguish the
+        // origin from the Open Multiplayer timer path.
         #[unsafe(no_mangle)]
         pub extern "system" fn ProcessTick() {
-            samp::interlayer::server_tick();
+            samp::interlayer::tick(samp::plugin::TickSource::SaMp);
         }
     }
 }

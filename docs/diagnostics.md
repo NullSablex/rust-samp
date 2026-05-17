@@ -25,8 +25,8 @@ modes do not exist in that environment).
 | `IEventDispatcher<PawnEventHandler>` null in `comp_on_init`             | `null IEventDispatcher<PawnEventHandler> in on_init — on_amx_load/on_amx_unload will not be called`               | Loaded Pawn scripts do not trigger the AMX hooks.                        |
 | `getAmxFunctions()` returned `0` even at `on_ready`                     | `getAmxFunctions() returned 0 in on_ready — Pawn natives unavailable`                                             | Pawn natives are not registered, even after the deferred retry.          |
 | `on_ready`: `IPawnComponent` could not be queried again                 | `on_ready: IPawnComponent not found`                                                                              | Same as the previous row — natives are not registered.                   |
-| `ITimersComponent` missing while `enable_server_tick()` is on           | `ITimersComponent not found — on_server_tick will not be called`                                                  | Tick callback never fires on Open Multiplayer (SA-MP unaffected).        |
-| `ITimersComponent::create()` returned null                              | `failed to create timer on ITimersComponent — on_server_tick will not be called`                                  | Same as above; the heap handler is freed before the warning is emitted.  |
+| `ITimersComponent` missing while `enable_tick()` is on           | `ITimersComponent not found — on_tick will not be called`                                                  | Tick callback never fires on Open Multiplayer (SA-MP unaffected).        |
+| `ITimersComponent::create()` returned null                              | `failed to create timer on ITimersComponent — on_tick will not be called`                                  | Same as above; the heap handler is freed before the warning is emitted.  |
 
 ## Panic safety
 
@@ -91,7 +91,7 @@ grep -E '^\[rust-samp\]|^\[<YourNativeName>\]' server_log.txt
   `on_amx_load` for this script either.
 - `on_amx_load` is never called → look for the
   `IEventDispatcher<PawnEventHandler>` warning.
-- `on_server_tick` is never called on Open Multiplayer → look for the
+- `on_tick` is never called on Open Multiplayer → look for the
   `ITimersComponent` warnings. Make sure
-  `samp::plugin::enable_server_tick()` is called inside the
+  `samp::plugin::enable_tick()` is called inside the
   constructor block.

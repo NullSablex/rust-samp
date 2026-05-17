@@ -13,6 +13,42 @@ Rust (Itanium **and** MSVC); a single binary now works as a SA-MP
 plugin and as a first-class Open Multiplayer component, with no extra
 configuration.
 
+### Migrating from v2.x (or from the upstream `samp-rs` fork)
+
+This release contains **breaking changes**. A plugin written against
+v2.x will not compile against v3.0.0 without edits. Minimum diff:
+
+| Before (v2.x / upstream)              | After (v3.0.0)                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `fn process_tick(&mut self) { … }`    | `fn on_tick(&mut self, _ctx: TickContext) { … }`                        |
+| `samp::plugin::enable_process_tick()` | `samp::plugin::enable_tick()` (or `enable_tick_with(TickConfig)`)       |
+| `samp::cell::string::put_in_buffer(buf, s)?` | `buf.write_str(s)?` / `unsized.write_str(size, s)?` (`put_in_buffer` is `pub(crate)` now) |
+| `samp::raw::functions::Logprintf` (variadic) | Same path, now `extern "C" fn(*const i8)` — the SDK formats in Rust and passes a single C string |
+| `example-hello/` / `example-counter/` / `plugin-example/` | `examples/hello/` / `examples/counter/` / `examples/advanced/` |
+
+Open Multiplayer support comes turned on by default — the build
+produces both the SA-MP exports **and** the `ComponentEntryPoint`. To
+keep the v2.x behavior unchanged, enable the new `samp-only` feature:
+
+```toml
+samp = { git = "...", tag = "v3.0.0", features = ["samp-only"] }
+```
+
+Two new requirements that affect builds:
+
+- The workspace's `[profile.release]` adds `lto = "thin"`,
+  `codegen-units = 1`, `strip = true`. Override in your own
+  `Cargo.toml` if you need otherwise.
+- The i686 target is now strictly required at compile time
+  (`OmpComponent` has `const _` layout asserts). Set
+  `target = "i686-unknown-linux-gnu"` in `.cargo/config.toml` if you
+  were relying on the host target picking up automatically.
+
+The full step-by-step walkthrough lives in
+[`docs/migration.md`](docs/migration.md) — including the new
+`TickConfig` knobs (`sa_mp_only()`, `omp_only(Duration)`, custom
+`omp_interval`) and how to choose between them.
+
 ### Crate versions
 
 - `samp`: 2.2.0 → 3.0.0
@@ -21,12 +57,18 @@ configuration.
 
 ### Breaking changes
 
-- **`SampPlugin::process_tick`** renamed to
-  **`SampPlugin::on_server_tick`** — same signature, but now fires on
-  both servers (SA-MP via `ProcessTick`, native Open Multiplayer via a
-  5 ms `ITimersComponent` timer).
-- **`samp::plugin::enable_process_tick`** renamed to
-  **`samp::plugin::enable_server_tick`**.
+- **`SampPlugin::process_tick`** replaced by
+  **`SampPlugin::on_tick(&mut self, ctx: TickContext)`** — unified
+  callback that fires on both servers. Cadence is the server's main
+  loop on SA-MP and the SDK-owned `ITimersComponent` timer on native
+  Open Multiplayer (interval configurable). `TickContext::source`
+  reports the origin (`TickSource::SaMp` /
+  `TickSource::OmpTimer`); `TickContext::elapsed` is the
+  wall-clock interval since the previous dispatch.
+- **`samp::plugin::enable_process_tick`** replaced by
+  **`samp::plugin::enable_tick()`** (default config) and
+  **`samp::plugin::enable_tick_with(config: TickConfig)`** (explicit
+  per-server toggle + Open Multiplayer interval).
 - **`samp::cell::string::put_in_buffer`** is now `pub(crate)` (was
   `pub`). The public API for writing strings is `Buffer::write_str`
   and `UnsizedBuffer::write_str`.
@@ -72,10 +114,13 @@ configuration.
     `secondary_call_target` helpers for safe access to secondary
     vtables.
 - **`samp::omp`** re-exports the module above.
-- **`samp::plugin`** new functions: `enable_server_tick`,
-  `omp_core`, `omp_query_component`, `omp_query::<T>` (typed wrapper
-  for `OmpComponentHandle` implementors).
-- **`SampPlugin`** new hooks: `on_server_tick`,
+- **`samp::plugin`** new functions: `enable_tick`,
+  `enable_tick_with`, `omp_core`, `omp_query_component`,
+  `omp_query::<T>` (typed wrapper for `OmpComponentHandle`
+  implementors).
+- **`samp::plugin`** new types: `TickConfig`, `TickContext`,
+  `TickSource`.
+- **`SampPlugin`** new hooks: `on_tick(ctx)`,
   `on_omp_ready` (gated by `not(feature = "samp-only")`),
   `on_component_free` (same gating).
 - **`samp::log`** re-export — `#[native]`-expanded code now uses

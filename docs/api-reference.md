@@ -22,7 +22,7 @@ pub trait SampPlugin {
     fn on_unload(&mut self) {}
     fn on_amx_load(&mut self, amx: &Amx) {}
     fn on_amx_unload(&mut self, amx: &Amx) {}
-    fn on_server_tick(&mut self) {}
+    fn on_tick(&mut self, ctx: TickContext) {}
 
     #[cfg(not(feature = "samp-only"))]
     fn on_omp_ready(&mut self) {}
@@ -37,7 +37,7 @@ pub trait SampPlugin {
 | `on_unload`          | SA-MP / native Open Multiplayer | Server is unloading the plugin.                          |
 | `on_amx_load`        | SA-MP / native Open Multiplayer | A Pawn script (`.amx`) was loaded.                       |
 | `on_amx_unload`      | SA-MP / native Open Multiplayer | A Pawn script is being unloaded.                         |
-| `on_server_tick`     | SA-MP / native Open Multiplayer | Runs ~5 ms when `enable_server_tick()` was called.       |
+| `on_tick`            | SA-MP / native Open Multiplayer | Periodic callback. Requires `enable_tick()` / `enable_tick_with(...)`. Cadence is the server's main loop on SA-MP, or the configured `omp_interval` on Open Multiplayer. |
 | `on_omp_ready`       | Native Open Multiplayer only | Every Open Multiplayer component initialized.              |
 | `on_component_free`  | Native Open Multiplayer only | Some Open Multiplayer component is being released.         |
 
@@ -266,7 +266,7 @@ exec_public!(amx, "PublicName", &vec => array);     // Rust slice
 | Path                | Contents                                                                |
 | ------------------- | ----------------------------------------------------------------------- |
 | `samp::amx`         | `Amx`, `AmxExt`, `AmxIdent`, `get(ident)`, `add(ptr)`.                  |
-| `samp::plugin`      | `SampPlugin`, `enable_server_tick`, `logger`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
+| `samp::plugin`      | `SampPlugin`, `TickContext`, `TickSource`, `TickConfig`, `enable_tick`, `enable_tick_with`, `logger`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
 | `samp::cell`        | `AmxCell`, `CellConvert`, `AmxPrimitive`, `AmxString`, `Ref`, `Buffer`, `UnsizedBuffer`. |
 | `samp::error`       | `AmxError`, `AmxResult`.                                                |
 | `samp::args`        | `Args`.                                                                 |
@@ -277,6 +277,46 @@ exec_public!(amx, "PublicName", &vec => array);     // Rust slice
 
 \* Available only when the `samp-only` feature is **not** set.
 \** Available only when the `encoding` feature is set.
+
+### `samp::plugin` — tick API
+
+```rust
+pub fn enable_tick();                            // default config
+pub fn enable_tick_with(config: TickConfig);     // explicit config
+
+pub struct TickConfig {
+    pub sa_mp: bool,                 // advertise Supports::PROCESS_TICK
+    pub omp: bool,                   // create ITimersComponent timer
+    pub omp_interval: Duration,      // timer interval on Open Multiplayer
+}
+// Default: sa_mp = true, omp = true, omp_interval = Duration::from_millis(5).
+// Builder methods:
+//   TickConfig::new().sa_mp(false).omp_interval(Duration::from_millis(50))
+// Shortcuts for common patterns:
+//   TickConfig::sa_mp_only()                            // omp disabled
+//   TickConfig::omp_only(Duration::from_millis(50))     // sa_mp disabled
+
+pub enum TickSource { SaMp, OmpTimer }
+
+pub struct TickContext {
+    pub elapsed: Duration,           // since previous on_tick (0 on first call)
+    pub source: TickSource,          // which server scheduled this dispatch
+}
+```
+
+The trait method receives `TickContext`:
+
+```rust
+impl SampPlugin for MyPlugin {
+    fn on_tick(&mut self, ctx: TickContext) { /* ... */ }
+}
+```
+
+> **What "tick" means depends on the server.** On SA-MP it is one
+> iteration of the server's main loop (cadence controlled by the
+> server, not the SDK). On native Open Multiplayer it is a repeating
+> timer the SDK installs on `ITimersComponent` at `omp_interval` — the
+> server has no native `ProcessTick` equivalent for components.
 
 ### `samp::plugin` — Open Multiplayer helpers
 

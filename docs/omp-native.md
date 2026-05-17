@@ -203,7 +203,7 @@ Server start
   └─ Supports()
   └─ Load()             → on_load()
   └─ AmxLoad()          → on_amx_load(amx)
-  └─ [loop] ProcessTick()   → on_server_tick() (when enabled)
+  └─ [loop] ProcessTick()   → on_tick() (when enabled)
   └─ AmxUnload()        → on_amx_unload(amx)
   └─ Unload()           → on_unload()
 Server shutdown
@@ -218,24 +218,24 @@ Server start
   └─ comp_on_init(IComponentList*)          → [SDK registers PawnEventHandler]
   └─ comp_on_ready()                        → [SDK stores getAmxFunctions(); creates ITimer if enabled] → on_omp_ready()
   └─ pawn_on_amx_load(IPawnScript*)         → on_amx_load(amx)
-  └─ [loop] ITimer timeout (5 ms)           → on_server_tick() (when enabled)
+  └─ [loop] ITimer timeout (5 ms)           → on_tick() (when enabled)
   └─ pawn_on_amx_unload(IPawnScript*)       → on_amx_unload(amx)
   └─ comp_on_free()                         → on_component_free()
   └─ comp_free()                            → [SDK kills the timer, removes the dispatcher handler] → on_unload()
 Server shutdown
 ```
 
-### Unified `on_server_tick`
+### Unified `on_tick`
 
 The same callback fires on both servers:
 
 - **SA-MP** advertises `Supports::PROCESS_TICK` and routes the
-  `ProcessTick` export into `on_server_tick`.
+  `ProcessTick` export into `on_tick`.
 - **Native Open Multiplayer** queries `ITimersComponent` in `on_ready`
   and creates a repeating timer at 5 ms whose timeout dispatches
-  `on_server_tick`.
+  `on_tick`.
 
-Both paths require `samp::plugin::enable_server_tick()` to opt in
+Both paths require `samp::plugin::enable_tick()` to opt in
 inside the constructor block.
 
 ## Runtime detection
@@ -305,7 +305,7 @@ prefixed with `[rust-samp]`.
 | `IPawnComponent` missing in `on_init`        | `IPawnComponent not found in on_init — Pawn natives unavailable`                                         | Natives are not registered.                            |
 | `getAmxFunctions()` returns `0` in `on_ready`| `getAmxFunctions() returned 0 in on_ready — Pawn natives unavailable`                                    | Natives are not registered.                            |
 | `IEventDispatcher` null in `on_init`         | `null IEventDispatcher<PawnEventHandler> in on_init — on_amx_load/on_amx_unload will not be called`      | Loaded scripts do not trigger the AMX hooks.           |
-| `ITimersComponent` missing (when tick on)    | `ITimersComponent not found — on_server_tick will not be called`                                         | Tick callback does not fire on Open Multiplayer.       |
+| `ITimersComponent` missing (when tick on)    | `ITimersComponent not found — on_tick will not be called`                                         | Tick callback does not fire on Open Multiplayer.       |
 
 ## Platform support
 

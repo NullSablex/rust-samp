@@ -37,7 +37,7 @@ initialize_plugin!(
 ```
 
 `#[derive(SampPlugin)]` emits `impl SampPlugin for T {}` for stateless
-plugins. As soon as a lifecycle hook (`on_load`, `on_server_tick`, …)
+plugins. As soon as a lifecycle hook (`on_load`, `on_tick`, …)
 needs an override, drop the derive and write the impl by hand — and
 switch back to the constructor-block form of `initialize_plugin!`.
 
@@ -178,19 +178,44 @@ is treated as a first-class component on Open Multiplayer.
 | v3.0.0 (default)          | SA-MP exports **and** `ComponentEntryPoint`.                     |
 | v3.0.0 with `samp-only`   | SA-MP exports only (identical to v2.x).                          |
 
-### Unified `on_server_tick`
+### Unified `on_tick`
 
-The trait method previously called `process_tick` was renamed to
-`on_server_tick`. The opt-in switched from
+The trait method previously called `process_tick` is now
+`on_tick(&mut self, ctx: TickContext)`. The opt-in switched from
 `samp::plugin::enable_process_tick()` to
-`samp::plugin::enable_server_tick()`.
+`samp::plugin::enable_tick()` (or `enable_tick_with(TickConfig)` for
+custom interval / per-server control).
 
 The unified callback fires on both servers:
 
-- SA-MP — the `ProcessTick` export forwards to `on_server_tick`.
+- SA-MP — the `ProcessTick` export forwards to `on_tick` with
+  `ctx.source == TickSource::SaMp`. Cadence is whatever the server's
+  main loop is configured for.
 - Native Open Multiplayer — the SDK queries `ITimersComponent` and
-  creates a 5 ms repeating timer whose timeout dispatches the same
-  callback.
+  creates a repeating timer whose timeout dispatches the same
+  callback with `ctx.source == TickSource::OmpTimer`.
+  Interval defaults to 5 ms; configurable through
+  `TickConfig::omp_interval`.
+
+`ctx.elapsed` is the wall-clock time since the previous dispatch
+(zero on the first call), useful for delta-based logic without
+calling `Instant::now()` in the plugin.
+
+Common `TickConfig` patterns come with builder shortcuts:
+
+```rust
+use std::time::Duration;
+use samp::plugin::{enable_tick_with, TickConfig};
+
+// SA-MP only — Open Multiplayer timer disabled.
+enable_tick_with(TickConfig::sa_mp_only());
+
+// Open Multiplayer only, at a custom interval — SA-MP export stays inert.
+enable_tick_with(TickConfig::omp_only(Duration::from_millis(50)));
+
+// Full builder when you need both servers with tweaked Open Multiplayer cadence.
+enable_tick_with(TickConfig::new().omp_interval(Duration::from_millis(20)));
+```
 
 ### Targets
 
@@ -306,8 +331,10 @@ impl SampPlugin for MyPlugin {
 - [ ] Decide: keep `samp-only` for SA-MP-only behavior, or drop the
       feature to enable dual support.
 - [ ] If using dual support: rename any `process_tick` overrides to
-      `on_server_tick`, and the opt-in call to
-      `enable_server_tick()`.
+      `on_tick(&mut self, ctx: TickContext)`, and the opt-in call to
+      `enable_tick()` (or `enable_tick_with(...)` for custom interval
+      / per-server control). The `TickContext` parameter is mandatory
+      — use `_ctx` if you don't read it.
 - [ ] Build once and verify the UID was written into
       `[package.metadata.samp]`.
 
@@ -328,7 +355,7 @@ to the current `samp` crate.
 | `Cell`                                  | `i32`, `Ref<T>`, `AmxString`, custom `AmxCell` impls                           |
 | Manual native registration              | Automatic, through `initialize_plugin!`                                        |
 | `string.to_string()`                    | `&*string` via `Deref<Target = str>`                                           |
-| `process_tick`                          | `on_server_tick` (unified across servers)                                      |
+| `process_tick`                          | `on_tick(ctx: TickContext)` (unified across servers; opt in via `enable_tick()` / `enable_tick_with(TickConfig)`) |
 
 ### 1. Update `Cargo.toml`
 
