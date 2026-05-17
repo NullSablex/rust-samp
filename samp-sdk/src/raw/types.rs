@@ -1,6 +1,15 @@
+//! Direct translation of the `amx.h` header structs into Rust.
+//!
+//! All are `#[repr(C, packed)]` — the AMX assumes a layout identical to the
+//! original Pawn interpreter. Do not add, remove, or reorder fields without
+//! reviewing the corresponding C header, or the VM will start reading/writing
+//! at the wrong offsets.
+
 use super::functions::{AmxCallback, AmxDebug, AmxNative};
 use std::os::raw::{c_char, c_int, c_long, c_uchar, c_void};
 
+/// AMX VM instance. Each AMX loaded by the server (gamemode + filterscripts)
+/// is a pointer to this struct.
 #[repr(C, packed)]
 pub struct AMX {
     pub base: *mut c_uchar,
@@ -25,24 +34,34 @@ pub struct AMX {
     pub sysreq_d: i32,
 }
 
+/// Entry of the natives table registered via `amx_Register` — a name+pointer pair.
 #[repr(C, packed)]
+#[derive(Copy, Clone)]
 pub struct AMX_NATIVE_INFO {
     pub name: *const c_char,
     pub func: AmxNative,
 }
 
+/// Public/native function stub inside the `.amx`. Layout with inline name (20 bytes).
 #[repr(C, packed)]
 pub struct AMX_FUNCSTUB {
     pub address: u32,
     pub name: [c_char; 20usize],
 }
 
+/// Function stub in `.amx` compiled with `defsize=8` — the name is resolved by
+/// an offset in the nametable (not inline).
+///
+/// Name inherited from the original C header (`AMX_FUNCSTUBNT` — the leading
+/// "ANX" is a historic typo kept for binary compatibility).
 #[repr(C, packed)]
 pub struct ANX_FUNCSTUBNT {
     pub address: u32,
     pub nameofs: u32,
 }
 
+/// Header of the `.amx` file loaded in memory. Offsets in this struct point
+/// to sections inside the file itself.
 #[repr(C, packed)]
 pub struct AMX_HEADER {
     pub size: i32,

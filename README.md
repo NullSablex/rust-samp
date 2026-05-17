@@ -1,112 +1,106 @@
-[![Build](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml/badge.svg)](https://github.com/NullSablex/rust-samp/actions)
+[![CI](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml/badge.svg)](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![dependency status](https://deps.rs/repo/github/NullSablex/rust-samp/status.svg)](https://deps.rs/repo/github/NullSablex/rust-samp)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-criterion-blue)](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml)
 
 # rust-samp
 
-Toolkit em Rust para desenvolvimento de plugins de servidor [SA-MP](http://sa-mp.com). Escreva plugins seguros, rápidos e confiáveis usando Rust no lugar de C/C++.
+Rust toolkit for writing SA-MP server plugins and native Open Multiplayer
+components. A single compiled binary works as a SA-MP plugin **and** as a
+first-class Open Multiplayer component, with no extra configuration.
 
-> **Nota:** Este projeto é um fork de [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs), originalmente criado por [ZOTTCE](https://github.com/ZOTTCE). Foi atualizado com dependências modernas, Rust edition 2024 e práticas de segurança aprimoradas.
+> Fork of [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs) by
+> [ZOTTCE](https://github.com/ZOTTCE). Modernized for Rust edition 2024 and
+> extended with a pure-Rust implementation of the Open Multiplayer component
+> ABI (Itanium and MSVC), without `bindgen` or any C/C++ dependency.
 
-## Funcionalidades
+## Quickstart
 
-- Derive de funções nativas SA-MP com o atributo `#[native]`
-- Parsing automático de argumentos do AMX para tipos Rust
-- `AmxString` com `Deref<Target=str>` — use diretamente como `&str`, sem `.to_string()`
-- Arrays tipados com `Buffer::get_as::<f32>()` / `set_as::<bool>()` — sem manipulação de bits
-- Criação de plugins simplificada com `#[derive(SampPlugin)]` e `initialize_plugin!(type: T, ...)`
-- Suporte a encoding de strings (Windows-1251, Windows-1252)
-- Logging integrado via `fern` e `log`
-- Abstrações seguras sobre a API bruta do AMX
+```sh
+rustup target add i686-unknown-linux-gnu
+```
 
-## Começando
+`Cargo.toml`:
 
-1. Instale o [toolchain Rust](https://rustup.rs). Servidores SA-MP são 32-bit, então você precisa do target `i686`:
-   ```sh
-   rustup target add i686-unknown-linux-gnu   # Linux
-   rustup target add i686-pc-windows-msvc     # Windows
-   ```
+```toml
+[lib]
+crate-type = ["cdylib"]
 
-2. Adicione ao seu `Cargo.toml`:
-   ```toml
-   [lib]
-   crate-type = ["cdylib"]
+[dependencies]
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }
+```
 
-   [dependencies]
-   samp = { git = "https://github.com/NullSablex/rust-samp.git" }
-   ```
+`src/lib.rs`:
 
-3. Escreva seu plugin:
+```rust
+use samp::prelude::*;
+use samp::{native, initialize_plugin, SampPlugin};
 
-   **Forma simples** — para plugins sem lógica de inicialização:
-   ```rust
-   use samp::prelude::*;
-   use samp::{native, initialize_plugin, SampPlugin};
+#[derive(SampPlugin, Default)]
+struct Hello;
 
-   #[derive(SampPlugin, Default)]
-   struct MeuPlugin;
+impl Hello {
+    #[native(name = "Hello_Greet")]
+    fn greet(_amx: &Amx, name: &AmxString, out: UnsizedBuffer, size: usize) -> AmxResult<bool> {
+        out.write_str(size, &format!("Hello, {}!", &**name))?;
+        Ok(true)
+    }
+}
 
-   impl MeuPlugin {
-       #[native(name = "RustSayHello")]
-       fn say_hello(&mut self, _amx: &Amx, name: AmxString) -> AmxResult<bool> {
-           // AmxString implementa Deref<Target=str> — use como &str diretamente
-           println!("Olá, {}!", &*name);
-           Ok(true)
-       }
-   }
+initialize_plugin!(type: Hello, natives: [Hello::greet]);
+```
 
-   initialize_plugin!(
-       type: MeuPlugin,
-       natives: [MeuPlugin::say_hello],
-   );
-   ```
+```sh
+cargo build --release --target i686-unknown-linux-gnu
+```
 
-   **Forma completa** — quando há lógica de inicialização (logging, encoding, etc.):
-   ```rust
-   use samp::prelude::*;
-   use samp::{native, initialize_plugin};
+Drop the resulting `.so` into the server's `plugins/`. Full walkthrough in
+[docs/first-plugin.md](docs/first-plugin.md).
 
-   struct MeuPlugin {
-       contagem: u32,
-   }
+## Workspace
 
-   impl SampPlugin for MeuPlugin {
-       fn on_load(&mut self) {
-           println!("Plugin carregado.");
-       }
-   }
+| Crate          | Version | Purpose                                                              |
+| -------------- | :-----: | -------------------------------------------------------------------- |
+| `samp`         | 3.0.0   | Main crate — depend on this one.                                     |
+| `samp-sdk`     | 3.0.0   | Low-level bindings: AMX VM + Open Multiplayer component ABI.        |
+| `samp-codegen` | 1.3.0   | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`).|
 
-   impl MeuPlugin {
-       #[native(name = "Incrementar")]
-       fn incrementar(&mut self, _amx: &Amx) -> AmxResult<i32> {
-           self.contagem += 1;
-           Ok(self.contagem as i32)
-       }
-   }
+Edition 2024, workspace `resolver = "3"`. Target: **i686** — both servers
+are 32-bit.
 
-   initialize_plugin!(
-       natives: [MeuPlugin::incrementar],
-       {
-           samp::plugin::enable_process_tick();
-           return MeuPlugin { contagem: 0 };
-       }
-   );
-   ```
+## Platform matrix
 
-> [!TIP]
-> Use a forma `type: T` sempre que seu plugin não precisar de configuração no `on_load`. Ela elimina o bloco construtor e usa `Default::default()` automaticamente.
+| Target                    | SA-MP | Native Open Multiplayer | Build command                                       |
+| ------------------------- | :---: | :---------------------: | --------------------------------------------------- |
+| `i686-unknown-linux-gnu`  |   ✅   |  ✅ (Itanium ABI)        | `cargo build`                                       |
+| `i686-pc-windows-msvc`    |   ✅   |  ✅ (MSVC ABI)           | `cargo xwin build --xwin-arch x86` (from Linux)     |
+| `i686-pc-windows-gnu`     |   ✅   |  ❌                     | `cargo build --features samp-only`                  |
 
-## Migração de Versões Anteriores
+## Feature flags
 
-Veja o [guia de migração](migration.md) para atualizar plugins de versões anteriores.
+- *(default)* — SA-MP exports + Open Multiplayer `ComponentEntryPoint`.
+- `samp-only` — opt out of the Open Multiplayer code path; plugin still
+  loads on Open Multiplayer in legacy mode.
+- `encoding` — Windows-1251 / Windows-1252 string conversion via
+  `encoding_rs`.
 
-## Exemplos
+## Examples
 
-Um exemplo completo de plugin memcache está disponível no diretório [`plugin-example`](plugin-example/).
+| Path                                      | Highlights                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| [`examples/hello`](examples/hello/)       | Minimal plugin (`#[derive(SampPlugin)]`, `&AmxString`, `write_str`).      |
+| [`examples/counter`](examples/counter/)   | Stateful plugin with `on_server_tick`, `Ref<i32>`, full constructor block.|
+| [`examples/advanced`](examples/advanced/) | Memcache plugin: custom `AmxCell`, `encoding` feature, layered `fern`.    |
 
-## Reconhecimentos
+## Documentation
 
-Este projeto é baseado no [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs) por [ZOTTCE](https://github.com/ZOTTCE) e colaboradores. O trabalho original é licenciado sob MIT.
+Full user docs under [`docs/`](docs/) (MkDocs Material). Starting points:
 
-## Licença
+- [Introduction](docs/introduction.md) and [Setup](docs/setup.md).
+- [First plugin](docs/first-plugin.md) and [Plugin anatomy](docs/plugin-anatomy.md).
+- [Native Open Multiplayer support](docs/omp-native.md).
+- [API reference](docs/api-reference.md) and [Migration guide](docs/migration.md).
 
-MIT
+## License
+
+MIT — see [LICENSE](LICENSE).

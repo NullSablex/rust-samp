@@ -1,16 +1,27 @@
-//! Workaround to parse input of natives functions.
+//! Parsing of arguments from a Pawn native call.
+//!
+//! The AMX delivers arguments in a `*mut i32` pointer where:
+//! - `args[0]` = number of bytes used by the arguments (not the count)
+//! - `args[1..]` = the cells with each argument, in signature order
+//!
+//! This module wraps that indirection and converts each cell to the correct
+//! Rust type via [`AmxCell`].
+
 use crate::amx::Amx;
 use crate::cell::AmxCell;
 
-/// A wrapper of a list of arguments of a native function.
+/// Typed list of arguments for a native function.
+///
+/// Generally the `#[native]` proc macro builds and consumes an `Args` automatically
+/// — call manually only in `raw` natives that receive `(amx, args)` directly.
 pub struct Args<'a> {
     amx: &'a Amx,
-    args: *const i32,
+    params: *const i32,
     offset: usize,
 }
 
 impl<'a> Args<'a> {
-    /// Creates a list from [`Amx`] and arguments.
+    /// Builds from the `Amx` and the `args` pointer received by the native.
     ///
     /// # Example
     /// ```
@@ -19,39 +30,26 @@ impl<'a> Args<'a> {
     /// use samp_sdk::cell::AmxString;
     /// # use samp_sdk::raw::types::AMX;
     ///
-    /// // native: RawNative(const say_that[]);
+    /// // native RawNative(const say_that[]);
     /// extern "C" fn raw_native(amx: *mut AMX, args: *mut i32) -> i32 {
     ///     # let amx_exports = 0;
-    ///     // let amx_exports = ...;
     ///     let amx = Amx::new(amx, amx_exports);
     ///     let mut args = Args::new(&amx, args);
-    ///
-    ///     let say_what = match args.next_arg::<AmxString>() {
-    ///         Some(string) => string.to_string(),
-    ///         None => {
-    ///             println!("RawNative error: no argument");
-    ///             return 0;
-    ///         }
-    ///     };
-    ///
-    ///     println!("RawNative: {}", say_what);
-    ///
-    ///     return 1;
+    ///     let Some(text) = args.next_arg::<AmxString>() else { return 0 };
+    ///     println!("RawNative: {}", &*text);
+    ///     1
     /// }
     /// ```
-    ///
-    /// [`Amx`]: ../amx/struct.Amx.html
-    pub fn new(amx: &'a Amx, args: *const i32) -> Args<'a> {
+    #[must_use]
+    pub fn new(amx: &'a Amx, params: *const i32) -> Args<'a> {
         Args {
             amx,
-            args,
+            params,
             offset: 0,
         }
     }
 
-    /// Return the next argument in the list.
-    ///
-    /// When there is no arguments left returns `None`.
+    /// Next argument in signature order. `None` at the end of the list.
     pub fn next_arg<T: AmxCell<'a> + 'a>(&mut self) -> Option<T> {
         let result = self.get(self.offset);
         self.offset += 1;
@@ -59,51 +57,37 @@ impl<'a> Args<'a> {
         result
     }
 
-    /// Get an argument by position, if there is no argument in given location, returns `None`.
-    ///
-    /// # Example
-    /// ```
-    /// use samp_sdk::args::Args;
-    /// use samp_sdk::amx::Amx;
-    /// use samp_sdk::cell::Ref;
-    /// # use samp_sdk::raw::types::AMX;
-    ///
-    /// // native: NativeFn(player_id, &Float:health, &Float:armor);
-    /// extern "C" fn raw_native(amx: *mut AMX, args: *mut i32) -> i32 {
-    ///     # let amx_exports = 0;
-    ///     // let amx_exports = ...;
-    ///     let amx = Amx::new(amx, amx_exports);
-    ///     let args = Args::new(&amx, args);
-    ///
-    ///     // change only armor
-    ///     args.get::<Ref<f32>>(2)
-    ///         .map(|mut armor| *armor = 255.0);
-    ///
-    ///     return 1;
-    /// }
-    /// ```
+    /// Argument at position `offset` (zero-indexed). `None` if out of bounds.
+    #[must_use]
     pub fn get<T: AmxCell<'a> + 'a>(&self, offset: usize) -> Option<T> {
         if offset >= self.count() {
             return None;
         }
 
-        unsafe { T::from_raw(self.amx, self.args.add(offset + 1).read()).ok() }
+        unsafe { T::from_raw(self.amx, self.params.add(offset + 1).read()).ok() }
     }
 
-    /// Reset a read offset for [`next()`] method.
+    /// Resets the [`next_arg`] cursor back to the start of the list.
     ///
-    /// [`next()`]: #method.next
+    /// [`next_arg`]: Args::next_arg
     pub fn reset(&mut self) {
         self.offset = 0;
     }
 
-    /// Get count of arguments in the list.
+    /// How many arguments were received.
+    ///
+    /// Reads from `args[0]` (total bytes) and divides by 4 (cell size).
+    /// Negative or zero values return `0` — defense against dirty pointers.
+    #[must_use]
     pub fn count(&self) -> usize {
-        let raw = unsafe { self.args.read() };
+        let raw = unsafe { self.params.read() };
         if raw <= 0 {
             return 0;
         }
-        (raw / 4) as usize
+        // `raw > 0` was validated above; `/ 4` keeps it positive.
+        #[allow(clippy::cast_sign_loss)]
+        let count = (raw / 4) as usize;
+        count
     }
 }
 
@@ -129,7 +113,7 @@ mod tests {
 
     #[test]
     fn count_with_valid_args() {
-        // 3 argumentos = 12 bytes (3 * 4)
+        // 3 arguments = 12 bytes (3 * 4)
         let data: [i32; 4] = [12, 100, 200, 300];
         let amx = Amx::new(std::ptr::null_mut(), 0);
         let args = Args::new(&amx, data.as_ptr());
@@ -138,10 +122,10 @@ mod tests {
 
     #[test]
     fn get_out_of_bounds_returns_none() {
-        let data: [i32; 2] = [4, 42]; // 1 argumento
+        let data: [i32; 2] = [4, 42]; // 1 argument
         let amx = Amx::new(std::ptr::null_mut(), 0);
         let args = Args::new(&amx, data.as_ptr());
-        // offset == count deve retornar None
+        // offset == count should return None
         assert!(args.get::<crate::cell::Ref<i32>>(1).is_none());
     }
 

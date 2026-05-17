@@ -6,16 +6,12 @@ on:
   pull_request:
     branches: [ "master" ]
 
-permissions:
-  contents: read   # checkout
-  actions: write   # upload-artifact + rust-cache (gravação de cache)
-
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Build, teste e lint cross-platform (i686)
+  # Cross-platform build, test and lint (i686)
   # ---------------------------------------------------------------------------
   build:
     strategy:
@@ -29,6 +25,9 @@ jobs:
             artifact: target/i686-pc-windows-msvc/debug/plugin.dll
 
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read   # checkout
+      actions: write   # upload-artifact + rust-cache (cache write)
 
     steps:
     - uses: actions/checkout@v6
@@ -67,19 +66,28 @@ jobs:
       with:
         name: plugin-${{ matrix.target }}
         path: ${{ matrix.artifact }}
+        retention-days: 14
 
   # ---------------------------------------------------------------------------
-  # Benchmarks — Linux i686, push para master
+  # Benchmarks — Linux i686
   #
-  # Fluxo de baseline:
-  #   1. Restaura o baseline salvo do run anterior (via cache)
-  #   2. Executa benchmarks salvando como "new"
-  #   3. Se baseline "main" existe, compara com critcmp e imprime regressões
-  #   4. Promove "new" → "main" e salva no cache para o próximo run
+  # Runs on: push to master AND pull_request.
+  # Baseline flow:
+  #   1. Restore the baseline saved in the previous master run (via cache)
+  #   2. Run benchmarks saving as "new"
+  #   3. If a "main" baseline exists, compare with critcmp and print regressions
+  #   4. Push to master only: promote "new" → "main" and save to cache for the next run
+  #   5. Always: write the report to the run's Step Summary (visible in the PR
+  #      checks tab without needing to download the artifact)
   # ---------------------------------------------------------------------------
   bench:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      github.event_name == 'pull_request'
+    permissions:
+      contents: read   # checkout
+      actions: write   # cache write (promotion of "new" → "main" baseline on master)
 
     steps:
     - uses: actions/checkout@v6
@@ -103,31 +111,78 @@ jobs:
       with:
         path: target/criterion
         key: bench-baseline-main
-        # Aceita qualquer baseline salvo anteriormente se não houver correspondência exata
+        # Accept any previously saved baseline if there is no exact match
         restore-keys: bench-baseline-
 
     - name: Run benchmarks
       run: |
         cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- --save-baseline new 2>&1 | tee bench_results.txt
 
-    - name: Compare against baseline
+    - name: Compare against baseline and generate report
       run: |
         if [ -d target/criterion ]; then
-          # Verifica se existe um baseline "main" para comparar
           HAS_MAIN=$(find target/criterion -name "estimates.json" -path "*/main/*" | head -1)
           if [ -n "$HAS_MAIN" ]; then
-            echo "Comparando com baseline anterior..."
+            echo "Comparing against previous baseline..."
             cargo install critcmp --locked --quiet
-            # --threshold 5: reporta mudanças >= 5%
             critcmp main new --threshold 5 | tee bench_comparison.txt || true
+
+            # Generate bench_report.md with a Markdown table
+            echo "# Benchmark Report" > bench_report.md
+            echo "" >> bench_report.md
+            echo "Comparison between the previous baseline (\`main\`) and the current build (\`new\`)." >> bench_report.md
+            echo "Threshold: changes >= 5% are reported." >> bench_report.md
+            echo "" >> bench_report.md
+            echo "| Benchmark | Before (main) | After (new) | Δ% |" >> bench_report.md
+            echo "|-----------|---------------|-------------|-----|" >> bench_report.md
+
+            # Parse critcmp output (lines: "  bench_name  before  after  pct%")
+            grep -E "^\s+\S" bench_comparison.txt | while IFS= read -r line; do
+              name=$(echo "$line" | awk '{print $1}')
+              before=$(echo "$line" | awk '{print $2, $3}')
+              after=$(echo "$line" | awk '{print $4, $5}')
+              pct=$(echo "$line" | awk '{print $NF}')
+              echo "| \`$name\` | $before | $after | $pct |" >> bench_report.md
+            done
+
+            # Summary
+            improved=$(grep -c "^-\|IMPROVED" bench_comparison.txt 2>/dev/null || echo 0)
+            regressed=$(grep -c "^+\|REGRESSED" bench_comparison.txt 2>/dev/null || echo 0)
+            echo "" >> bench_report.md
+            echo "**Summary:** improvements: $improved | regressions: $regressed" >> bench_report.md
+            echo "" >> bench_report.md
+            echo "_Generated automatically by CI at \`$(date -u '+%Y-%m-%d %H:%M UTC')\`_" >> bench_report.md
           else
-            echo "Nenhum baseline anterior encontrado — este run será o primeiro."
+            echo "No previous baseline found — this run will be the first." | tee bench_comparison.txt
+            echo "# Benchmark Report" > bench_report.md
+            echo "" >> bench_report.md
+            echo "No previous baseline found — this is the first run." >> bench_report.md
           fi
         fi
 
-    - name: Promote new baseline to main
+    - name: Extract per-bench data (mean + CI)
+      env:
+        VERSION: ${{ github.ref_name }}
+        GIT_SHA: ${{ github.sha }}
+      run: python3 scripts/extract-bench.py
+
+    - name: Publish report to Step Summary
+      if: always()
       run: |
-        # Copia resultados do baseline "new" para "main" (sobrescreve)
+        {
+          if [ -f bench_report.md ]; then
+            cat bench_report.md
+            echo ""
+          fi
+          if [ -f bench-entry.json ]; then
+            python3 scripts/render-bench-entry.py
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Promote new baseline to main
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      run: |
+        # Copy "new" baseline results to "main" (overwrites)
         find target/criterion -type d -name "new" | while read dir; do
           main_dir="${dir%/new}/main"
           rm -rf "$main_dir"
@@ -135,6 +190,7 @@ jobs:
         done
 
     - name: Save benchmark baseline
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
       uses: actions/cache/save@v5
       with:
         path: target/criterion
@@ -147,4 +203,7 @@ jobs:
         path: |
           bench_results.txt
           bench_comparison.txt
-          target/criterion/
+          bench_report.md
+          bench-entry.json
+        if-no-files-found: warn
+        retention-days: 14

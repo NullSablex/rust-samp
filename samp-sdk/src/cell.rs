@@ -1,4 +1,15 @@
-//! Different smart-pointers to work around raw AMX values.
+//! Smart pointers for accessing AMX VM cells from safe Rust code.
+//!
+//! A "cell" is the native Pawn VM type: a 32-bit integer (`i32`) that can
+//! represent `int`, `float` (via bit reinterpretation) or a pointer relative
+//! to the AMX heap/data. The types in this module wrap those cells with
+//! Rust semantics:
+//!
+//! - [`Ref<T>`]: typed pointer to a cell (by-reference output of natives).
+//! - [`Buffer`] / [`UnsizedBuffer`]: array of contiguous cells.
+//! - [`AmxString`]: native Pawn string (cell vector with `0` terminator).
+//! - [`AmxCell`], [`AmxPrimitive`], [`CellConvert`]: conversion traits.
+
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -13,15 +24,11 @@ pub use buffer::{Buffer, UnsizedBuffer};
 pub use repr::{AmxCell, AmxPrimitive, CellConvert};
 pub use string::AmxString;
 
-/// A reference to a cell in the [`Amx`].
+/// Typed pointer to a live cell in the AMX heap/data.
 ///
-/// # Notes
-/// This type implements [`Deref`] trait that allows you read or write to inner value (like smart pointers [`Box<T>`], [`Rc<T>`]).
-///
-/// [`Amx`]: ../amx/struct.Amx.html
-/// [`Deref`]: https://doc.rust-lang.org/std/ops/trait.Deref.html
-/// [`Box<T>`]: https://doc.rust-lang.org/std/boxed/struct.Box.html
-/// [`Rc<T>`]: https://doc.rust-lang.org/std/rc/struct.Rc.html
+/// Implements [`Deref`] and [`DerefMut`] for `T`, allowing reading and writing
+/// the cell directly (`*r`). The `'amx` lifetime ensures the `Ref` does not
+/// outlive its `Amx`, avoiding dangling pointers.
 pub struct Ref<'amx, T: Sized + AmxPrimitive> {
     amx_addr: i32,
     phys_addr: *mut T,
@@ -29,20 +36,23 @@ pub struct Ref<'amx, T: Sized + AmxPrimitive> {
 }
 
 impl<'amx, T: Sized + AmxPrimitive> Ref<'amx, T> {
-    /// Create a new wrapper over an AMX cell.
+    /// Creates a `Ref` from the (AMX address, physical address) pair, already resolved.
+    ///
+    /// Prefer obtaining `Ref` via [`Amx::get_ref`] or via automatic parsing of
+    /// native arguments — this direct API is the low-level path used
+    /// internally by the SDK.
     ///
     /// # Safety
-    /// `Ref<T>` **should** be alive as long as `phys_addr` or it will dangling pointer.
+    /// `phys_addr` must point to a live `T` cell for as long as this
+    /// `Ref` exists and must be aligned for `T` (debug asserts validate both
+    /// conditions in builds with `debug_assertions`).
     ///
-    /// It's not recomended to use directly, instead get a reference from [`Args`] or [`Amx::get_ref`].
-    ///
-    /// [`Args`]: ../args/struct.Args.html
-    /// [`Amx::get_ref`]: ../amx/struct.Amx.html#method.get_ref
+    /// [`Amx::get_ref`]: crate::amx::Amx::get_ref
     pub unsafe fn new(amx_addr: i32, phys_addr: *mut T) -> Ref<'amx, T> {
-        debug_assert!(!phys_addr.is_null(), "Ref::new() recebeu ponteiro nulo");
+        debug_assert!(!phys_addr.is_null(), "Ref::new() received null pointer");
         debug_assert!(
             (phys_addr as usize).is_multiple_of(std::mem::align_of::<T>()),
-            "Ref::new() recebeu ponteiro desalinhado para {}",
+            "Ref::new() received misaligned pointer for {}",
             std::any::type_name::<T>()
         );
         Ref {
@@ -52,29 +62,24 @@ impl<'amx, T: Sized + AmxPrimitive> Ref<'amx, T> {
         }
     }
 
-    /// Get an inner AMX address to cell (not physical).
+    /// Address of the cell in the AMX address space (not the physical pointer).
     ///
-    /// # Example
-    /// ```
-    /// # use samp_sdk::amx::Amx;
-    /// use samp_sdk::cell::Ref;
-    /// fn native_fn(amx: &Amx, arg: Ref<usize>) {
-    ///     let cell_addr = arg.address();
-    ///     println!("The argument stored in the {} cell.", cell_addr);
-    /// }
-    /// ```
+    /// This is the value the VM sees — useful when passing the cell back into
+    /// calls to other AMX functions.
     #[inline]
+    #[must_use]
     pub fn address(&self) -> i32 {
         self.amx_addr
     }
 
-    /// Get a pointer to a memory cell.
+    /// Physical (host) pointer to the cell.
     #[inline]
+    #[must_use]
     pub fn as_ptr(&self) -> *const T {
         self.phys_addr
     }
 
-    /// Get a mutable pointer to a memory cell.
+    /// Mutable physical pointer to the cell.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut T {
         self.phys_addr

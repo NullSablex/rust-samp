@@ -1,4 +1,14 @@
-//! String interperation inside an AMX.
+//! AMX strings: cell vector with `0` terminator.
+//!
+//! Pawn supports two binary representations:
+//!
+//! - **Unpacked**: 1 character per cell (4x memory usage, default).
+//! - **Packed**: 4 characters packed into each i32 cell (bits 31..24,
+//!   23..16, 15..8, 7..0). The first cell signals the mode if its value
+//!   exceeds [`MAX_UNPACKED`]; the SDK detects it automatically in [`to_bytes`].
+//!
+//! [`to_bytes`]: AmxString::to_bytes
+
 use std::cell::OnceCell;
 use std::fmt;
 use std::ops::Deref;
@@ -9,12 +19,15 @@ use crate::amx::Amx;
 use crate::encoding;
 use crate::error::AmxResult;
 
+/// Upper bound for the first cell of an unpacked string.
+///
+/// Values above this indicate a packed string (4 chars/cell).
 const MAX_UNPACKED: i32 = 0x00FF_FFFF;
 
-/// A wrapper around an AMX string (packed or unpacked).
+/// Native Pawn string — packed or unpacked.
 ///
-/// Implements [`Deref<Target = str>`] so you can use string methods directly
-/// without an explicit `.to_string()`:
+/// Implements [`Deref<Target = str>`], so `&str` methods are available
+/// directly, without `.to_string()`:
 ///
 /// ```no_run
 /// # use samp_sdk::cell::AmxString;
@@ -23,7 +36,6 @@ const MAX_UNPACKED: i32 = 0x00FF_FFFF;
 /// # struct Plugin;
 /// # impl Plugin {
 /// fn greet(&self, _amx: &Amx, name: AmxString) -> AmxResult<bool> {
-///     // Métodos de &str disponíveis diretamente via Deref
 ///     if name.starts_with("Admin") {
 ///         println!("Welcome, {}!", &*name);
 ///     }
@@ -32,26 +44,28 @@ const MAX_UNPACKED: i32 = 0x00FF_FFFF;
 /// # }
 /// ```
 ///
-/// The decoded string is computed lazily on first access and cached —
-/// repeated access has zero allocation cost.
+/// The decoded version (UTF-8 or Windows-1251 via the `encoding` feature) is
+/// computed on the first `Deref` call and cached — subsequent accesses
+/// return the `&str` without allocation.
 pub struct AmxString<'amx> {
     inner: Buffer<'amx>,
-    /// Real length of the string (character count, without null terminator).
     len: usize,
-    /// Lazily decoded string — computed on first Deref access.
     decoded: OnceCell<String>,
 }
 
 impl<'amx> AmxString<'amx> {
-    /// Create a new `AmxString` from an allocated buffer and fill it with raw bytes.
+    /// Creates an `AmxString` from an allocated buffer and copies `bytes` (1 byte
+    /// per cell) with a trailing `0` terminator.
     ///
     /// # Safety
-    /// `buffer` must be a valid allocation from the AMX heap with at least
-    /// `bytes.len() + 1` cells, and must remain valid for `'amx`.
+    /// `buffer` must have at least `bytes.len() + 1` cells and remain
+    /// alive for `'amx`.
+    #[must_use]
     pub unsafe fn new(mut buffer: Buffer<'amx>, bytes: &[u8]) -> AmxString<'amx> {
-        for (idx, byte) in bytes.iter().enumerate() {
-            buffer[idx] = i32::from(*byte);
-        }
+        buffer.as_mut_slice()[..bytes.len()]
+            .iter_mut()
+            .zip(bytes)
+            .for_each(|(cell, &byte)| *cell = i32::from(byte));
         buffer[bytes.len()] = 0;
 
         AmxString {
@@ -61,11 +75,10 @@ impl<'amx> AmxString<'amx> {
         }
     }
 
-    /// Internal constructor for tests and benchmarks — not a stable API.
-    ///
-    /// Creates an `AmxString` from a pre-filled buffer without writing bytes.
-    /// Useful for testing packed string parsing where the buffer is manually crafted.
+    /// Constructor for tests/benchmarks — assumes `inner` is already populated.
+    /// Not part of the stable API.
     #[doc(hidden)]
+    #[must_use]
     pub fn from_buffer_parts(inner: Buffer<'amx>, len: usize) -> AmxString<'amx> {
         AmxString {
             inner,
@@ -74,7 +87,11 @@ impl<'amx> AmxString<'amx> {
         }
     }
 
-    /// Convert the AMX string to a `Vec<u8>`.
+    /// Decodes the cells back into a `Vec<u8>`.
+    ///
+    /// Automatically detects packed (4 chars/cell) or unpacked (1 char/cell)
+    /// from the value of the first cell. Caps the read at 1 MiB to avoid
+    /// uncontrolled allocation if `len` is corrupted.
     pub fn to_bytes(&self) -> Vec<u8> {
         const MAX_STRING_LEN: usize = 1024 * 1024;
         let len = self.len.min(MAX_STRING_LEN);
@@ -82,74 +99,64 @@ impl<'amx> AmxString<'amx> {
 
         // packed string
         if self.inner[0] > MAX_UNPACKED {
-            let base = self.inner.as_ptr();
-            let max_cells = self.inner.len();
-            let mut ptr = base;
-            let mut mark = 3;
+            let cells = self.inner.as_slice();
+            let max_cells = cells.len();
+            let mut cell_idx = 0usize;
+            let mut mark = 3usize;
             for _ in 0..len {
-                let offset = unsafe { ptr.offset_from(base) } as usize;
-                if offset >= max_cells {
+                if cell_idx >= max_cells {
                     break;
                 }
-                let ch = (unsafe { *ptr } >> (mark * 8)) as u8;
+                // Byte extraction from a packed i32 cell — truncation is intentional.
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                let ch = (cells[cell_idx] >> (mark * 8)) as u8;
                 if ch == b'\0' {
                     break;
                 }
                 vec.push(ch);
                 mark = (mark + 3) % 4;
                 if mark == 3 {
-                    ptr = unsafe { ptr.add(1) };
-                    let new_offset = unsafe { ptr.offset_from(base) } as usize;
-                    if new_offset >= max_cells {
-                        break;
-                    }
+                    cell_idx += 1;
                 }
             }
         } else {
             for item in self.inner.iter().take(len) {
-                vec.push(*item as u8);
+                // An unpacked cell holds a single byte; truncation is intentional.
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                let byte = *item as u8;
+                vec.push(byte);
             }
         }
 
         vec
     }
 
-    /// Return the length of the string in characters (without null terminator).
+    /// String length in characters (excluding the `0` terminator).
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// Return `true` if the string is empty.
+    /// `true` if the string is empty.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    /// Return the length of the underlying buffer in cells.
+    /// Size of the underlying buffer in cells — always `>= len + 1`.
     pub fn bytes_len(&self) -> usize {
         self.inner.len()
     }
 
-    /// Returns a `&str` view of this string.
+    /// Explicit form of the `Deref` to `&str`.
     ///
-    /// Equivalent to `&*self` via [`Deref`], but more readable — especially
-    /// when passing to functions that expect `&str` and auto-deref doesn't
-    /// trigger due to a generic bound (e.g. `T: AsRef<str>`).
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use samp_sdk::cell::AmxString;
-    /// # fn connect(_addr: &str) {}
-    /// fn example(addr: AmxString) {
-    ///     connect(addr.as_str());          // explicit
-    ///     connect(&addr);                  // equivalent — auto-deref
-    /// }
-    /// ```
+    /// Useful when type inference does not trigger auto-deref (e.g. a generic
+    /// context with `T: AsRef<str>`).
     pub fn as_str(&self) -> &str {
-        self.deref()
+        self
     }
 }
 
-/// Decode raw bytes to a `String` using the configured encoding.
+/// Decodes the raw bytes using the configured encoding (UTF-8 by default;
+/// Windows-1251 etc. via the `encoding` feature).
 fn decode_bytes(bytes: &[u8]) -> String {
     #[cfg(feature = "encoding")]
     return encoding::get().decode(bytes).0.into_owned();
@@ -180,7 +187,8 @@ impl<'amx> AmxCell<'amx> for AmxString<'amx> {
 impl Deref for AmxString<'_> {
     type Target = str;
 
-    /// Returns the decoded string. Computed lazily on first access and cached.
+    /// Decodes on the first call and caches in [`OnceCell`] — subsequent
+    /// accesses return the same `&str` without allocation.
     fn deref(&self) -> &str {
         self.decoded.get_or_init(|| decode_bytes(&self.to_bytes()))
     }
@@ -193,57 +201,36 @@ impl fmt::Display for AmxString<'_> {
 }
 
 impl PartialEq<str> for AmxString<'_> {
-    /// Compare directly with a `&str` literal — no allocation needed.
-    ///
-    /// ```rust,no_run
-    /// # use samp_sdk::cell::AmxString;
-    /// # use samp_sdk::amx::Amx;
-    /// # use samp_sdk::error::AmxResult;
-    /// # struct P; impl P {
-    /// fn check(&self, _amx: &Amx, name: AmxString) -> AmxResult<bool> {
-    ///     Ok(name == "Admin")
-    /// }
-    /// # }
-    /// ```
+    /// Direct comparison with `&str` (`name == "Admin"`) — no extra allocation.
     fn eq(&self, other: &str) -> bool {
-        self.deref() == other
+        &**self == other
     }
 }
 
 impl PartialEq<&str> for AmxString<'_> {
     fn eq(&self, other: &&str) -> bool {
-        self.deref() == *other
+        &**self == *other
     }
 }
 
 impl PartialEq<String> for AmxString<'_> {
     fn eq(&self, other: &String) -> bool {
-        self.deref() == other.as_str()
+        &**self == other.as_str()
     }
 }
 
-/// Fill a buffer with a given string.
+/// Copies a Rust string into an AMX `Buffer` (1 byte per cell, `0`
+/// terminator at the end).
 ///
-/// Prefer [`Buffer::write_str`] for a more ergonomic API.
+/// Internal implementation shared by [`Buffer::write_str`] and
+/// [`UnsizedBuffer::write_str`] — the public API goes through them.
 ///
-/// # Example
-/// ```rust,no_run
-/// use samp_sdk::cell::Buffer;
-/// use samp_sdk::cell::string;
-/// # use samp_sdk::error::AmxResult;
-/// # use samp_sdk::amx::Amx;
+/// [`Buffer::write_str`]: crate::cell::buffer::Buffer::write_str
+/// [`UnsizedBuffer::write_str`]: crate::cell::buffer::UnsizedBuffer::write_str
 ///
-/// # fn main() -> AmxResult<()> {
-/// # let amx = Amx::new(std::ptr::null_mut(), 0);
-/// let allocator = amx.allocator();
-/// let mut buffer = allocator.allot_buffer(25)?;
-/// string::put_in_buffer(&mut buffer, "Hello, world!")?;
-/// #   Ok(())
-/// # }
-/// ```
 /// # Errors
-/// Returns `AmxError::General` when the string is longer than the buffer.
-pub fn put_in_buffer(buffer: &mut Buffer, string: &str) -> AmxResult<()> {
+/// `AmxError::General` if `string` (after encoding) is >= the buffer size.
+pub(crate) fn put_in_buffer(buffer: &mut Buffer, string: &str) -> AmxResult<()> {
     #[cfg(feature = "encoding")]
     let bytes = encoding::get().encode(string).0;
 
@@ -256,9 +243,10 @@ pub fn put_in_buffer(buffer: &mut Buffer, string: &str) -> AmxResult<()> {
         return Err(crate::error::AmxError::General);
     }
 
-    for (idx, byte) in bytes.iter().enumerate() {
-        buffer[idx] = i32::from(*byte);
-    }
+    buffer.as_mut_slice()[..bytes.len()]
+        .iter_mut()
+        .zip(bytes)
+        .for_each(|(cell, &byte)| *cell = i32::from(byte));
 
     buffer[bytes.len()] = 0;
 
@@ -276,7 +264,7 @@ mod tests {
         Buffer::new(r, len)
     }
 
-    // --- Strings unpacked (um byte por célula) ---
+    // --- Unpacked strings (one byte per cell) ---
 
     #[test]
     fn new_empty_string() {
@@ -305,7 +293,7 @@ mod tests {
         let mut data = vec![0i32; 32];
         let buf = make_buffer(&mut data);
         let s = unsafe { AmxString::new(buf, b"hello world") };
-        // Métodos de &str sem .to_string()
+        // &str methods without .to_string()
         assert!(s.contains("world"));
         assert!(s.starts_with("hello"));
         assert!(s.ends_with("world"));
@@ -318,12 +306,12 @@ mod tests {
         let mut data = vec![0i32; 16];
         let buf = make_buffer(&mut data);
         let s = unsafe { AmxString::new(buf, b"world") };
-        // OnceCell não foi inicializada ainda
+        // OnceCell has not been initialized yet
         assert!(s.decoded.get().is_none());
-        // Primeiro acesso via Deref → inicializa
+        // First access via Deref -> initializes
         let _ = &*s;
         assert!(s.decoded.get().is_some());
-        // Segundo acesso → mesmo ponteiro (cache hit)
+        // Second access -> same pointer (cache hit)
         let a = s.decoded.get().unwrap().as_ptr();
         let _ = &*s;
         let b = s.decoded.get().unwrap().as_ptr();
@@ -352,7 +340,11 @@ mod tests {
     #[test]
     fn unpacked_to_bytes_ascii() {
         let text = b"SA-MP Plugin";
-        let mut data: Vec<i32> = text.iter().map(|&b| b as i32).chain(std::iter::once(0)).collect();
+        let mut data: Vec<i32> = text
+            .iter()
+            .map(|&b| i32::from(b))
+            .chain(std::iter::once(0))
+            .collect();
         let buf = make_buffer(&mut data);
         let s = unsafe { AmxString::new(buf, text) };
         assert_eq!(s.to_bytes(), text);
@@ -367,14 +359,14 @@ mod tests {
         assert_eq!(&*s, "A");
     }
 
-    // --- Strings packed (4 bytes por célula) ---
+    // --- Packed strings (4 bytes per cell) ---
     //
-    // Bytes lidos de cada cell: bits[31..24], [23..16], [15..8], [7..0].
-    // "ABCD" → cell = 0x41424344, próxima cell = 0x00000000 (null)
+    // Bytes read from each cell: bits[31..24], [23..16], [15..8], [7..0].
+    // "ABCD" -> cell = 0x41424344, next cell = 0x00000000 (null)
 
     #[test]
     fn packed_four_chars_one_cell() {
-        let mut data = vec![0x41424344i32, 0x00000000i32];
+        let mut data = vec![0x4142_4344i32, 0x0000_0000i32];
         let buf = make_buffer(&mut data);
         let s = AmxString::from_buffer_parts(buf, 4);
         assert_eq!(s.to_bytes(), b"ABCD");
@@ -383,8 +375,8 @@ mod tests {
 
     #[test]
     fn packed_five_chars_two_cells() {
-        // "ABCDE": 4 chars em cell[0], 1 em cell[1]
-        let mut data = vec![0x41424344i32, 0x45000000i32, 0x00000000i32];
+        // "ABCDE": 4 chars in cell[0], 1 in cell[1]
+        let mut data = vec![0x4142_4344i32, 0x4500_0000i32, 0x0000_0000i32];
         let buf = make_buffer(&mut data);
         let s = AmxString::from_buffer_parts(buf, 5);
         assert_eq!(s.to_bytes(), b"ABCDE");
@@ -393,7 +385,7 @@ mod tests {
 
     #[test]
     fn packed_truncates_at_len() {
-        let mut data = vec![0x41424344i32, 0x00000000i32];
+        let mut data = vec![0x4142_4344i32, 0x0000_0000i32];
         let buf = make_buffer(&mut data);
         let s = AmxString::from_buffer_parts(buf, 2);
         assert_eq!(s.to_bytes(), b"AB");
@@ -401,8 +393,8 @@ mod tests {
 
     #[test]
     fn packed_stops_at_null_byte() {
-        // "AB\0D" → para em \0, retorna "AB"
-        let mut data = vec![0x41420044i32, 0x00000000i32];
+        // "AB\0D" -> stops at \0, returns "AB"
+        let mut data = vec![0x4142_0044i32, 0x0000_0000i32];
         let buf = make_buffer(&mut data);
         let s = AmxString::from_buffer_parts(buf, 4);
         assert_eq!(s.to_bytes(), b"AB");
@@ -423,7 +415,7 @@ mod tests {
         let mut data = vec![0i32; 16];
         let buf = make_buffer(&mut data);
         let s = unsafe { AmxString::new(buf, b"rust") };
-        // Ambos acionam o mesmo OnceCell — mesmo ponteiro de &str
+        // Both trigger the same OnceCell — same &str pointer
         let a: &str = s.as_str();
         let b: &str = &s;
         assert_eq!(a.as_ptr(), b.as_ptr());
@@ -476,8 +468,8 @@ mod tests {
         let mut data = vec![0i32; 16];
         let mut buf = make_buffer(&mut data);
         put_in_buffer(&mut buf, "hello").unwrap();
-        assert_eq!(buf[0], b'h' as i32);
-        assert_eq!(buf[4], b'o' as i32);
+        assert_eq!(buf[0], i32::from(b'h'));
+        assert_eq!(buf[4], i32::from(b'o'));
         assert_eq!(buf[5], 0);
     }
 

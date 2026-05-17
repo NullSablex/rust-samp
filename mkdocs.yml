@@ -1,0 +1,106 @@
+site_name: rust-samp
+site_description: Complete guide to building SA-MP and Open Multiplayer plugins with Rust
+site_author: NullSablex
+site_url: https://nullsablex.github.io/rust-samp/
+
+repo_name: NullSablex/rust-samp
+repo_url: https://github.com/NullSablex/rust-samp
+edit_uri: edit/master/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: orange
+      toggle:
+        icon: material/weather-night
+        name: Dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: orange
+      toggle:
+        icon: material/weather-sunny
+        name: Light theme
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Permanent link
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: introduction.md
+  - Getting Started:
+      - Setup and Installation: setup.md
+      - Your First Plugin: first-plugin.md
+  - Concepts:
+      - Anatomy of a Plugin: plugin-anatomy.md
+      - Open Multiplayer Support: omp-native.md
+      - Native Functions: natives.md
+      - The Amx Type: amx-types.md
+      - Calling Pawn from Rust: exec-public.md
+  - Working with Data:
+      - Cells and Memory: cells-and-memory.md
+      - String Encoding: encoding.md
+      - Error Handling: error-handling.md
+  - Development:
+      - Logging and Debug: logging.md
+      - Diagnostics: diagnostics.md
+      - Build Scripts: build-scripts.md
+      - Advanced Examples: advanced-examples.md
+  - Reference:
+      - Migration Guide: migration.md
+      - API Reference: api-reference.md
+  - Internals:
+      - Open Multiplayer ABI: internals/omp-abi.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/NullSablex/rust-samp

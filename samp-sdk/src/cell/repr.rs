@@ -1,13 +1,27 @@
-//! A module to discribe how AMX cells work.
+//! Conversion between Rust types and AMX cells (raw i32).
+
 use crate::amx::Amx;
 use crate::error::{AmxError, AmxResult};
 
-/// AmxCell trait is a core trait of whole SDK.
-/// It shows that value can be borrowed (or copied if it's a primitive) from AMX and passed to it.
+/// Conversion to/from an AMX cell in the context of a live VM.
+///
+/// This is the centerpiece of natives: `T: AmxCell` arguments are parsed via
+/// [`from_raw`] from the parameter array, and return values serialized
+/// via [`as_cell`] to the output slot. Complex types (strings, buffers, refs)
+/// rely on `&Amx` to resolve relative addresses.
+///
+/// [`from_raw`]: AmxCell::from_raw
+/// [`as_cell`]: AmxCell::as_cell
 pub trait AmxCell<'amx>
 where
     Self: Sized,
 {
+    /// Reconstructs the value from a raw AMX cell.
+    ///
+    /// # Errors
+    /// `AmxError::General` in the default implementation (use the concrete
+    /// impls); specific implementations may return `AmxError::MemoryAccess`
+    /// if the address is invalid, or other variants for decode failures.
     fn from_raw(_amx: &'amx Amx, _cell: i32) -> AmxResult<Self>
     where
         Self: 'amx,
@@ -15,47 +29,40 @@ where
         Err(AmxError::General)
     }
 
-    /// Get a value which can be passed to AMX.
     fn as_cell(&self) -> i32;
 }
 
-/// A marker showing that a value can be stored directly on a stack or a heap of an AMX.
+/// Marker: the value fits in a single AMX cell (32 bits) and can be
+/// stored directly in the VM stack/heap without indirection.
 ///
-/// Types: i8, u8, i16, u16, i32, u32, usize, isize, f32, bool
-///
-/// There is no values that's bigger than 4 bytes, because size of an AMX cell is 32 bits.
+/// Implemented for `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `usize`, `isize`,
+/// `f32` and `bool`.
 ///
 /// # Safety
-/// Must only be implemented for types that fit within a single 32-bit AMX cell.
+/// Only implement for types that fit in 32 bits — the SDK assumes this when
+/// copying bytes from the cell. Larger types corrupt the VM memory.
 pub unsafe trait AmxPrimitive
 where
     Self: Sized,
 {
 }
 
-/// Converts between a Rust type and a raw 32-bit AMX cell value.
+/// Conversion between Rust and an AMX cell (`i32`) without needing `&Amx`.
 ///
-/// Unlike [`AmxCell`], this trait does not require an [`Amx`] context, making it
-/// suitable for bulk array operations on [`Buffer`] without an AMX reference.
+/// Difference vs [`AmxCell`]: this trait operates on standalone values, ideal
+/// for bulk operations over [`Buffer`] (each element is an independent cell).
 ///
-/// # When to use each trait
+/// | Trait | When to use | Needs `&Amx`? |
+/// |-------|-------------|--------------------|
+/// | [`AmxCell`] | Argument of a `#[native]` | Yes (for complex types) |
+/// | `CellConvert` | Element of a [`Buffer`] | No |
 ///
-/// | Trait | Use case | Needs `&Amx`? |
-/// |-------|----------|--------------|
-/// | [`AmxCell`] | Argument of a `#[native]` function | Yes (for complex types) |
-/// | `CellConvert` | Element of a `Buffer` array | No |
-///
-/// > **You rarely need to import or implement `CellConvert` directly.**
-/// > The common entry point is [`Buffer::get_as`] and [`Buffer::set_as`],
-/// > which use this trait internally.
-///
-/// Implemented for all primitive types supported by the AMX VM:
-/// `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `usize`, `isize`, `f32`, `bool`.
+/// Rarely needs to be imported/implemented directly — [`Buffer::get_as`] and
+/// [`Buffer::set_as`] already consume this trait.
 ///
 /// # Example
 /// ```rust,no_run
 /// # use samp_sdk::cell::Buffer;
-/// // No need to import CellConvert — just call the methods on Buffer
 /// fn scale_floats(buf: &mut Buffer, factor: f32) {
 ///     for i in 0..buf.len() {
 ///         if let Some(v) = buf.get_as::<f32>(i) {
@@ -68,11 +75,11 @@ where
 /// [`Buffer::get_as`]: crate::cell::Buffer::get_as
 /// [`Buffer::set_as`]: crate::cell::Buffer::set_as
 /// [`Buffer`]: crate::cell::Buffer
-/// [`Amx`]: crate::amx::Amx
 pub trait CellConvert: Sized {
-    /// Decode a raw AMX cell into this type.
+    /// Decodes a raw `i32` into the Rust type.
     fn from_cell(raw: i32) -> Self;
-    /// Encode this value as a raw AMX cell.
+
+    /// Encodes the value as a raw cell.
     fn into_cell(self) -> i32;
 }
 
@@ -88,8 +95,18 @@ impl<'a, T: AmxCell<'a>> AmxCell<'a> for &'a mut T {
     }
 }
 
+// The `as` cast is intentional: the AMX VM uses `i32` cells for every
+// primitive type, so truncation/sign-extension/lossless casts follow the
+// Pawn ABI (e.g. a Pawn `byte` lives in an i32 cell and truncates to u8 on read).
+// `try_into` would add error handling in a hot path with no semantic gain.
 macro_rules! impl_for_primitive {
     ($type:ty) => {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            clippy::cast_sign_loss,
+            clippy::cast_lossless
+        )]
         impl AmxCell<'_> for $type {
             fn from_raw(_amx: &Amx, cell: i32) -> AmxResult<Self> {
                 Ok(cell as Self)
@@ -100,6 +117,12 @@ macro_rules! impl_for_primitive {
             }
         }
 
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            clippy::cast_sign_loss,
+            clippy::cast_lossless
+        )]
         impl CellConvert for $type {
             #[inline]
             fn from_cell(raw: i32) -> Self {
@@ -125,9 +148,14 @@ impl_for_primitive!(u32);
 impl_for_primitive!(usize);
 impl_for_primitive!(isize);
 
+// `cell as u32`: bit-for-bit reinterpretation of the i32 coming from the AMX
+// VM, required by `f32::from_bits`. Sign-loss here is the goal (i32 and u32
+// share the same bit pattern for the same cell content).
 impl AmxCell<'_> for f32 {
     fn from_raw(_amx: &Amx, cell: i32) -> AmxResult<f32> {
-        Ok(f32::from_bits(cell as u32))
+        #[allow(clippy::cast_sign_loss)]
+        let bits = cell as u32;
+        Ok(f32::from_bits(bits))
     }
 
     fn as_cell(&self) -> i32 {
@@ -138,7 +166,9 @@ impl AmxCell<'_> for f32 {
 impl CellConvert for f32 {
     #[inline]
     fn from_cell(raw: i32) -> Self {
-        f32::from_bits(raw as u32)
+        #[allow(clippy::cast_sign_loss)]
+        let bits = raw as u32;
+        f32::from_bits(bits)
     }
 
     #[inline]
@@ -149,7 +179,8 @@ impl CellConvert for f32 {
 
 impl AmxCell<'_> for bool {
     fn from_raw(_amx: &Amx, cell: i32) -> AmxResult<bool> {
-        // just to be sure that boolean value will be correct I don't use there `std::mem::transmute` or `as` keyword.
+        // Explicit comparison instead of `transmute` or `as bool`: any non-zero
+        // value counts as `true`, mirroring the `if (val)` behavior in C.
         Ok(cell != 0)
     }
 
@@ -188,8 +219,12 @@ mod tests {
     fn f32_as_cell_preserves_bits() {
         for v in [0.0f32, 1.0, -1.0, 42.5, f32::MAX, f32::MIN, f32::EPSILON] {
             let cell = v.as_cell();
-            let recovered = f32::from_bits(cell as u32);
-            assert_eq!(v, recovered, "f32 {v} não preservou bits");
+            let recovered = f32::from_bits(cell.cast_unsigned());
+            assert_eq!(
+                v.to_bits(),
+                recovered.to_bits(),
+                "f32 {v} did not preserve bits"
+            );
         }
     }
 

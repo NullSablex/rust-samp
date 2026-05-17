@@ -1,7 +1,14 @@
-//! Default AMX constants.
+//! SA-MP ABI constants: plugin flags, offsets of the server's exports table
+//! and internal AMX VM flags. Values identical to those in the C header.
+
 use bitflags::bitflags;
 
 bitflags! {
+    /// Capabilities advertised by the plugin in the `Supports()` export.
+    ///
+    /// The server reads this bitfield when loading the `.dll`/`.so` and decides
+    /// which callbacks to fire (e.g. `ProcessTick` is only called if `PROCESS_TICK`
+    /// is present).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Supports: u32 {
         const VERSION = 512;
@@ -10,7 +17,10 @@ bitflags! {
     }
 }
 
-/// Offsets
+/// Offsets within the `ppData` table passed to `Load(void**)`.
+///
+/// The server exposes pointers to utility functions (`logprintf`) and to the
+/// AMX function table at these fixed indices.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ServerData {
     Logprintf = 0,
@@ -26,6 +36,7 @@ impl From<ServerData> for isize {
 }
 
 bitflags! {
+    /// Flags from the `.amx` header — `AMX::flags` in the C header.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct AmxFlags: u16 {
         const DEBUG = 0x02;
@@ -39,7 +50,11 @@ bitflags! {
     }
 }
 
-/// Index of an AMX function in memory.
+/// Identifier of the public function to execute via `amx_Exec`.
+///
+/// The values `-1` (entry point `main`) and `-2` (continue suspended execution)
+/// are sentinels reserved by the VM. Indices >= 0 refer to public functions
+/// resolved via `amx_FindPublic`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AmxExecIdx {
     Main,

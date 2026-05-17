@@ -1,0 +1,44 @@
+# export-ignore — what to exclude from `git archive` output.
+#
+# Applies to:
+#   - The "Source code (zip/tar.gz)" assets GitHub generates automatically
+#     on every release/tag.
+#   - Any local `git archive` invocation.
+#
+# Does NOT affect the SDK source tarball uploaded by
+# `.github/workflows/release.yml` — that one uses an explicit `tar` allowlist
+# and is restricted to `samp/`, `samp-sdk/`, `samp-codegen/`, `Cargo.toml`,
+# `Cargo.lock`, and `LICENSE`.
+
+# Documentation site (MkDocs) — source pages and the build configuration.
+/docs/                  export-ignore
+/mkdocs.yml             export-ignore
+
+# Repository housekeeping — historical changelog, roadmap, migration guide.
+/CHANGELOG.md           export-ignore
+/changelog/             export-ignore
+/ROADMAP.md             export-ignore
+/migration.md           export-ignore
+
+# Examples — useful for the GitHub UI, not part of the SDK distribution.
+/examples/              export-ignore
+
+# Build / CI scaffolding.
+/scripts/               export-ignore
+/.github/               export-ignore
+
+# Working notes — never part of an archive.
+/notes/                 export-ignore
+
+# Repository-only metadata.
+/.gitattributes         export-ignore
+/.gitignore             export-ignore
+
+# Normalize line endings — protects shell scripts on Windows checkouts.
+*               text=auto eol=lf
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.svg           text
