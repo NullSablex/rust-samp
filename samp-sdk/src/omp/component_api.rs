@@ -130,10 +130,20 @@ mod tests {
         })
     }
 
+    // The mock functions MUST match the calling convention declared in
+    // `ComponentNameFn` / `ComponentVersionFn` (cfg-gated by ABI). Declaring
+    // them `extern "C"` on MSVC causes a STATUS_ACCESS_VIOLATION because the
+    // call site is built for `thiscall` (this in ECX, callee cleans the
+    // stack with `ret 4`) and reads `out` from the wrong stack slot.
+
+    #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn unused() {}
+    #[cfg(target_env = "msvc")]
+    unsafe extern "thiscall" fn unused() {}
 
     static MOCK_NAME_BYTES: &[u8] = b"test-comp";
 
+    #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn mock_name(
         _this: *mut ServerComponent,
         out: *mut StringView,
@@ -147,7 +157,33 @@ mod tests {
         out
     }
 
+    #[cfg(target_env = "msvc")]
+    unsafe extern "thiscall" fn mock_name(
+        _this: *mut ServerComponent,
+        out: *mut StringView,
+    ) -> *mut StringView {
+        unsafe {
+            *out = StringView {
+                data: MOCK_NAME_BYTES.as_ptr(),
+                len: MOCK_NAME_BYTES.len(),
+            };
+        }
+        out
+    }
+
+    #[cfg(not(target_env = "msvc"))]
     unsafe extern "C" fn mock_version(
+        _this: *mut ServerComponent,
+        out: *mut SemanticVersion,
+    ) -> *mut SemanticVersion {
+        unsafe {
+            *out = SemanticVersion::new(2, 7, 3);
+        }
+        out
+    }
+
+    #[cfg(target_env = "msvc")]
+    unsafe extern "thiscall" fn mock_version(
         _this: *mut ServerComponent,
         out: *mut SemanticVersion,
     ) -> *mut SemanticVersion {
