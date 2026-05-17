@@ -206,32 +206,49 @@ jobs:
           fi
         } >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Assemble PR comment body
+    - name: Fetch previous bench comment (if any)
+      if: github.event_name == 'pull_request'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      shell: bash
+      run: |
+        # The sticky-pull-request-comment action tags its comment with the
+        # marker below. We use the same marker to locate the prior comment
+        # and extract the previous run's bench data from it.
+        STICKY_TAG="<!-- Sticky Pull Request Commentbench-report -->"
+        gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+          --paginate \
+          --jq ".[] | select(.body | contains(\"$STICKY_TAG\")) | .body" \
+          > previous_comment.md || true
+        if [ -s previous_comment.md ]; then
+          echo "Previous bench comment found ($(wc -c < previous_comment.md) bytes)."
+        else
+          echo "No previous bench comment on this PR yet — first run."
+        fi
+
+    - name: Build PR comment body
       if: github.event_name == 'pull_request'
       shell: bash
       run: |
-        {
-          echo "## Benchmark results"
-          echo ""
-          echo "Comparison of this PR against the previous \`master\` baseline."
-          echo "Run: [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          echo ""
-          if [ -f bench_report.md ]; then
-            # Drop the standalone "# Benchmark Report" header — the section
-            # already gets its own `##` header above.
-            tail -n +2 bench_report.md
-            echo ""
-          fi
-          if [ -f bench-entry.json ]; then
-            echo "<details><summary>Raw per-benchmark numbers</summary>"
-            echo ""
-            python3 scripts/render-bench-entry.py
-            echo ""
-            echo "</details>"
-          fi
-        } > pr_comment.md
-        echo "Comment body ($(wc -l < pr_comment.md) lines):"
-        head -50 pr_comment.md
+        # For PR builds, github.ref_name is "<num>/merge" — turn it into
+        # something more legible like "#5 (head_ref)".
+        PR_NUM="${{ github.event.pull_request.number }}"
+        PR_REF="${{ github.event.pull_request.head.ref }}"
+        VERSION="#${PR_NUM} (${PR_REF})"
+        SHA="${{ github.event.pull_request.head.sha }}"
+        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+        python3 scripts/build-bench-comment.py \
+          --current bench-entry.json \
+          --previous previous_comment.md \
+          --version "$VERSION" \
+          --sha "$SHA" \
+          --run-url "$RUN_URL" \
+          --output pr_comment.md
+
+        echo "::group::Comment preview (first 40 lines)"
+        head -40 pr_comment.md
+        echo "::endgroup::"
 
     - name: Post / update bench comment on the PR
       if: github.event_name == 'pull_request'
