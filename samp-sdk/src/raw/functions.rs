@@ -1,9 +1,25 @@
+//! Aliases for the function pointers exposed by the SA-MP server.
+//!
+//! Each type here corresponds to an entry in the server's `amx_Exports` table;
+//! the offset is read in [`crate::exports`]. We resolve each function on demand
+//! in [`crate::amx::Amx`] instead of storing every pointer — most calls
+//! never happen in a typical plugin.
+//!
+//! `Logprintf` at the end of the file comes from another table (`ppData` of `Load()`),
+//! not from `amx_Exports`.
+
 use super::types::{AMX, AMX_NATIVE_INFO};
 use std::ffi::c_void;
 
+/// Native function exposed by a plugin — invoked by the AMX VM on every call
+/// to it from the Pawn script.
 pub type AmxNative = extern "C" fn(*mut AMX, params: *mut i32) -> i32;
+
+/// Generic callback used by `amx_SetCallback` to intercept calls.
 pub type AmxCallback =
     extern "C" fn(*mut AMX, index: i32, result: *mut i32, params: *mut i32) -> i32;
+
+/// Debug hook installed via `amx_SetDebugHook`.
 pub type AmxDebug = extern "C" fn(*mut AMX) -> i32;
 
 pub type Align16 = extern "C" fn(*mut u16) -> *mut u16;
@@ -50,4 +66,4 @@ pub type UTF8Get = extern "C" fn(*const i8, *mut *const i8, *mut i32) -> i32;
 pub type UTF8Len = extern "C" fn(*const i32, *mut i32) -> i32;
 pub type UTF8Put = extern "C" fn(*mut i8, *mut *mut i8, i32, i32) -> i32;
 
-pub type Logprintf = extern "C" fn(*const i8, ...);
+pub type Logprintf = extern "C" fn(*const i8);

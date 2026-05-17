@@ -1,0 +1,98 @@
+name: Benchmark (Release)
+
+# Tier 1: per-release benchmark history.
+# Runs on `v*` tag push or manual dispatch. Appends a single entry to
+# `bench-history.json` on the `bench-data` branch — the MkDocs `Benchmarks`
+# page (ECharts) consumes this file directly.
+#
+# Per-commit feedback (Tier 2) lives in `rust.yml::bench` and is NOT touched
+# here: this workflow never overwrites the master critcmp baseline cache.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push to the bench-data branch
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+          prefix-key: "v1-bench-release"
+
+      - name: Run benchmarks
+        run: cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- --measurement-time 10
+
+      - name: Resolve version label
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "label=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "label=manual-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract bench entry
+        env:
+          VERSION: ${{ steps.ver.outputs.label }}
+          GIT_SHA: ${{ github.sha }}
+        run: python3 scripts/extract-bench.py
+
+      - name: Append to bench-data branch
+        env:
+          VERSION: ${{ steps.ver.outputs.label }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+
+          # Make a clean worktree pointing at bench-data (or create orphan).
+          if git ls-remote --exit-code --heads origin bench-data >/dev/null; then
+            git fetch origin bench-data
+            git worktree add /tmp/bench-data bench-data
+          else
+            git worktree add --detach /tmp/bench-data HEAD
+            git -C /tmp/bench-data checkout --orphan bench-data
+            git -C /tmp/bench-data rm -rf . >/dev/null 2>&1 || true
+            echo "[]" > /tmp/bench-data/bench-history.json
+          fi
+
+          cp bench-entry.json /tmp/bench-data/bench-entry.json
+          cp scripts/append-bench-history.py /tmp/bench-data/append-bench-history.py
+          cd /tmp/bench-data
+          python3 append-bench-history.py
+          rm -f bench-entry.json append-bench-history.py
+
+          git add bench-history.json
+          if git diff --cached --quiet; then
+            echo "no change to history — skipping commit"
+            exit 0
+          fi
+          git commit -m "bench: record ${VERSION}"
+          git push origin bench-data
+
+      - name: Upload raw criterion output
+        uses: actions/upload-artifact@v7
+        with:
+          name: criterion-${{ steps.ver.outputs.label }}
+          path: target/criterion/
+          retention-days: 90

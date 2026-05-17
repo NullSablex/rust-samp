@@ -4,7 +4,12 @@ members = [
     "samp-codegen",
     "samp-sdk",
     "samp",
-    "plugin-example",
-    "example-hello",
-    "example-counter",
+    "examples/hello",
+    "examples/counter",
+    "examples/advanced",
 ]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

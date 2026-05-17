@@ -1,13 +1,19 @@
-//! Work with AMX errors.
+//! Errors emitted by the AMX VM and the SA-MP `amx_*` functions.
+//!
+//! Codes correspond 1:1 to the `AMX_ERR_*` values from the original C header.
+//! Codes outside the known range (including 0 = success interpreted as
+//! failure in context) become [`AmxError::Unknown`] to avoid panicking.
+
 use std::error::Error;
 use std::fmt::{self, Display};
 
-/// A specialized [`Result`] type for operations on AMX.
-///
-/// [`Result`]: https://doc.rust-lang.org/std/result/enum.Result.html
+/// Shortcut for `Result<T, AmxError>`.
 pub type AmxResult<T> = Result<T, AmxError>;
 
-/// Error type returned by AMX functions (origin amx_*).
+/// Error returned by calls to SA-MP `amx_*` functions.
+///
+/// Built via `AmxError::from(code)` from the `i32` returned by the FFI;
+/// implements [`Display`] with English messages equivalent to the original C.
 #[derive(Debug)]
 pub enum AmxError {
     Exit = 1,
@@ -41,6 +47,10 @@ pub enum AmxError {
 
 impl Display for AmxError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Intentional wildcard: the match covers every variant; importing one
+        // by one would be noisy and would break silently when a new variant
+        // is added to the enum.
+        #[allow(clippy::enum_glob_use)]
         use self::AmxError::*;
 
         match self {
@@ -62,7 +72,7 @@ impl Display for AmxError {
             Version => write!(f, "File is for a newer version of AMX"),
             NotFound => write!(f, "Function not found"),
             Index => write!(f, "Invalid index parameter (bad entry point)"),
-            Debug => write!(f, "Debbuger cannot run"),
+            Debug => write!(f, "Debugger cannot run"),
             Init => write!(f, "AMX not initialize"),
             UserData => write!(f, "Unable to set user data field"),
             InitJit => write!(f, "Cannot initialize the JIT"),
@@ -151,7 +161,7 @@ mod tests {
             assert_eq!(
                 format!("{err:?}"),
                 expected_name,
-                "código {code} deveria mapear para {expected_name}"
+                "code {code} should map to {expected_name}"
             );
         }
     }
@@ -161,7 +171,7 @@ mod tests {
         for code in [0, 14, 15, 29, 100, -1, i32::MAX] {
             assert!(
                 matches!(AmxError::from(code), AmxError::Unknown),
-                "código {code} deveria ser Unknown"
+                "code {code} should be Unknown"
             );
         }
     }
@@ -178,7 +188,7 @@ mod tests {
 
         for err in errors {
             let msg = format!("{err}");
-            assert!(!msg.is_empty(), "{err:?} tem mensagem vazia");
+            assert!(!msg.is_empty(), "{err:?} has empty message");
         }
     }
 
@@ -211,6 +221,9 @@ mod tests {
         let result: AmxResult<i32> = Err(AmxError::General);
         assert!(result.is_err());
         let err = AmxError::General;
-        assert_eq!(format!("{err}"), "General error (unknown or unspecific error)");
+        assert_eq!(
+            format!("{err}"),
+            "General error (unknown or unspecific error)"
+        );
     }
 }

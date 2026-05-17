@@ -1,0 +1,14 @@
+[package]
+name = "hello"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+samp = { path = "../../samp" }
+
+[package.metadata.samp]
+uid = "0x6ce26e5eedb55087"

@@ -1,0 +1,44 @@
+# Labels for the rust-samp repository
+# Automatically synchronized via .github/workflows/labels.yml
+
+# --- Change type (used by release-drafter) ---
+- name: feat
+  color: "0075ca"
+  description: "New feature"
+
+- name: fix
+  color: "d73a4a"
+  description: "Bug fix"
+
+- name: docs
+  color: "0075ca"
+  description: "Documentation"
+
+- name: chore
+  color: "e4e669"
+  description: "Internal maintenance (no user-facing impact)"
+
+- name: ci
+  color: "e4e669"
+  description: "CI/CD and infrastructure"
+
+- name: refactor
+  color: "a2eeef"
+  description: "Refactor without behavior changes"
+
+- name: deps
+  color: "0075ca"
+  description: "Dependency updates"
+
+# --- Semantic version (used by release-drafter to resolve the next version) ---
+- name: major
+  color: "b60205"
+  description: "Breaking change (major bump)"
+
+- name: minor
+  color: "0e8a16"
+  description: "Compatible new feature (minor bump)"
+
+- name: patch
+  color: "1d76db"
+  description: "Small fix or improvement (patch bump)"

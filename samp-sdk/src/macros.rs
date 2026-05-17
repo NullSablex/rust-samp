@@ -1,54 +1,49 @@
-/// Execute a public AMX function by name.
+/// Executes an AMX public function by name.
 ///
-/// # Notes
-/// Function input arguments should implement `AmxCell` except *Rust* strings and slices.
-///
-/// To pass a Rust string there is the next syntax - `variable_name => string`, for array `variable_name => array`.
-///
-/// In this case inside the macro memory will be allocated for them and auto-released when the public will be executed.
+/// Resolves the function index via `amx_FindPublic` and pushes the arguments
+/// before invoking `amx_Exec`. Types implementing `AmxCell` are passed directly.
+/// Rust strings and slices use alternative syntax (`expr => string` / `=> array`):
+/// the macro allocates memory on the AMX heap, copies the content, and releases
+/// everything when the `Allocator` goes out of scope.
 ///
 /// # Examples
-/// Simple execution.
+///
+/// Without arguments:
 /// ```rust,no_run
 /// use samp_sdk::exec_public;
 /// # use samp_sdk::amx::Amx;
-/// #
 /// # let amx_owned = Amx::new(std::ptr::null_mut(), 0);
 /// # let amx = &amx_owned;
-///
 /// exec_public!(amx, "SomePublicFunction");
 /// ```
 ///
-/// With arguments that implement `AmxCell`.
+/// With arguments that implement `AmxCell`:
 /// ```rust,no_run
 /// use samp_sdk::exec_public;
 /// # use samp_sdk::amx::Amx;
 /// # use samp_sdk::cell::{AmxString, UnsizedBuffer, Ref};
 /// # use samp_sdk::error::AmxResult;
-///
-/// // native:CallPublic(const publicname[], const string[], buffer[], length, &someref);
+/// // native CallPublic(const publicname[], const string[], buffer[], length, &someref);
 /// fn call_public(amx: &Amx, pub_name: AmxString, string: AmxString, buffer: UnsizedBuffer, size: usize, reference: Ref<usize>) -> AmxResult<bool> {
 ///     let buffer = buffer.into_sized_buffer(size);
 ///     let public_name = pub_name.to_string();
-///
 ///     exec_public!(amx, &public_name, string, buffer, reference);
 ///     Ok(true)
 /// }
 /// ```
-/// And with Rust strings and slices.
+///
+/// With Rust strings and slices (automatic allocation on the AMX heap):
 /// ```rust,no_run
 /// use samp_sdk::exec_public;
 /// # use samp_sdk::amx::Amx;
 /// # use samp_sdk::cell::{AmxString, UnsizedBuffer, Ref};
 /// # use samp_sdk::error::AmxResult;
-///
-/// // native:CallPublic(const publicname[], const string[]);
+/// // native CallPublic(const publicname[], const string[]);
 /// fn call_public(amx: &Amx, pub_name: AmxString, string: AmxString) -> AmxResult<bool> {
 ///     let public_name = pub_name.to_string();
 ///     let rust_string = "hello!";
 ///     let owned_string = "another hello!".to_string();
 ///     let rust_array = vec![1, 2, 3, 4, 5];
-///
 ///     exec_public!(amx, &public_name, string, rust_string => string, &owned_string => string, &rust_array => array);
 ///     Ok(true)
 /// }

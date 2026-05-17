@@ -1,11 +1,15 @@
-//! samp is a toolkit to develop SA:MP server plugins in Rust.
+//! Rust toolkit for developing SA-MP plugins and native Open Multiplayer components.
 //!
-//! # Estrutura
-//! * `samp` — glue entre os crates abaixo (é o que você precisa).
-//! * `samp-codegen` — gera `extern "C"` e cuida do lado feio.
-//! * `samp-sdk` — todos os tipos para interagir com a VM AMX.
+//! # Workspace structure
 //!
-//! # Uso mínimo
+//! - `samp` — main crate; re-exports SDK + codegen and exposes the API the plugin uses.
+//! - `samp-codegen` — proc macros (`#[native]`, `initialize_plugin!`,
+//!   `#[derive(SampPlugin)]`) that generate FFI entry points and argument parsing.
+//! - `samp-sdk` — low-level bindings for the AMX VM (SA-MP) and for the component
+//!   ABI (Open Multiplayer).
+//!
+//! # Minimal `Cargo.toml` setup
+//!
 //! ```toml
 //! [lib]
 //! crate-type = ["cdylib"]
@@ -14,39 +18,38 @@
 //! samp = { git = "https://github.com/NullSablex/rust-samp" }
 //! ```
 //!
-//! # Exemplo
-//! ```rust,no_run
+//! # Plugin example
+//!
+//! ```rust,ignore
 //! use samp::prelude::*;
 //! use samp::{native, initialize_plugin, SampPlugin};
 //!
-//! // #[derive(SampPlugin)] gera impl SampPlugin para structs sem overrides
 //! #[derive(SampPlugin, Default)]
 //! struct MyPlugin;
 //!
 //! impl MyPlugin {
 //!     #[native(name = "Greet")]
-//!     fn greet(&mut self, _amx: &Amx, name: AmxString) -> AmxResult<bool> {
-//!         // Deref<Target=str> — métodos de &str disponíveis diretamente
+//!     fn greet(&mut self, _amx: &Amx, name: &AmxString) -> AmxResult<bool> {
 //!         if name.starts_with("Admin") {
-//!             println!("[VIP] Bem-vindo, {}!", &*name);
+//!             println!("[VIP] Welcome, {}!", &**name);
 //!         } else {
-//!             println!("Olá, {}!", &*name);
+//!             println!("Hello, {}!", &**name);
 //!         }
 //!         Ok(true)
 //!     }
 //! }
 //!
-//! // Forma curta: usa Default::default() como construtor
+//! // Short form — default constructor via Default::default().
 //! initialize_plugin!(
 //!     type: MyPlugin,
 //!     natives: [MyPlugin::greet],
 //! );
 //!
-//! // Forma completa (quando precisa de lógica no construtor):
+//! // Full form when there is setup in the constructor (logger, tick, etc):
 //! // initialize_plugin!(
 //! //     natives: [MyPlugin::greet],
 //! //     {
-//! //         samp::plugin::enable_process_tick();
+//! //         samp::plugin::enable_tick();
 //! //         return MyPlugin;
 //! //     }
 //! // );
@@ -55,14 +58,21 @@
 pub mod amx;
 #[doc(hidden)]
 pub mod interlayer;
+#[cfg(not(feature = "samp-only"))]
+pub(crate) mod macros;
 pub mod plugin;
 pub(crate) mod runtime;
 
 pub use samp_codegen::{initialize_plugin, native};
-/// Re-exportação do derive macro `#[derive(SampPlugin)]`.
-///
-/// Gera `impl SampPlugin for T {}` automaticamente para structs sem overrides.
-/// Para structs que precisam sobrescrever métodos, use `impl SampPlugin for T` manualmente.
+
+// Re-export so the generated macro does not leak the `log` dep into the user's Cargo.toml.
+#[doc(hidden)]
+pub use log;
+
+/// Derive macro that generates an empty `impl SampPlugin for T {}` for structs
+/// that do not need to customize any trait method. For structs with logic in
+/// `on_load`/`on_tick`/etc, declare `impl SampPlugin for T { ... }`
+/// manually instead of using the derive.
 pub use samp_codegen::SampPlugin;
 pub use samp_sdk::exec_public;
 pub use samp_sdk::{args, cell, consts, error, exports, raw};
@@ -70,8 +80,11 @@ pub use samp_sdk::{args, cell, consts, error, exports, raw};
 #[cfg(feature = "encoding")]
 pub use samp_sdk::encoding;
 
+#[cfg(not(feature = "samp-only"))]
+pub use samp_sdk::omp;
+
 pub mod prelude {
-    //! Importações mais usadas em plugins.
+    //! Most commonly used imports in plugins.
     pub use crate::amx::{Amx, AmxExt};
     pub use crate::cell::{AmxCell, AmxString, Buffer, CellConvert, Ref, UnsizedBuffer};
     pub use crate::error::AmxResult;

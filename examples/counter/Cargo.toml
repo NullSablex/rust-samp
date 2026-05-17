@@ -1,0 +1,16 @@
+[package]
+name = "counter"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+samp = { path = "../../samp" }
+log = "0.4"
+fern = "0.7"
+
+[package.metadata.samp]
+uid = "0x12c09fc55b6c0d2b"

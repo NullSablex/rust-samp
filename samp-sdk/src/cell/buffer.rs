@@ -1,4 +1,6 @@
-//! Contains types to interact with AMX arrays.
+//! AMX cell vectors (Pawn arrays) — `Buffer` (sized) and
+//! `UnsizedBuffer` (unsized, received as a native argument).
+
 use std::ops::{Deref, DerefMut};
 
 use super::{AmxCell, Ref};
@@ -7,32 +9,33 @@ use crate::cell::repr::CellConvert;
 use crate::cell::string;
 use crate::error::AmxResult;
 
-/// Contains a pointer to a sequence of `Amx` cells.
+/// AMX cell array with a known size.
 ///
-/// Can be dereferenced to a [`slice`].
+/// Implements [`Deref<Target = [i32]>`], so the full `&[i32]` API is
+/// available (`iter`, `len`, indexing, etc). For non-`i32` types (`f32`,
+/// `bool`, etc), use [`iter_as`], [`get_as`], [`set_as`].
 ///
 /// # Example
 /// ```
 /// use samp_sdk::cell::{UnsizedBuffer, Buffer};
 /// # use samp_sdk::amx::Amx;
-///
-/// // native: IGiveYouABuffer(buffer[]);
-/// fn it_gave_me_a_buffer(amx: &Amx, buffer: UnsizedBuffer, size: usize) {
+/// fn double_all(amx: &Amx, buffer: UnsizedBuffer, size: usize) {
 ///     let mut buffer: Buffer = buffer.into_sized_buffer(size);
-///     println!("Got {:?}", buffer);
-///     buffer.iter_mut().for_each(|elem| *elem *= 2);
-///     println!("Changed to {:?}", buffer);
+///     buffer.iter_mut().for_each(|cell| *cell *= 2);
 /// }
 /// ```
 ///
-/// [`slice`]: https://doc.rust-lang.org/std/primitive.slice.html
+/// [`iter_as`]: Buffer::iter_as
+/// [`get_as`]: Buffer::get_as
+/// [`set_as`]: Buffer::set_as
 pub struct Buffer<'amx> {
     inner: Ref<'amx, i32>,
     len: usize,
 }
 
 impl<'amx> Buffer<'amx> {
-    /// Create a buffer from a reference to its first element.
+    /// Builds a `Buffer` from the `Ref` to the first cell and its size.
+    #[must_use]
     pub fn new(reference: Ref<'amx, i32>, len: usize) -> Buffer<'amx> {
         Buffer {
             inner: reference,
@@ -40,82 +43,53 @@ impl<'amx> Buffer<'amx> {
         }
     }
 
-    /// Return the number of cells in the buffer.
+    /// Number of cells in the buffer.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// Return `true` if the buffer has zero cells.
+    /// `true` if the buffer has no cells.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    /// Extracts a slice containing the entire buffer.
+    /// Read-only slice covering every cell.
     #[inline]
+    #[must_use]
     pub fn as_slice(&self) -> &[i32] {
         unsafe { std::slice::from_raw_parts(self.inner.as_ptr(), self.len) }
     }
 
-    /// Extracts a mutable slice of the entire buffer.
+    /// Mutable slice covering every cell.
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [i32] {
         unsafe { std::slice::from_raw_parts_mut(self.inner.as_mut_ptr(), self.len) }
     }
 
-    /// Returns an iterator that converts each cell to type `T`.
+    /// Iterator that converts each cell to `T` via [`CellConvert`].
     ///
-    /// This is the idiomatic way to process typed arrays from Pawn —
-    /// use it with standard iterator adapters like `sum`, `filter_map`, `map`, etc.
+    /// Idiomatic ergonomics for arrays of `f32`, `bool` etc. — combine with
+    /// iterator adapters (`sum`, `filter_map`, ...).
     ///
-    /// # Example
     /// ```rust,no_run
     /// # use samp_sdk::cell::Buffer;
-    /// fn sum_floats(buf: &Buffer) -> f32 {
-    ///     buf.iter_as::<f32>().sum()
-    /// }
-    ///
-    /// fn any_flag_set(buf: &Buffer) -> bool {
-    ///     buf.iter_as::<bool>().any(|v| v)
-    /// }
+    /// fn sum_floats(buf: &Buffer) -> f32 { buf.iter_as::<f32>().sum() }
     /// ```
     pub fn iter_as<T: CellConvert>(&self) -> impl Iterator<Item = T> + '_ {
         self.as_slice().iter().map(|&raw| T::from_cell(raw))
     }
 
-    /// Read a cell at `index` and convert it to type `T`.
-    ///
-    /// Returns `None` if `index` is out of bounds.
-    ///
-    /// This is the ergonomic way to read typed values (e.g. `f32`, `bool`) from
-    /// a Pawn array without manual bit manipulation.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use samp_sdk::cell::{Buffer, CellConvert};
-    /// fn sum_floats(buf: &Buffer) -> f32 {
-    ///     (0..buf.len())
-    ///         .filter_map(|i| buf.get_as::<f32>(i))
-    ///         .sum()
-    /// }
-    /// ```
+    /// Reads the cell at `index`, converting to `T`. `None` if out of bounds.
+    #[must_use]
     pub fn get_as<T: CellConvert>(&self, index: usize) -> Option<T> {
         self.as_slice().get(index).map(|&raw| T::from_cell(raw))
     }
 
-    /// Convert `value` to a raw cell and write it at `index`.
+    /// Converts `value` to a raw cell and writes it at `index`.
     ///
-    /// Returns `true` if `index` is within bounds and the write succeeded,
-    /// `false` otherwise.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use samp_sdk::cell::{Buffer, CellConvert};
-    /// fn fill_bools(buf: &mut Buffer, flag: bool) {
-    ///     for i in 0..buf.len() {
-    ///         buf.set_as(i, flag);
-    ///     }
-    /// }
-    /// ```
+    /// Returns `true` if the write happened, `false` if `index` was out of bounds.
     pub fn set_as<T: CellConvert>(&mut self, index: usize, value: T) -> bool {
         if let Some(cell) = self.as_mut_slice().get_mut(index) {
             *cell = value.into_cell();
@@ -125,30 +99,19 @@ impl<'amx> Buffer<'amx> {
         }
     }
 
-    /// Write a string into this buffer.
+    /// Writes a Rust string into the buffer (unpacked format, `0` terminator).
     ///
-    /// Encodes `s` and stores it cell-by-cell (unpacked format).
-    /// The buffer must have at least `s.len() + 1` cells.
+    /// Requires `s.len() + 1` cells of space.
     ///
     /// # Errors
-    /// Returns `AmxError::General` if the string is too long for the buffer.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use samp_sdk::amx::Amx;
-    /// # use samp_sdk::error::AmxResult;
-    /// # fn example(amx: &Amx) -> AmxResult<()> {
-    /// let allocator = amx.allocator();
-    /// let mut buf = allocator.allot_buffer(32)?;
-    /// buf.write_str("Hello, SA-MP!")?;
-    /// # Ok(()) }
-    /// ```
+    /// `AmxError::General` if the encoded string is >= the buffer size.
     pub fn write_str(&mut self, s: &str) -> AmxResult<()> {
         string::put_in_buffer(self, s)
     }
 }
 
-// Buffer cannot be parsed from a cell directly — it must be sized first via UnsizedBuffer.
+// `Buffer` cannot be parsed directly from a cell — use `UnsizedBuffer`
+// as the native argument and then `.into_sized_buffer(len)`.
 impl<'amx> AmxCell<'amx> for Buffer<'amx> {
     #[inline]
     fn as_cell(&self) -> i32 {
@@ -176,22 +139,11 @@ impl std::fmt::Debug for Buffer<'_> {
     }
 }
 
-/// A buffer whose length is not yet known — comes directly from an AMX native call.
+/// Array with unknown size — received as a native argument when the
+/// Pawn signature is `array[]` without a fixed dimension.
 ///
-/// Must be converted to a [`Buffer`] via [`into_sized_buffer`] before use.
-///
-/// # Example
-/// ```
-/// use samp_sdk::cell::UnsizedBuffer;
-/// # use samp_sdk::amx::Amx;
-/// # use samp_sdk::error::AmxResult;
-///
-/// fn zero_array(amx: &Amx, array: UnsizedBuffer, length: usize) -> AmxResult<u32> {
-///     let mut array = array.into_sized_buffer(length);
-///     array.iter_mut().for_each(|cell| *cell = 0);
-///     Ok(1)
-/// }
-/// ```
+/// The actual size usually comes as another parameter (`sizeof(array)`). Use
+/// [`into_sized_buffer`] to convert into [`Buffer`] before iterating.
 ///
 /// [`into_sized_buffer`]: UnsizedBuffer::into_sized_buffer
 pub struct UnsizedBuffer<'amx> {
@@ -199,73 +151,50 @@ pub struct UnsizedBuffer<'amx> {
 }
 
 impl<'amx> UnsizedBuffer<'amx> {
-    /// Convert `UnsizedBuffer` into a `Buffer` with the given length.
+    /// Converts into `Buffer` by declaring the size.
     ///
-    /// `len` must not exceed the actual number of cells allocated in the AMX heap.
-    /// Passing a larger value causes undefined behavior. The maximum allowed is 1MB.
-    ///
-    /// # Example
-    /// ```
-    /// use samp_sdk::cell::UnsizedBuffer;
-    /// # use samp_sdk::amx::Amx;
-    ///
-    /// fn push_ones(amx: &Amx, array: UnsizedBuffer, length: usize) {
-    ///     let mut buffer = array.into_sized_buffer(length);
-    ///     buffer.iter_mut().for_each(|item| *item = 1);
-    /// }
-    /// ```
+    /// `len` must be <= the actual number of allocated cells — larger values
+    /// cause UB when accessing cells outside the Pawn array. The SDK caps it
+    /// at 1 MiB as a defense against a corrupted `len` from the script.
+    #[must_use]
     pub fn into_sized_buffer(self, len: usize) -> Buffer<'amx> {
         const MAX_BUFFER_CELLS: usize = 1024 * 1024;
         debug_assert!(
             len <= MAX_BUFFER_CELLS,
-            "into_sized_buffer() recebeu len={} acima do limite de {}",
-            len,
-            MAX_BUFFER_CELLS
+            "into_sized_buffer() received len={len} above the {MAX_BUFFER_CELLS} limit"
         );
         let len = len.min(MAX_BUFFER_CELLS);
         Buffer::new(self.inner, len)
     }
 
-    /// Return a raw pointer to the first cell.
+    /// Pointer to the first cell.
     #[inline]
+    #[must_use]
     pub fn as_ptr(&self) -> *const i32 {
         self.inner.as_ptr()
     }
 
-    /// Return a mutable raw pointer to the first cell.
+    /// Mutable pointer to the first cell.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut i32 {
         self.inner.as_mut_ptr()
     }
 
-    /// Internal helper for tests and benchmarks — not a stable API.
+    /// Constructor for tests/benchmarks — not part of the stable API.
     #[doc(hidden)]
+    #[must_use]
     pub fn from_raw_parts(inner: Ref<'amx, i32>) -> Self {
         UnsizedBuffer { inner }
     }
 
-    /// Write a string into this buffer after sizing it to `max_len` cells.
+    /// Sizes the buffer to `max_len` and writes `s` in one call.
     ///
-    /// Combines [`into_sized_buffer`] and [`Buffer::write_str`] in one call.
-    /// This is the idiomatic way to write an output string in a native function.
+    /// Equivalent to `into_sized_buffer(max_len).write_str(s)`. This is the
+    /// recommended way to fill an output string in natives.
     ///
     /// # Errors
-    /// Returns `AmxError::General` if `s` is too long for `max_len`.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use samp_sdk::amx::Amx;
-    /// # use samp_sdk::cell::UnsizedBuffer;
-    /// # use samp_sdk::error::AmxResult;
-    ///
-    /// // native: GetValue(buffer[], max_len);
-    /// fn get_value(_amx: &Amx, buffer: UnsizedBuffer, max_len: usize) -> AmxResult<bool> {
-    ///     buffer.write_str(max_len, "my value")?;
-    ///     Ok(true)
-    /// }
-    /// ```
-    ///
-    /// [`into_sized_buffer`]: UnsizedBuffer::into_sized_buffer
+    /// `AmxError::General` if the encoded `s` is >= `max_len` (no room for
+    /// the `0` terminator).
     pub fn write_str(self, max_len: usize, s: &str) -> AmxResult<()> {
         let mut buf = self.into_sized_buffer(max_len);
         string::put_in_buffer(&mut buf, s)
@@ -288,8 +217,8 @@ impl<'amx> AmxCell<'amx> for UnsizedBuffer<'amx> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell::repr::CellConvert;
     use crate::cell::Ref;
+    use crate::cell::repr::CellConvert;
 
     fn make_ref(data: &mut Vec<i32>) -> Ref<'_, i32> {
         unsafe { Ref::new(0, data.as_mut_ptr()) }
@@ -368,7 +297,7 @@ mod tests {
     fn buffer_as_cell_returns_amx_addr() {
         let mut data = vec![0i32; 4];
         let buf = make_buffer(&mut data);
-        // as_cell() devolve o endereço AMX do Ref interno (0 no nosso helper)
+        // as_cell() returns the AMX address of the inner Ref (0 in our helper)
         assert_eq!(buf.as_cell(), 0);
     }
 
@@ -384,15 +313,18 @@ mod tests {
         assert_eq!(buf[2], 3);
     }
 
-    /// Em debug, `debug_assert!` dispara para valores acima do limite.
-    /// Em release, o valor é silenciosamente clampeado.
+    /// In debug, `debug_assert!` fires for values above the limit.
+    /// In release, the value is silently clamped.
     #[test]
-    #[cfg_attr(debug_assertions, should_panic)]
+    #[cfg_attr(
+        debug_assertions,
+        should_panic(expected = "into_sized_buffer() received len=")
+    )]
     fn unsized_into_sized_clamps_to_max_in_release() {
         let mut data = vec![0i32; 8];
         let ub = make_unsized(&mut data);
         let buf = ub.into_sized_buffer(1024 * 1024 + 1);
-        // Só chega aqui em release — verifica o clamp
+        // Only reaches here in release — verifies the clamp
         assert_eq!(buf.len(), 1024 * 1024);
     }
 
@@ -453,11 +385,14 @@ mod tests {
 
     #[test]
     fn get_as_f32_roundtrip() {
-        let value = 1.5f32; // valor exato em IEEE-754, sem risco de approx_constant
+        let value = 1.5f32; // exact IEEE-754 value, no approx_constant risk
         let mut data = vec![value.into_cell()];
         let buf = make_buffer(&mut data);
         let recovered: f32 = buf.get_as::<f32>(0).unwrap();
-        assert!((recovered - value).abs() < f32::EPSILON, "f32 roundtrip falhou: {recovered} != {value}");
+        assert!(
+            (recovered - value).abs() < f32::EPSILON,
+            "f32 roundtrip failed: {recovered} != {value}"
+        );
     }
 
     #[test]
@@ -465,7 +400,7 @@ mod tests {
         let mut data = vec![0i32];
         let mut buf = make_buffer(&mut data);
         buf.set_as(0, 1.5f32);
-        assert_eq!(f32::from_bits(data[0] as u32), 1.5f32);
+        assert_eq!(data[0].cast_unsigned(), 1.5f32.to_bits());
     }
 
     #[test]
@@ -474,7 +409,7 @@ mod tests {
         let buf = make_buffer(&mut data);
         assert_eq!(buf.get_as::<bool>(0), Some(true));
         assert_eq!(buf.get_as::<bool>(1), Some(false));
-        // qualquer valor não-zero é true
+        // any non-zero value is true
         assert_eq!(buf.get_as::<bool>(2), Some(true));
     }
 
@@ -544,7 +479,57 @@ mod tests {
         let mut data = vec![10i32, 20, 30, 40];
         let buf = make_buffer(&mut data);
         let via_iter: Vec<i32> = buf.iter_as::<i32>().collect();
-        let via_loop: Vec<i32> = (0..buf.len()).filter_map(|i| buf.get_as::<i32>(i)).collect();
+        let via_loop: Vec<i32> = (0..buf.len())
+            .filter_map(|i| buf.get_as::<i32>(i))
+            .collect();
         assert_eq!(via_iter, via_loop);
+    }
+
+    // --- Buffer::write_str ---
+
+    #[test]
+    fn write_str_encodes_string_into_cells() {
+        // "hi" -> cells [104, 105, 0] (h=104, i=105, nul=0)
+        let mut data = vec![0i32; 3];
+        let mut buf = make_buffer(&mut data);
+        assert!(buf.write_str("hi").is_ok());
+        assert_eq!(data[0], i32::from(b'h'));
+        assert_eq!(data[1], i32::from(b'i'));
+        assert_eq!(data[2], 0); // null terminator
+    }
+
+    #[test]
+    fn write_str_empty_string_writes_null_terminator() {
+        let mut data = vec![99i32; 2];
+        let mut buf = make_buffer(&mut data);
+        assert!(buf.write_str("").is_ok());
+        assert_eq!(data[0], 0);
+    }
+
+    #[test]
+    fn write_str_exact_fit_fails() {
+        // A 3-cell buffer cannot hold "abc" (it would need 4: a, b, c, nul)
+        let mut data = vec![0i32; 3];
+        let mut buf = make_buffer(&mut data);
+        assert!(buf.write_str("abc").is_err());
+    }
+
+    // --- UnsizedBuffer::write_str ---
+
+    #[test]
+    fn unsized_write_str_sizes_and_writes() {
+        let mut data = vec![0i32; 5];
+        let ub = make_unsized(&mut data);
+        assert!(ub.write_str(5, "hi").is_ok());
+        assert_eq!(data[0], i32::from(b'h'));
+        assert_eq!(data[1], i32::from(b'i'));
+        assert_eq!(data[2], 0);
+    }
+
+    #[test]
+    fn unsized_write_str_too_long_returns_err() {
+        let mut data = vec![0i32; 3];
+        let ub = make_unsized(&mut data);
+        assert!(ub.write_str(3, "abc").is_err());
     }
 }
