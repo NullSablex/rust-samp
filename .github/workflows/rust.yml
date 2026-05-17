@@ -86,8 +86,9 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
       github.event_name == 'pull_request'
     permissions:
-      contents: read   # checkout
-      actions: write   # cache write (promotion of "new" → "main" baseline on master)
+      contents: read         # checkout
+      actions: write         # cache write (promotion of "new" → "main" baseline on master)
+      pull-requests: write   # post / update the sticky PR comment with the bench report
 
     steps:
     - uses: actions/checkout@v6
@@ -204,6 +205,40 @@ jobs:
             python3 scripts/render-bench-entry.py
           fi
         } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Assemble PR comment body
+      if: github.event_name == 'pull_request'
+      shell: bash
+      run: |
+        {
+          echo "## Benchmark results"
+          echo ""
+          echo "Comparison of this PR against the previous \`master\` baseline."
+          echo "Run: [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          echo ""
+          if [ -f bench_report.md ]; then
+            # Drop the standalone "# Benchmark Report" header — the section
+            # already gets its own `##` header above.
+            tail -n +2 bench_report.md
+            echo ""
+          fi
+          if [ -f bench-entry.json ]; then
+            echo "<details><summary>Raw per-benchmark numbers</summary>"
+            echo ""
+            python3 scripts/render-bench-entry.py
+            echo ""
+            echo "</details>"
+          fi
+        } > pr_comment.md
+        echo "Comment body ($(wc -l < pr_comment.md) lines):"
+        head -50 pr_comment.md
+
+    - name: Post / update bench comment on the PR
+      if: github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: bench-report          # identifies which sticky comment to update
+        path: pr_comment.md
 
     - name: Promote new baseline to main
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
