@@ -122,7 +122,27 @@ jobs:
         # always succeeds), silently swallowing the failure and producing an
         # empty `target/criterion/` that breaks extract-bench downstream.
         set -euo pipefail
-        cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- --save-baseline new 2>&1 | tee bench_results.txt
+
+        # Two criterion 0.8.2 workarounds, both needed:
+        #
+        # 1. We do NOT pass `--save-baseline new` even though we want results
+        #    in `new/`. Criterion's *default* already saves to `new/`
+        #    (and rotates the previous `new/` to `base/`). With criterion
+        #    0.8.2, passing `--save-baseline new` explicitly creates the
+        #    `new/*.json` files as 0 bytes, which then breaks both critcmp
+        #    and `scripts/extract-bench.py` downstream. Skipping the flag
+        #    keeps the same `new/` directory layout that "Promote new
+        #    baseline to main" expects, with valid JSON contents.
+        #
+        # 2. `--noplot` skips the HTML report generation. The `plotters`
+        #    backend in criterion 0.8.2 panics in
+        #    `plot/plotters_backend/summary.rs:199` with
+        #    `Option::unwrap on a None value` after benchmarks finish on
+        #    CI. CI does not need HTML — critcmp and extract-bench read
+        #    the raw JSON which criterion still writes correctly.
+        cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- \
+          --noplot \
+          2>&1 | tee bench_results.txt
 
     - name: Compare against baseline and generate report
       run: |
