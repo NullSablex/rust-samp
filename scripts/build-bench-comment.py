@@ -191,7 +191,7 @@ def render_comparison(
     lines.append("")
 
     if common:
-        lines.append("| Benchmark | Before | After | Δ |   |")
+        lines.append("| Benchmark | Before | After | Change |   |")
         lines.append("|---|---:|---:|---:|:---|")
         for name in common:
             prev_mean = prev_bench[name].get("mean_ns", 0.0)
@@ -241,7 +241,7 @@ def render_comparison(
 
 def _legend() -> str:
     return (
-        "<sub>Δ icons: 🚀 large speedup · ✨ minor speedup · "
+        "<sub>Emoji legend: 🚀 large speedup · ✨ minor speedup · "
         "⚠️ minor regression · 🚨 large regression · "
         f"thresholds {THRESH_MINOR:.0f}% / {THRESH_MAJOR:.0f}%. "
         "Changes below the minor threshold are considered noise.</sub>"
