@@ -4,6 +4,7 @@ target
 .idea
 .claude
 CLAUDE.md
+ROADMAP.md
 
 # MkDocs build output
 site/
@@ -21,9 +22,6 @@ bench_comparison.txt
 # Python bytecode (only generated if you run python locally — CI never reads these)
 __pycache__/
 *.pyc
-
-# Release workflow temp file (written by .github/workflows/release.yml)
-release_body.md
 
 # Release tarball produced locally (workflow uploads the same name to GitHub)
 rust-samp-*-src.tar.gz

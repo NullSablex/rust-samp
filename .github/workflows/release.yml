@@ -13,22 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Extract changelog section
-        id: changelog
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
-
-          # Extract the CHANGELOG.md section between this version's header and the next
-          BODY=$(awk "/^## \[?v?${VERSION}\]?/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
-
-          if [ -z "$BODY" ]; then
-            BODY="See [CHANGELOG.md](CHANGELOG.md) for details."
-          fi
-
-          # Save to a file to avoid issues with special characters
-          echo "$BODY" > release_body.md
+        with:
+          fetch-depth: 0   # full history so generate_release_notes can list every commit
 
       - name: Build SDK source tarball
         run: |
@@ -82,7 +68,11 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ github.ref_name }}
-          body_path: release_body.md
+          # Auto-generated notes via GitHub's API — uses .github/release.yml
+          # for categories and includes a "New Contributors" section by default.
+          # No CHANGELOG dependency: the release body comes from PR titles +
+          # labels merged since the previous tag.
+          generate_release_notes: true
           files: ${{ env.ARCHIVE }}
           draft: false
           prerelease: false

@@ -46,10 +46,6 @@ version-resolver:
   default: patch
 
 template: |
-  ## What's changed
-
   $CHANGES
 
-  ## Contributors
-
-  Thanks to everyone who contributed to this release: $CONTRIBUTORS
+  Thanks to everyone who contributed: $CONTRIBUTORS
