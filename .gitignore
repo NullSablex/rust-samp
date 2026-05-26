@@ -23,6 +23,9 @@ bench_comparison.txt
 __pycache__/
 *.pyc
 
+# Release workflow temp file (written by .github/workflows/release.yml)
+release_body.md
+
 # Release tarball produced locally (workflow uploads the same name to GitHub)
 rust-samp-*-src.tar.gz
 
