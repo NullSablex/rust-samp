@@ -9,6 +9,21 @@ members = [
     "examples/advanced",
 ]
 
+# Shared package metadata — each member inherits via `field.workspace = true`.
+# Crate-specific fields (name, description, keywords, categories) stay in the
+# crate's own Cargo.toml.
+[workspace.package]
+authors = [
+    "ZOTTCE <zottce@gmail.com>",
+    "NullSablex <https://github.com/NullSablex>",
+]
+license = "MIT"
+repository = "https://github.com/NullSablex/rust-samp"
+homepage = "https://github.com/NullSablex/rust-samp"
+documentation = "https://nullsablex.github.io/rust-samp/"
+edition = "2024"
+rust-version = "1.87"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

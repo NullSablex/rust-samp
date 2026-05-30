@@ -1,15 +1,23 @@
 [package]
-name = "samp-codegen"
+name = "rust-samp-codegen"
 version = "1.3.0"
-authors = ["ZOTTCE <zottce@gmail.com>", "NullSablex <https://github.com/NullSablex>"]
-description = "Codegen for rust-samp"
-license = "MIT"
-repository = "https://github.com/NullSablex/rust-samp"
-readme = "../README.md"
-edition = "2024"
+description = "Proc macros (`#[native]`, `initialize_plugin!`, `#[derive(SampPlugin)]`) for the `rust-samp` SDK. Generates the FFI boilerplate that turns Rust methods into Pawn-callable natives and the entry points required by SA-MP and open.mp."
+keywords = ["samp", "open-mp", "pawn", "proc-macro", "codegen"]
+categories = ["development-tools::procedural-macro-helpers", "game-development"]
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme = "README.md"
 
 [lib]
 proc-macro = true
+# Importable as `samp_codegen` so `samp` can re-export the macros without
+# alias gymnastics.
+name = "samp_codegen"
 
 [dependencies]
 proc-macro2 = "1.0"

@@ -1,12 +1,17 @@
 [package]
-name = "samp-sdk"
+name = "rust-samp-sdk"
 version = "3.0.0"
-authors = ["ZOTTCE <zottce@gmail.com>", "NullSablex <https://github.com/NullSablex>"]
-description = "Bindings for C SA:MP SDK"
-license = "MIT"
-repository = "https://github.com/NullSablex/rust-samp"
-readme = "../README.md"
-edition = "2024"
+description = "Low-level FFI bindings for the SA-MP AMX virtual machine and open.mp native component ABI. Used internally by `rust-samp`; depend on it directly only if you need raw access without the higher-level macros and lifecycle."
+keywords = ["samp", "open-mp", "amx", "pawn", "ffi"]
+categories = ["external-ffi-bindings", "game-development"]
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme = "README.md"
 
 [features]
 default = []
@@ -16,6 +21,9 @@ encoding = ["encoding_rs"]
 samp-only = []
 
 [lib]
+# Importable as `samp_sdk` so cross-crate and downstream code keeps using
+# `use samp_sdk::...` regardless of the published package name.
+name = "samp_sdk"
 # Disable the default bench harness on the library target so `cargo bench`
 # only runs the explicit `[[bench]]` entries below (which use criterion).
 # Without this, `cargo bench` also invokes the lib's unit tests as benches,

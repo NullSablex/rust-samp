@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { path = "../../samp" }
+samp = { package = "rust-samp", path = "../../samp" }
 
 [package.metadata.samp]
 uid = "0x6ce26e5eedb55087"

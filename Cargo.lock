@@ -9,7 +9,7 @@ dependencies = [
  "fern",
  "log",
  "memcache",
- "samp",
+ "rust-samp",
 ]
 
 [[package]]
@@ -146,7 +146,7 @@ version = "1.0.0"
 dependencies = [
  "fern",
  "log",
- "samp",
+ "rust-samp",
 ]
 
 [[package]]
@@ -303,7 +303,7 @@ dependencies = [
 name = "hello"
 version = "1.0.0"
 dependencies = [
- "samp",
+ "rust-samp",
 ]
 
 [[package]]
@@ -703,6 +703,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
+name = "rust-samp"
+version = "3.0.0"
+dependencies = [
+ "fern",
+ "log",
+ "rust-samp-codegen",
+ "rust-samp-sdk",
+]
+
+[[package]]
+name = "rust-samp-codegen"
+version = "1.3.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "rust-samp-sdk"
+version = "3.0.0"
+dependencies = [
+ "bitflags",
+ "criterion",
+ "encoding_rs",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -715,34 +743,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "samp"
-version = "3.0.0"
-dependencies = [
- "fern",
- "log",
- "samp-codegen",
- "samp-sdk",
-]
-
-[[package]]
-name = "samp-codegen"
-version = "1.3.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "samp-sdk"
-version = "3.0.0"
-dependencies = [
- "bitflags",
- "criterion",
- "encoding_rs",
 ]
 
 [[package]]
