@@ -41,7 +41,7 @@ jobs:
           prefix-key: "v1-bench-release"
 
       - name: Run benchmarks
-        run: cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- --measurement-time 10
+        run: cargo bench -p rust-samp-sdk --target i686-unknown-linux-gnu -- --measurement-time 10
 
       - name: Resolve version label
         id: ver

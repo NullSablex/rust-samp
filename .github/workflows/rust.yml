@@ -141,7 +141,7 @@ jobs:
         #    `Option::unwrap on a None value` after benchmarks finish on
         #    CI. CI does not need HTML — critcmp and extract-bench read
         #    the raw JSON which criterion still writes correctly.
-        cargo bench -p samp-sdk --target i686-unknown-linux-gnu -- \
+        cargo bench -p rust-samp-sdk --target i686-unknown-linux-gnu -- \
           --noplot \
           2>&1 | tee bench_results.txt
 
