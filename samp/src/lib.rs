@@ -58,6 +58,7 @@
 pub mod amx;
 #[doc(hidden)]
 pub mod interlayer;
+pub mod logger;
 #[cfg(not(feature = "samp-only"))]
 pub(crate) mod macros;
 pub mod plugin;
@@ -89,4 +90,49 @@ pub mod prelude {
     pub use crate::cell::{AmxCell, AmxString, Buffer, CellConvert, Ref, UnsizedBuffer};
     pub use crate::error::AmxResult;
     pub use crate::plugin::SampPlugin;
+}
+
+/// Installs the SDK logger with defaults derived from the caller's
+/// `Cargo.toml`. Writes to `logs/{CARGO_PKG_NAME}.log` with size-based
+/// rotation (50 MB × 5 archives) and forwards every line to the server's
+/// own log prefixed with `[CARGO_PKG_NAME]`.
+///
+/// Returns `Result<(), samp::logger::InstallError>` — the most common
+/// failures are "already installed" (a second call in the same process)
+/// and "I/O" (the log directory could not be created).
+///
+/// # Example
+/// ```rust,ignore
+/// fn on_load(&mut self) {
+///     let _ = samp::enable_logger!();
+///     log::info!("ready");
+/// }
+/// ```
+#[macro_export]
+macro_rules! enable_logger {
+    () => {
+        $crate::enable_logger_with!($crate::logger::LoggerConfig::new(env!("CARGO_PKG_NAME")))
+    };
+}
+
+/// Installs the SDK logger with an explicit [`LoggerConfig`].
+///
+/// The macro still seeds the banner metadata from the caller's
+/// `CARGO_PKG_*` values before delegating to [`logger::install`], so the
+/// startup banner reports the user's plugin even when every other field
+/// is overridden.
+///
+/// [`LoggerConfig`]: crate::logger::LoggerConfig
+/// [`logger::install`]: crate::logger::install
+#[macro_export]
+macro_rules! enable_logger_with {
+    ($cfg:expr) => {{
+        $crate::logger::__set_banner_metadata($crate::logger::BannerMetadata::new(
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_AUTHORS"),
+            env!("CARGO_PKG_REPOSITORY"),
+        ));
+        $crate::logger::install($cfg)
+    }};
 }

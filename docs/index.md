@@ -35,9 +35,12 @@ rust-samp adds, on top of that foundation:
   manipulation.
 - **Optional `encoding` feature** — Windows-1251 / Windows-1252 string
   conversion via `encoding_rs`.
-- **Integrated logging** via `log` + `fern`, routed to the server's log
-  sink (`logprintf` on SA-MP, `ICore::logLnU8` on native Open
-  Multiplayer).
+- **Turnkey logger** — `samp::enable_logger!()` installs a complete
+  pipeline (per-plugin file, size-based rotation into `logs/archive/`,
+  banner, runtime-adjustable level) in a single call. Customizable via
+  `LoggerConfig` or DIY through `samp::plugin::logger()` for advanced
+  cases. Routes to the server's own log sink (`logprintf` on SA-MP,
+  `ICore::logLnU8` on native Open Multiplayer) alongside the file.
 - **Native Open Multiplayer support** — pure-Rust implementation of the
   component ABI (Itanium and MSVC) so a single binary works as a SA-MP
   plugin and as an Open Multiplayer component.
@@ -46,7 +49,7 @@ rust-samp adds, on top of that foundation:
 
 | Crate          | Version | Description                                                              |
 | -------------- | :-----: | ------------------------------------------------------------------------ |
-| `samp`         | 3.0.0   | Main crate — depend on this one. Re-exports the SDK and the proc macros. |
+| `samp`         | 3.1.0   | Main crate — depend on this one. Re-exports the SDK and the proc macros. |
 | `samp-sdk`     | 3.0.0   | Low-level bindings: AMX VM + Open Multiplayer component ABI.            |
 | `samp-codegen` | 1.3.0   | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`).    |
 

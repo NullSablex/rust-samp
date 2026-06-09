@@ -47,21 +47,42 @@ cd my-plugin
 
 ### `Cargo.toml`
 
+There are two ways to depend on the SDK. From v3.1.0 onwards the
+preferred path is crates.io; the git dependency keeps working and is
+the only option for earlier releases (v3.0.0 and the v2.x line never
+made it to the registry).
+
+**From crates.io (v3.1.0 onwards):**
+
 ```toml
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }
+samp = { package = "rust-samp", version = "3" }
 ```
 
-> Always pin the dependency with `tag` or `rev`. A bare `git` dependency
-> is not reproducible — a repository update can change behavior without
-> any warning.
+The package is published as `rust-samp` to avoid colliding with the
+upstream `samp-rs` fork on the registry. The `package = "rust-samp"`
+alias keeps the source-level `use samp::prelude::*;` imports unchanged.
+
+**From git (any version, including v3.0.0 and earlier):**
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
+```
+
+> Always pin the dependency with `tag` or `rev` when using git. A bare
+> `git` dependency is not reproducible — a repository update can
+> change behavior without any warning.
 >
 > ```toml
 > # Pin by tag (recommended for named releases)
-> samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }
+> samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
 >
 > # Pin by commit SHA (exact — SHA visible on the GitHub releases page)
 > samp = { git = "https://github.com/NullSablex/rust-samp.git", rev = "COMMIT_SHA" }

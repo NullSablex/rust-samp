@@ -123,10 +123,12 @@ initialize_plugin!(
     {
         samp::plugin::enable_tick();
 
-        let _ = fern::Dispatch::new()
-            .level(log::LevelFilter::Info)
-            .chain(samp::plugin::logger())
-            .apply();
+        // Turnkey logger: writes to `logs/counter.log`, rotates the
+        // file into `logs/archive/counter.log.{N}` once it reaches 50 MB,
+        // prefixes server-console output with `[counter]`, and prints a
+        // banner on load. The SDK never deletes old archives by itself —
+        // chain `.rotation_keep(N)` if you want size-bounded cleanup.
+        let _ = samp::enable_logger!();
 
         return Counter {
             count: 0,

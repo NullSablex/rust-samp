@@ -4,6 +4,207 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.1.0] — 2026/06/09
+
+Headline: turnkey logger — `samp::enable_logger!()` installs a complete
+per-plugin logging pipeline (file under `logs/`, size-based rotation
+into `logs/archive/`, prefix derived from `CARGO_PKG_NAME`, startup
+banner, runtime-adjustable level) in a single call. The previous
+`samp::plugin::logger()` DIY path stays unchanged for advanced cases.
+
+v3.1.0 is also the **first version available on crates.io** —
+[`rust-samp`](https://crates.io/crates/rust-samp),
+[`rust-samp-sdk`](https://crates.io/crates/rust-samp-sdk) and
+[`rust-samp-codegen`](https://crates.io/crates/rust-samp-codegen).
+Earlier releases (v3.0.0 and the entire v2.x line) are not published to
+the registry; plugins targeting those versions must keep using a git
+dependency. The **library** names (`samp`, `samp_sdk`, `samp_codegen`)
+are unchanged; only the **package** names differ on the registry to
+avoid colliding with the upstream `samp-rs` fork.
+
+### Crate versions
+
+- `rust-samp` (lib `samp`): 3.0.0 → 3.1.0
+- `rust-samp-sdk` (lib `samp_sdk`): 3.0.0 — unchanged (metadata only)
+- `rust-samp-codegen` (lib `samp_codegen`): 1.3.0 — unchanged (metadata only)
+
+### Installation
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+samp = { package = "rust-samp", version = "3" }
+log  = "0.4"
+```
+
+The package is published as `rust-samp`; the alias keeps the
+source-level `use samp::prelude::*;` imports unchanged. Git consumers
+do not need to update anything — both names continue to resolve to the
+same library.
+
+### New features
+
+- **Turnkey logger** — new module `samp::logger` plus the
+  `samp::enable_logger!()` and `samp::enable_logger_with!(cfg)` macros.
+  The macros capture the caller's `CARGO_PKG_*` at compile time and
+  install a `log::Log` implementation that routes through both the
+  server's log sink and a per-plugin file.
+- **`LoggerConfig` builder** — every aspect of the pipeline is
+  configurable through fluent setters: `directory`, `filename`,
+  `prefix`, `level`, `also_to_server`, `banner`, `file_format`,
+  `server_format`, `rotation_size_mb`, `rotation_keep`,
+  `rotation_no_cleanup`, `no_rotation`, `no_banner`, `banner_with`.
+- **Format templates** — `file_format` and `server_format` accept
+  `{timestamp}`, `{level}`, `{message}` and (server-only) `{prefix}`
+  placeholders with optional alignment specifiers (`{level:>5}`,
+  `{level:<5}`, `{level:^5}`). Unknown placeholders pass through
+  verbatim so typos are visible.
+- **Banner modes** — `BannerMode::Default` (5-line banner from
+  `CARGO_PKG_*`), `BannerMode::Off`, and `BannerMode::Custom` (closure
+  receiving `BannerMetadata` and returning the lines to render).
+- **Size-based rotation** — when the active file passes
+  `rotation_size_mb` (default 50 MB), it is renamed into
+  `{directory}/archive/{filename}.{N}` and a fresh active file is
+  opened. Two strategies are available:
+  - **Append-style** (default): every rotation uses the next free
+    index, archives are **never deleted** by the SDK, the dev keeps
+    full control over cleanup. The archive folder is created lazily on
+    the first rotation; the next index survives restarts (rescanned at
+    install time).
+  - **Shift-style** — opt-in via `rotation_keep(N)`: `.log.N` is
+    deleted, every other archive shifts down, active becomes `.log.1`.
+    Disk footprint becomes `(keep + 1) * rotation_size_mb`.
+- **Runtime level adjustment** — `samp::logger::set_level(...)` and
+  `samp::logger::level()` let plugins expose a Pawn-side knob for log
+  verbosity (e.g. a `MyPlugin_SetLogLevel(level)` native).
+- **`InstallError`** — `Display` + `Error` with `source()` exposing
+  the inner `std::io::Error` for the `Io` variant.
+
+### Migrating to the turnkey logger
+
+The previous handcrafted `fern::Dispatch` pattern keeps working —
+adoption is optional.
+
+| Before (v3.0.0)                                                                                                       | After (v3.1.0)                                |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `fern::Dispatch::new().level(...).chain(samp::plugin::logger()).chain(fern::log_file(...)?).format(...).apply()?;`    | `samp::enable_logger!()` inside `on_load`     |
+| Hand-built prefix string `format_args!("[my-plugin][{}]: {}", record.level(), message)`                               | Automatic `[CARGO_PKG_NAME]` prefix           |
+| Manually managing the log filename                                                                                    | Default `logs/{CARGO_PKG_NAME}.log`           |
+| External `logrotate` setup for file growth                                                                            | Built-in 50 MB rotation into `logs/archive/`  |
+| Pawn-side `SetLogLevel(level)` native backed by a `static AtomicI32`                                                  | `samp::logger::set_level(LevelFilter)` direct |
+
+See [`docs/logging.md`](docs/logging.md) for the full reference,
+including the three layers (turnkey / `LoggerConfig` / DIY with fern),
+format placeholders, rotation modes, and runtime tuning.
+
+### Packaging (crates.io)
+
+The three workspace crates now have crates.io-ready metadata
+(`description`, `keywords`, `categories`, `rust-version`, per-crate
+`README.md`) and centralized shared fields in `[workspace.package]`.
+
+- **Package names**: `rust-samp`, `rust-samp-sdk`, `rust-samp-codegen`.
+  The upstream `samp` / `samp-sdk` / `samp-codegen` names on crates.io
+  belong to the original `samp-rs` author and are not the publication
+  target of this fork.
+- **Library names**: unchanged — `samp`, `samp_sdk`, `samp_codegen`.
+  Existing `use samp::prelude::*;` keeps compiling.
+- **Crates.io consumers** add the package alias to their
+  `Cargo.toml`:
+
+  ```toml
+  [dependencies]
+  samp = { package = "rust-samp", version = "3" }
+  ```
+
+- **Git consumers** (`samp = { git = "..." }`) need no change — the
+  workspace exposes both names.
+
+### Build
+
+- **MSRV bumped to Rust 1.87** (was 1.85). Required by stable
+  `i32::cast_unsigned` / `u32::cast_signed`, used internally for AMX
+  cell bit conversions. Declared via
+  `[workspace.package].rust-version = "1.87"`.
+- **New transitive dependency** — `time = "0.3"` (features
+  `local-offset`, `formatting`, `macros`) is pulled in by the turnkey
+  logger for timestamp formatting. The `chrono` crate is **not** added.
+
+### CI / release infrastructure
+
+- **Release notes are now auto-assembled** — workflow `.github/workflows/release.yml`
+  combines the curated CHANGELOG section with the GitHub-native
+  `releases/generate-notes` API output, keeping the "New Contributors"
+  block and the "Full Changelog" comparison link while dropping the
+  redundant `## What's Changed` header.
+- **Crates.io publication is wired into the release workflow** — on
+  `v*` tag push (and manual `workflow_dispatch` with a `dry_run`
+  input), the workflow validates the workspace, then publishes
+  `rust-samp-sdk` → `rust-samp-codegen` → `rust-samp` in dependency
+  order with a 30 s sleep between steps. Each `cargo publish` step
+  gracefully skips when the version is already on crates.io, so a
+  patch release that bumps only one crate goes through unattended.
+- **Bench jobs were updated** to reference `rust-samp-sdk` instead of
+  the pre-rename `samp-sdk` package id.
+- **Release-drafter template** no longer emits the duplicated
+  `## What's Changed` heading at the top of release notes.
+
+### Documentation
+
+- **`docs/logging.md`** — rewritten end-to-end (139 → 413 lines).
+  Covers the three layers, format placeholders and alignment specs,
+  banner modes, rotation strategies, runtime level adjustment, and a
+  pitfalls section.
+- **`docs/api-reference.md`** — new `samp::logger` section with the
+  full builder signature, error type, and placeholder reference.
+- **`docs/migration.md`** — new v3.0.0 → v3.1.0 section with the
+  before/after migration table and crates.io adoption notes.
+- **`docs/first-plugin.md`** — new "Enabling logging" section showing
+  the one-liner inside `on_load`.
+- **`docs/plugin-anatomy.md`** — explicit note that `enable_logger!`
+  belongs in `on_load`, not the constructor block (server's log sink
+  is not connected yet during construction).
+- **`docs/index.md`** — the integrated-logging bullet now describes
+  the turnkey path; workspace table reflects the new `samp` version.
+- **`docs/advanced-examples.md`** — the `examples/counter` snippet
+  matches the source change (uses `samp::enable_logger!()` instead of
+  the handcrafted `fern::Dispatch`).
+- **Dual-availability sweep** — `README.md`, `migration.md`,
+  `docs/setup.md`, `docs/encoding.md` and `docs/migration.md` now show
+  both installation paths side-by-side (crates.io for v3.1.0+, git for
+  any version including v3.0.0 and earlier) with a consistent
+  `package = "rust-samp"` snippet. The workspace version table in
+  `README.md` was bumped to reflect the new `samp` 3.1.0.
+
+### Examples
+
+- **`examples/counter` (1.0.0 → 1.1.0)** — `on_load` now calls
+  `samp::enable_logger!()`; the `fern` dependency was dropped.
+- **`examples/hello` (1.0.0 → 1.0.1)**, **`examples/advanced` (1.1.0 →
+  1.1.1)** — switched to the `package = "rust-samp"` alias so the path
+  dependency matches the published name. No source changes.
+
+### Repository housekeeping
+
+- `ROADMAP.md` moved out of version control (now under `.gitignore`)
+  — it stays as a local working document for the maintainer and is no
+  longer shipped to crates.io tarballs or GitHub.
+- `.github/CODEOWNERS` added.
+- `CNAME` removed (project pages are served from the default
+  `nullsablex.github.io/rust-samp/` URL).
+
+### Code quality
+
+- Clippy `-D warnings` and `-W clippy::pedantic` both report **zero**
+  warnings.
+- 232 tests pass (was 219 in v3.0.0; +13 covering the new logger
+  config, format substitution, width specifiers, rotation modes, error
+  source, and macro-driven metadata capture).
+- `cargo fmt --check` green; `cargo machete` reports no unused
+  dependencies.
+
 ## [v3.0.0] — 2026/05/17
 
 Compared to **v2.2.0** (2026/03/15).

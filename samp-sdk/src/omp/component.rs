@@ -850,6 +850,9 @@ mod tests {
     #[test]
     #[cfg(target_env = "msvc")]
     fn comp_component_type_is_other() {
-        assert_eq!(unsafe { comp_component_type() }, ComponentType::Other as i32);
+        assert_eq!(
+            unsafe { comp_component_type() },
+            ComponentType::Other as i32
+        );
     }
 }

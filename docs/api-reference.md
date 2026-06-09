@@ -329,6 +329,116 @@ impl SampPlugin for MyPlugin {
   implement `OmpComponentHandle` (e.g. `PawnComponent`,
   `TimersComponent`).
 
+### `samp::logger` — turnkey logger
+
+The full guide lives in [Logging](logging.md). Reference summary:
+
+#### Macros (crate root)
+
+```rust
+samp::enable_logger!()              // install with defaults
+samp::enable_logger_with!(cfg)      // install with a LoggerConfig
+```
+
+Both expand at the caller's site to capture `env!("CARGO_PKG_NAME")`
+and friends, then delegate to `samp::logger::install`. Each returns
+`Result<(), samp::logger::InstallError>`.
+
+#### `LoggerConfig`
+
+```rust
+pub struct LoggerConfig { /* opaque */ }
+
+impl LoggerConfig {
+    pub fn new(crate_name: impl Into<String>) -> Self;
+
+    // Paths and identity
+    pub fn directory(self, path: impl Into<PathBuf>) -> Self;
+    pub fn filename(self, name: impl Into<String>) -> Self;
+    pub fn prefix(self, prefix: impl Into<String>) -> Self;
+
+    // Filtering and delivery
+    pub fn level(self, level: log::LevelFilter) -> Self;
+    pub fn also_to_server(self, enabled: bool) -> Self;
+
+    // Banner
+    pub fn banner(self, mode: BannerMode) -> Self;
+    pub fn no_banner(self) -> Self;
+    pub fn banner_with<F>(self, builder: F) -> Self
+    where
+        F: Fn(&BannerMetadata) -> Vec<String> + Send + Sync + 'static;
+
+    // Format templates
+    pub fn file_format(self, format: impl Into<String>) -> Self;
+    pub fn server_format(self, format: impl Into<String>) -> Self;
+
+    // Rotation
+    pub fn rotation_size_mb(self, mb: u64) -> Self;     // 0 disables
+    pub fn rotation_keep(self, keep: u32) -> Self;       // shift-style
+    pub fn rotation_no_cleanup(self) -> Self;            // append-style (default)
+    pub fn no_rotation(self) -> Self;                    // disable entirely
+}
+```
+
+Defaults: `directory = "logs"`, `filename = "{crate}.log"`,
+`prefix = "[{crate}]"`, `level = Info`, `also_to_server = true`,
+`banner = Default`, `file_format = "[{timestamp}] [{level}] {message}"`,
+`server_format = "{prefix} {message}"`, `rotation_size_mb = 50`,
+`rotation_keep = None` (append-style, never deletes).
+
+#### Banner support types
+
+```rust
+pub enum BannerMode {
+    Off,
+    Default,
+    Custom(Box<BannerBuilder>),
+}
+
+pub type BannerBuilder =
+    dyn Fn(&BannerMetadata) -> Vec<String> + Send + Sync;
+
+pub struct BannerMetadata {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub authors: &'static str,
+    pub repository: &'static str,
+}
+```
+
+#### Free functions
+
+```rust
+pub fn install(config: LoggerConfig) -> Result<(), InstallError>;
+pub fn set_level(level: log::LevelFilter);
+pub fn level() -> log::LevelFilter;
+pub fn print_banner();
+```
+
+`install` is rarely called directly — prefer the macros so the banner
+metadata is captured. `set_level` adjusts the global threshold at
+runtime; useful for plugins that expose a Pawn-side knob for the log
+verbosity (e.g. `MyPlugin_SetLogLevel(level)`).
+
+#### Errors
+
+```rust
+pub enum InstallError {
+    AlreadyInstalled,
+    Io(std::io::Error),
+}
+```
+
+Both variants implement `Display` and `std::error::Error`. `Io` exposes
+the inner `std::io::Error` via `Error::source()`.
+
+#### Format placeholders
+
+`file_format` and `server_format` accept `{timestamp}`, `{level}`,
+`{message}` and (only in `server_format`) `{prefix}`. Each accepts an
+optional alignment + width spec: `{level:<5}`, `{level:>5}`,
+`{level:^5}`. Unknown placeholders pass through verbatim.
+
 ## Feature flags
 
 | Feature      | Effect                                                                                       |

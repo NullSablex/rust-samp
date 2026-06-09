@@ -338,7 +338,9 @@ pub fn omp_on_ready() {
     {
         let timers = unsafe { query_timers_component(components) };
         if timers.is_null() {
-            sdk_warn!("ITimersComponent not found — on_tick will not be called on Open Multiplayer");
+            sdk_warn!(
+                "ITimersComponent not found — on_tick will not be called on Open Multiplayer"
+            );
         } else {
             let handler = Box::into_raw(Box::new(TimerTimeOutHandler {
                 vtable: &raw const TICK_HANDLER_VTABLE,

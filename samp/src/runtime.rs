@@ -325,9 +325,7 @@ impl Runtime {
     #[cfg(not(feature = "samp-only"))]
     #[inline]
     pub fn omp_tick_interval(&self) -> Option<Duration> {
-        self.tick_config()
-            .filter(|c| c.omp)
-            .map(|c| c.omp_interval)
+        self.tick_config().filter(|c| c.omp).map(|c| c.omp_interval)
     }
 
     /// Records the current instant as the latest tick dispatch and returns
@@ -335,7 +333,7 @@ impl Runtime {
     pub fn record_tick(&self) -> Duration {
         let now = Instant::now();
         let prev = self.inner().last_tick_at.replace(now);
-        prev.map(|t| now.duration_since(t)).unwrap_or(Duration::ZERO)
+        prev.map_or(Duration::ZERO, |t| now.duration_since(t))
     }
 
     #[inline]

@@ -160,6 +160,97 @@ Types supported by `get_as` / `set_as` / `iter_as`: `i8`, `u8`, `i16`,
 > converts individual cells of a buffer. They live in different layers
 > intentionally — `CellConvert` does not need an `&Amx`.
 
+## v3.0.0 → v3.1.0
+
+No breaking changes — `rust-samp 3.1.0` adds a turnkey logger module
+and bumps the workspace MSRV to **Rust 1.87** (required by stable
+`i32::cast_unsigned` / `u32::cast_signed`). Existing plugins keep
+compiling without edits, and the previous `samp::plugin::logger()`
+helper is unchanged.
+
+### What's new
+
+- `samp::logger::LoggerConfig` — fluent builder for the new logger.
+- `samp::enable_logger!()` — turnkey installation with sensible
+  defaults (directory `logs/`, filename `{crate}.log`, prefix
+  `[{crate}]`, 50 MB size-based rotation into `logs/archive/`,
+  banner read from `CARGO_PKG_*`).
+- `samp::enable_logger_with!(cfg)` — same pipeline with an explicit
+  `LoggerConfig`. Customizable: file/server format templates with
+  alignment specifiers, banner mode (off / default / custom closure),
+  append-style vs shift-style rotation, runtime-adjustable level.
+- `samp::logger::set_level(...)` / `samp::logger::level()` — runtime
+  hooks for plugins that expose a Pawn-side level knob (the
+  Pawn-side knob for log verbosity).
+
+### Adopting the new logger
+
+Plugins that used to build a `fern::Dispatch` by hand:
+
+**Before:**
+
+```rust
+initialize_plugin!(
+    natives: [],
+    {
+        let log_file = fern::log_file("my-plugin.log")
+            .expect("failed to open log file");
+
+        let _ = fern::Dispatch::new()
+            .level(log::LevelFilter::Info)
+            .format(|out, msg, rec| {
+                out.finish(format_args!(
+                    "[my-plugin][{}]: {}",
+                    rec.level(), msg,
+                ));
+            })
+            .chain(samp::plugin::logger())
+            .chain(log_file)
+            .apply();
+
+        return MyPlugin::default();
+    }
+);
+```
+
+**Now:**
+
+```rust
+impl SampPlugin for MyPlugin {
+    fn on_load(&mut self) {
+        let _ = samp::enable_logger!();
+    }
+}
+
+initialize_plugin!(type: MyPlugin, natives: []);
+```
+
+Same behaviour out of the box: per-plugin file under `logs/`, server
+console prefixed with `[my-plugin]`, and size-based rotation into
+`logs/archive/`. The new logger also provides a banner, format
+templates, runtime level adjustment and append-style rotation that
+never deletes archives — all opt-in. See [Logging](logging.md) for the
+full reference.
+
+The DIY `samp::plugin::logger()` path keeps working unchanged for the
+plugins that need it (custom destinations, JSON output, log shippers).
+
+### Crate names on crates.io
+
+If `rust-samp 3.1.0` is consumed via crates.io rather than as a git
+dependency, the package name is `rust-samp` while the **library** name
+remains `samp`. Plugins keep writing `use samp::prelude::*;` after
+adding an alias to `Cargo.toml`:
+
+```toml
+[dependencies]
+samp = { package = "rust-samp", version = "3" }
+```
+
+Git-based consumers (`samp = { git = "https://github.com/NullSablex/rust-samp" }`)
+do not need any change — the workspace exposes both the package alias
+and the library identifier.
+
 ## v2.x → v3.0.0 — native Open Multiplayer support
 
 No source-level breaking changes. Existing code compiles unchanged.
@@ -347,7 +438,7 @@ to the current `samp` crate.
 
 | Before                                  | Now                                                                            |
 | --------------------------------------- | ------------------------------------------------------------------------------ |
-| `samp_sdk = "*"`                        | `samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }` |
+| `samp_sdk = "*"`                        | `samp = { package = "rust-samp", version = "3" }` (crates.io, v3.1.0+) — or `samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }` (any version) |
 | `new_plugin!(Plugin)`                   | `initialize_plugin!(type: T, natives: [...])` or constructor-block form        |
 | `define_native!(name, args)`            | `#[native(name = "Name")]`                                                     |
 | `impl Default for Plugin`               | `#[derive(Default)]` or a constructor block                                    |
@@ -359,12 +450,24 @@ to the current `samp` crate.
 
 ### 1. Update `Cargo.toml`
 
+From crates.io (v3.1.0 onwards):
+
 ```diff
 - [dependencies]
 - samp_sdk = "*"
 
 + [dependencies]
-+ samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }
++ samp = { package = "rust-samp", version = "3" }
+```
+
+Or via git (any version, including v3.0.0 and earlier):
+
+```diff
+- [dependencies]
+- samp_sdk = "*"
+
++ [dependencies]
++ samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
 ```
 
 ### 2. Update imports

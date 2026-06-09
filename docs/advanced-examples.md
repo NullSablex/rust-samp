@@ -13,7 +13,9 @@ more advanced features of the SDK.
 - A handwritten `impl SampPlugin` overriding `on_load`, `on_unload`,
   and `on_tick`.
 - The full `initialize_plugin!` form with a constructor block that
-  enables the unified tick and a custom `fern` dispatch.
+  enables the unified tick and the **turnkey logger** via
+  `samp::enable_logger!()` — a single call replacing the previous
+  hand-built `fern::Dispatch`.
 - Multiple natives, including one that writes through `Ref<i32>`.
 
 ```rust
@@ -69,15 +71,20 @@ initialize_plugin!(
     {
         samp::plugin::enable_tick();
 
-        let _ = fern::Dispatch::new()
-            .level(log::LevelFilter::Info)
-            .chain(samp::plugin::logger())
-            .apply();
+        // Turnkey logger — `logs/counter.log` with size-based rotation
+        // into `logs/archive/`, `[counter]` prefix in the server
+        // console, and a startup banner from `CARGO_PKG_*`.
+        let _ = samp::enable_logger!();
 
         return Counter { count: 0, max: 100, ticks: 0 };
     }
 );
 ```
+
+> The previous handcrafted `fern::Dispatch` pattern (server log +
+> custom file + format) still works through `samp::plugin::logger()` —
+> it's just no longer required for the common case. See
+> [Logging](logging.md) for both paths.
 
 Pawn-side declarations:
 

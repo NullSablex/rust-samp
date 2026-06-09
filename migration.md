@@ -3,11 +3,11 @@
 A short overview for users coming from an older release. For the full
 multi-version walkthrough see [`docs/migration.md`](docs/migration.md).
 
-## Legacy `samp_sdk` → v3.0.0
+## Legacy `samp_sdk` → current rust-samp
 
 | Before                                  | Now                                                                            |
 | --------------------------------------- | ------------------------------------------------------------------------------ |
-| `samp_sdk = "*"`                        | `samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }` |
+| `samp_sdk = "*"`                        | `samp = { package = "rust-samp", version = "3" }` (crates.io, v3.1.0+) — or `samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }` (any version) |
 | `new_plugin!(Plugin)`                   | `initialize_plugin!(type: T, natives: [...])` or the constructor-block form   |
 | `define_native!(name, args)`            | `#[native(name = "Name")]`                                                     |
 | Manual `impl Default for Plugin` + `new_plugin!` | `#[derive(SampPlugin, Default)]`                                       |

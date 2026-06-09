@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp"
-version = "3.0.0"
+version = "3.1.0"
 description = "Write SA-MP and open.mp plugins in safe Rust instead of C++. A single binary runs natively on both servers, with proc macros (`#[native]`, `initialize_plugin!`) that hide the FFI boilerplate and ABI-correct marshalling for Linux (Itanium) and Windows (MSVC)."
 keywords = ["samp", "open-mp", "pawn", "plugin", "gamedev"]
 categories = ["external-ffi-bindings", "game-development", "api-bindings"]
@@ -34,6 +34,7 @@ samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.0.0" 
 samp-codegen = { package = "rust-samp-codegen", path = "../samp-codegen", version = "1.3.0" }
 fern = "0.7"
 log = "0.4"
+time = { version = "0.3", features = ["local-offset", "formatting", "macros"] }
 
 [package.metadata.docs.rs]
 features = ["encoding"]

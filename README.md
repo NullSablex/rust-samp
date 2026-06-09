@@ -20,15 +20,28 @@ first-class Open Multiplayer component, with no extra configuration.
 rustup target add i686-unknown-linux-gnu
 ```
 
-`Cargo.toml`:
+`Cargo.toml` — from crates.io (v3.1.0 onwards):
 
 ```toml
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }
+samp = { package = "rust-samp", version = "3" }
+log  = "0.4"
 ```
+
+Or via git (any version, including v3.0.0 and earlier, which are not
+on crates.io):
+
+```toml
+[dependencies]
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
+```
+
+The package is published as `rust-samp` to avoid colliding with the
+upstream `samp-rs` fork on the registry. The `package = "rust-samp"`
+alias keeps source-level `use samp::prelude::*;` imports unchanged.
 
 `src/lib.rs`:
 
@@ -61,7 +74,7 @@ Drop the resulting `.so` into the server's `plugins/`. Full walkthrough in
 
 | Crate          | Version | Purpose                                                              |
 | -------------- | :-----: | -------------------------------------------------------------------- |
-| `samp`         | 3.0.0   | Main crate — depend on this one.                                     |
+| `samp`         | 3.1.0   | Main crate — depend on this one.                                     |
 | `samp-sdk`     | 3.0.0   | Low-level bindings: AMX VM + Open Multiplayer component ABI.        |
 | `samp-codegen` | 1.3.0   | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`).|
 

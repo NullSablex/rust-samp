@@ -92,11 +92,32 @@ The console prints `Hello, World!`.
    `encoding` feature) and caches the result in a `OnceCell<String>`,
    so repeated accesses are allocation-free.
 
+## Enabling logging
+
+Add one call inside `on_load` and every `log::info!` / `log::warn!` /
+`log::error!` from this plugin starts going to `logs/my-plugin.log` and
+to the server console with the plugin name as a prefix:
+
+```rust
+impl SampPlugin for MyPlugin {
+    fn on_load(&mut self) {
+        let _ = samp::enable_logger!();
+        log::info!("plugin loaded");
+    }
+}
+```
+
+That covers most plugins. To customize the filename, prefix, file
+format, rotation policy or banner, see the dedicated
+[Logging](logging.md) chapter.
+
 ## Next steps
 
 - [Plugin anatomy](plugin-anatomy.md) — the full lifecycle and the
   constructor-block form of `initialize_plugin!`.
 - [Natives](natives.md) — every option of `#[native]` and the supported
   argument/return types.
+- [Logging](logging.md) — the turnkey logger, custom formats, rotation,
+  banner customization, and runtime level adjustment.
 - [Advanced examples](advanced-examples.md) — a richer plugin that uses
   memcache, encoding, and a custom `fern` logger.

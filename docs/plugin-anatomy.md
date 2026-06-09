@@ -150,6 +150,11 @@ initialize_plugin!(
 > code preceding the `return` runs exactly once, when the server loads
 > the plugin.
 
+> **Where should `enable_logger!` go?** Inside `on_load`, not in the
+> constructor block. The server's log sink is not connected yet during
+> construction — any `log::*` call would fall back to `eprintln!`. See
+> [Logging](logging.md#common-pitfalls) for the full explanation.
+
 ### Native Open Multiplayer metadata
 
 Native Open Multiplayer mode is the **default**: every build without the
