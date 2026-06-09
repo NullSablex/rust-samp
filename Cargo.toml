@@ -22,7 +22,7 @@ repository = "https://github.com/NullSablex/rust-samp"
 homepage = "https://github.com/NullSablex/rust-samp"
 documentation = "https://nullsablex.github.io/rust-samp/"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.88"
 
 [profile.release]
 lto = "thin"

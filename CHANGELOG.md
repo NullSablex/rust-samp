@@ -124,13 +124,17 @@ The three workspace crates now have crates.io-ready metadata
 
 ### Build
 
-- **MSRV bumped to Rust 1.87** (was 1.85). Required by stable
-  `i32::cast_unsigned` / `u32::cast_signed`, used internally for AMX
-  cell bit conversions. Declared via
-  `[workspace.package].rust-version = "1.87"`.
-- **New transitive dependency** — `time = "0.3"` (features
+- **MSRV bumped to Rust 1.88** (was 1.85). Required by stable
+  `i32::cast_unsigned` / `u32::cast_signed` (used internally for AMX
+  cell bit conversions) and by the patched `time 0.3.47` / `time-core
+  0.1.8` / `time-macros 0.2.27`. Declared via
+  `[workspace.package].rust-version = "1.88"`.
+- **New transitive dependency** — `time = "0.3.47"` (features
   `local-offset`, `formatting`, `macros`) is pulled in by the turnkey
   logger for timestamp formatting. The `chrono` crate is **not** added.
+  The minimum is pinned to `0.3.47` to pick up the fix for
+  [RUSTSEC-2026-0009](https://rustsec.org/advisories/RUSTSEC-2026-0009)
+  (DoS via stack exhaustion, medium severity).
 
 ### CI / release infrastructure
 
