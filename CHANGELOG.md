@@ -123,7 +123,8 @@ for the full directory.
   (`default-features = false`, `features = ["rust_backend"]`) so plugins
   that do not enable it remain dependency-free on this axis.
 - **`time` bumped to `>= 0.3.47`** (also pulls in `time-core 0.1.8`
-  and `time-macros 0.2.27`).
+  and `time-macros 0.2.27`) — this is the floor that drove the MSRV bump;
+  later refreshed to 0.3.51 by Dependabot (see Dependencies, #16).
 - **MSRV bumped to Rust 1.88** (was 1.87) to satisfy those versions.
   Declared via `[workspace.package].rust-version = "1.88"`.
 
@@ -172,6 +173,7 @@ after the new `dependabot.yml` went live:
 - Bump `bitflags` from 2.11.0 to 2.13.0 (#13)
 - Bump `quote` from 1.0.44 to 1.0.46 (#14)
 - Bump `syn` from 2.0.116 to 2.0.118 (#15)
+- Bump `time` from 0.3.47 to 0.3.51 (#16)
 
 The cargo bumps are lock-file only (`Cargo.lock`); the version
 requirements in the manifests are unchanged.
