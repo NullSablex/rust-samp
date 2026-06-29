@@ -75,8 +75,8 @@ Drop the resulting `.so` into the server's `plugins/`. Full walkthrough in
 
 | Crate          | Version | Purpose                                                              |
 | -------------- | :-----: | -------------------------------------------------------------------- |
-| `samp`         | 3.1.0   | Main crate — depend on this one.                                     |
-| `samp-sdk`     | 3.0.0   | Low-level bindings: AMX VM + Open Multiplayer component ABI.        |
+| `samp`         | 3.2.0   | Main crate — depend on this one.                                     |
+| `samp-sdk`     | 3.1.0   | Low-level bindings: AMX VM + Open Multiplayer component ABI.        |
 | `samp-codegen` | 1.3.0   | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`).|
 
 Edition 2024, workspace `resolver = "3"`. Target: **i686** — both servers
@@ -97,6 +97,10 @@ are 32-bit.
   loads on Open Multiplayer in legacy mode.
 - `encoding` — Windows-1251 / Windows-1252 string conversion via
   `encoding_rs`.
+- `debug` — the `samp::debug` AMX_DBG debug-info parser, for building
+  debuggers/tooling on the VM (see [VM Debugging](docs/vm-debugging.md)).
+- `compression` — gzip-compress rotated log archives
+  (`LoggerConfig::compress_archives`); pulls in `flate2`.
 
 ## Examples
 
@@ -105,6 +109,7 @@ are 32-bit.
 | [`examples/hello`](examples/hello/)       | Minimal plugin (`#[derive(SampPlugin)]`, `&AmxString`, `write_str`).      |
 | [`examples/counter`](examples/counter/)   | Stateful plugin with `on_tick`, `Ref<i32>`, full constructor block.|
 | [`examples/advanced`](examples/advanced/) | Memcache plugin: custom `AmxCell`, `encoding` feature, layered `fern`.    |
+| [`examples/sink-demo`](examples/sink-demo/) | External log sink: end-to-end Sentry integration via the `Sink` trait.  |
 
 ## Documentation
 
@@ -113,6 +118,7 @@ Full user docs under [`docs/`](docs/) (MkDocs Material). Starting points:
 - [Introduction](docs/index.md) and [Setup](docs/setup.md).
 - [First plugin](docs/first-plugin.md) and [Plugin anatomy](docs/plugin-anatomy.md).
 - [Native Open Multiplayer support](docs/omp-native.md).
+- [Logging](docs/logging.md) and [VM Debugging](docs/vm-debugging.md).
 - [API reference](docs/api-reference.md) and [Migration guide](docs/migration.md).
 
 ## License
