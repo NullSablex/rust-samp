@@ -21,6 +21,32 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Detect whether benchmark-relevant code changed. The bench job is gated on
+  # this so it does not run for docs-, changelog- or CI-only changes.
+  # ---------------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'samp/**'
+              - 'samp-sdk/**'
+              - 'samp-codegen/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'scripts/**'
+              - '.github/workflows/rust.yml'
+
+  # ---------------------------------------------------------------------------
   # Cross-platform build, test and lint (i686)
   # ---------------------------------------------------------------------------
   build:
@@ -91,10 +117,13 @@ jobs:
   #      checks tab without needing to download the artifact)
   # ---------------------------------------------------------------------------
   bench:
+    needs: changes
     runs-on: ubuntu-latest
-    # Skip benchmarks for Dependabot (dependency bumps don't need a bench run,
-    # and Dependabot PRs get a read-only token that can't post the comment).
+    # Run only when benchmark-relevant code changed (see the `changes` job) and
+    # never for Dependabot (dependency bumps don't need a bench run, and
+    # Dependabot PRs get a read-only token that can't post the comment).
     if: |
+      needs.changes.outputs.code == 'true' &&
       github.actor != 'dependabot[bot]' &&
       (
         (github.event_name == 'push' && github.ref == 'refs/heads/master') ||

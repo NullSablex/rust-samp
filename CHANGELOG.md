@@ -151,11 +151,12 @@ for the full directory.
   `github-actions` and `cargo` ecosystems, keeping the pinned SHAs and
   crate dependencies fresh (Scorecard *Dependency-Update-Tool*).
 - **CI tweaks** — the Scorecard workflow gained `workflow_dispatch` for
-  on-demand re-scans; the benchmark job is skipped for `dependabot[bot]`
+  on-demand re-scans; the Rust workflow ignores docs-only changes via
+  `paths-ignore` (`**.md`, `docs/**`, `mkdocs.yml`, `LICENSE`); and the
+  benchmark job now runs only when benchmark-relevant code actually changed
+  (a `changes` path-filter job gates it), never for `dependabot[bot]`
   (dependency bumps don't need a bench run, and Dependabot's read-only
-  token cannot post the PR comment); and the Rust workflow (build + bench)
-  now ignores docs-only changes via `paths-ignore` (`**.md`, `docs/**`,
-  `mkdocs.yml`, `LICENSE`).
+  token cannot post the PR comment).
 - **`SECURITY.md`** — security policy and private vulnerability reporting
   via GitHub Security Advisory.
 - **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
