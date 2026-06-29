@@ -30,7 +30,7 @@ the same validation as `amx_GetAddr`: an address is rejected when it falls
 in the free region between heap and stack, is negative, or is past the top
 of the stack.
 
-```rust,ignore
+```rust
 // Read a global/local cell by its effective data address.
 if let Some(value) = amx.read_cell(addr) {
     // ...
@@ -58,7 +58,7 @@ The high-level path routes the hook into your plugin instance. Call
 dispatches into your plugin — no raw `extern "C"` callback and no global
 state of your own.
 
-```rust,ignore
+```rust
 use samp::prelude::*;
 
 impl SampPlugin for MyDebugger {
@@ -101,7 +101,7 @@ function. It is pure logic with no extra dependencies, gated behind the
 samp = { version = "3", features = ["debug"] }
 ```
 
-```rust,ignore
+```rust
 use samp::debug::AmxDbg;
 
 let bytes = std::fs::read("gamemode.amx")?;
@@ -124,7 +124,7 @@ Combine the parser with the cell accessors: resolve a symbol's effective
 address (global → absolute; local/argument → relative to `frm`), then read
 the cell.
 
-```rust,ignore
+```rust
 for sym in dbg.symbols_in_scope(cip) {
     let addr = match sym.vclass {
         samp::debug::VClass::Global => i32::try_from(sym.address).unwrap_or(0),
