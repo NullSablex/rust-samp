@@ -10,6 +10,7 @@ on:
     - cron: '30 5 * * 1'
   push:
     branches: [master]
+  workflow_dispatch:
 
 permissions: {}
 

@@ -132,9 +132,16 @@ for the full directory.
 - **OpenSSF Scorecard** — new `.github/workflows/scorecard.yml` that runs
   the OpenSSF Scorecard analysis, uploads the SARIF to code-scanning and
   publishes the result. Scorecard badge added to the README.
-- **All GitHub Actions pinned by commit SHA** — every `uses:` across the
-  six workflows is now pinned to a full commit SHA (with a `# vX` comment),
+- **All GitHub Actions pinned by commit SHA** — every `uses:` across all
+  seven workflows is pinned to a full commit SHA (with a `# vX` comment),
   satisfying the Scorecard *Pinned-Dependencies* check.
+- **Least-privilege token permissions** — every workflow declares a
+  top-level minimal `permissions: contents: read`, with jobs escalating
+  explicitly only where needed (Scorecard *Token-Permissions*).
+- **No script injection from untrusted PR fields** — `rust.yml` now passes
+  `github.event.pull_request.*` values (e.g. `head.ref`) through `env`
+  instead of interpolating them into `run:` scripts (Scorecard
+  *Dangerous-Workflow*).
 - **`docs/requirements.txt` pinned by hash** — the MkDocs Material build
   dependencies are now a fully hashed lockfile (`pip-compile
   --generate-hashes` from the new `docs/requirements.in`), installed with
@@ -142,11 +149,32 @@ for the full directory.
 - **`.github/dependabot.yml`** — weekly version updates for the
   `github-actions` and `cargo` ecosystems, keeping the pinned SHAs and
   crate dependencies fresh (Scorecard *Dependency-Update-Tool*).
+- **CI tweaks** — the Scorecard workflow gained `workflow_dispatch` for
+  on-demand re-scans, and the benchmark job is skipped for `dependabot[bot]`
+  (dependency bumps don't need a bench run, and Dependabot's read-only
+  token cannot post the PR comment).
 - **`SECURITY.md`** — security policy and private vulnerability reporting
   via GitHub Security Advisory.
 - **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
 - **`CONTRIBUTING.md`** — build/test/lint workflow for the i686 targets,
   project structure and code rules.
+
+### Dependencies
+
+Automated bumps opened and merged via [@dependabot](https://github.com/apps/dependabot)
+after the new `dependabot.yml` went live:
+
+- Bump `actions/cache/save` from 5.1.0 to 6.1.0 (#8)
+- Bump `actions/cache/restore` from 5.1.0 to 6.1.0 (#9)
+- Bump `actions/checkout` from 4.2.2 to 7.0.0 (#10)
+- Bump `marocchino/sticky-pull-request-comment` from 2.9.4 to 3.0.4 (#12)
+- Bump `log` from 0.4.29 to 0.4.33 (#11)
+- Bump `bitflags` from 2.11.0 to 2.13.0 (#13)
+- Bump `quote` from 1.0.44 to 1.0.46 (#14)
+- Bump `syn` from 2.0.116 to 2.0.118 (#15)
+
+The cargo bumps are lock-file only (`Cargo.lock`); the version
+requirements in the manifests are unchanged.
 
 ### Crate versions
 

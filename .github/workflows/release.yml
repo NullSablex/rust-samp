@@ -18,6 +18,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Minimal default token; the job escalates explicitly where needed.
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest

@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Minimal default token; jobs escalate explicitly where needed.
+permissions:
+  contents: read
+
 jobs:
   # ---------------------------------------------------------------------------
   # Cross-platform build, test and lint (i686)
@@ -82,9 +86,14 @@ jobs:
   # ---------------------------------------------------------------------------
   bench:
     runs-on: ubuntu-latest
+    # Skip benchmarks for Dependabot (dependency bumps don't need a bench run,
+    # and Dependabot PRs get a read-only token that can't post the comment).
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      github.event_name == 'pull_request'
+      github.actor != 'dependabot[bot]' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+        github.event_name == 'pull_request'
+      )
     permissions:
       contents: read         # checkout
       actions: write         # cache write (promotion of "new" → "main" baseline on master)
@@ -210,13 +219,15 @@ jobs:
       if: github.event_name == 'pull_request'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
       shell: bash
       run: |
         # The sticky-pull-request-comment action tags its comment with the
         # marker below. We use the same marker to locate the prior comment
         # and extract the previous run's bench data from it.
         STICKY_TAG="<!-- Sticky Pull Request Commentbench-report -->"
-        gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+        gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
           --paginate \
           --jq ".[] | select(.body | contains(\"$STICKY_TAG\")) | .body" \
           > previous_comment.md || true
@@ -229,14 +240,19 @@ jobs:
     - name: Build PR comment body
       if: github.event_name == 'pull_request'
       shell: bash
+      env:
+        PR_NUM: ${{ github.event.pull_request.number }}
+        PR_REF: ${{ github.event.pull_request.head.ref }}
+        SHA: ${{ github.event.pull_request.head.sha }}
+        SERVER_URL: ${{ github.server_url }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
       run: |
         # For PR builds, github.ref_name is "<num>/merge" — turn it into
-        # something more legible like "#5 (head_ref)".
-        PR_NUM="${{ github.event.pull_request.number }}"
-        PR_REF="${{ github.event.pull_request.head.ref }}"
+        # something more legible like "#5 (head_ref)". Untrusted values come
+        # through env (not interpolated into the shell) to avoid injection.
         VERSION="#${PR_NUM} (${PR_REF})"
-        SHA="${{ github.event.pull_request.head.sha }}"
-        RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        RUN_URL="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
 
         python3 scripts/build-bench-comment.py \
           --current bench-entry.json \
@@ -252,7 +268,7 @@ jobs:
 
     - name: Post / update bench comment on the PR
       if: github.event_name == 'pull_request'
-      uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v2
+      uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
       with:
         header: bench-report          # identifies which sticky comment to update
         path: pr_comment.md
