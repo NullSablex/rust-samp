@@ -3,8 +3,14 @@ name: Rust
 on:
   push:
     branches: [ "master" ]
+    paths-ignore: &doc-paths
+      - '**.md'
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'LICENSE'
   pull_request:
     branches: [ "master" ]
+    paths-ignore: *doc-paths
 
 env:
   CARGO_TERM_COLOR: always
