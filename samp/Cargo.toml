@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp"
-version = "3.1.0"
+version = "3.2.0"
 description = "Write SA-MP and open.mp plugins in safe Rust instead of C++. A single binary runs natively on both servers, with proc macros (`#[native]`, `initialize_plugin!`) that hide the FFI boilerplate and ABI-correct marshalling for Linux (Itanium) and Windows (MSVC)."
 keywords = ["samp", "open-mp", "pawn", "plugin", "gamedev"]
 categories = ["external-ffi-bindings", "game-development", "api-bindings"]
@@ -21,23 +21,33 @@ name = "samp"
 [features]
 default = []
 encoding = ["samp-sdk/encoding"]
+# Re-exports `samp::debug`: the AMX_DBG debug-info parser, for building
+# debuggers/tooling on top of the SDK (pairs with the VM register/cell
+# accessors on `samp::prelude::Amx`).
+debug = ["samp-sdk/debug"]
 # Disables native Open Multiplayer support — the plugin runs only on SA-MP
 # (still compatible with Open Multiplayer via legacy mode)
 samp-only = ["samp-sdk/samp-only"]
+# Gzip-compresses rotated log archives (`.log.N` → `.log.N.gz`).
+# Opt-in: adds `flate2` as a runtime dep and the
+# `LoggerConfig::compress_archives` builder. Only takes effect when the
+# builder is set to `true`.
+compression = ["dep:flate2"]
 
 # Path + version dual specs let `cargo build` use the local workspace member
 # during development and `cargo publish` use the crates.io version. The
 # `package = "..."` rename keeps the internal `use samp_sdk::...` and
 # `use samp_codegen::...` imports working without sprinkling renames.
 [dependencies]
-samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.0.0" }
+samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.1.0" }
 samp-codegen = { package = "rust-samp-codegen", path = "../samp-codegen", version = "1.3.0" }
 fern = "0.7"
 log = "0.4"
 time = { version = "0.3.47", features = ["local-offset", "formatting", "macros"] }
+flate2 = { version = "1.0", optional = true, default-features = false, features = ["rust_backend"] }
 
 [package.metadata.docs.rs]
-features = ["encoding"]
+features = ["encoding", "compression"]
 default-target = "i686-pc-windows-msvc"
 
 [package.metadata.samp]

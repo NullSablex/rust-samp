@@ -66,6 +66,15 @@ pub(crate) mod runtime;
 
 pub use samp_codegen::{initialize_plugin, native};
 
+/// Version of the `rust-samp` (`samp`) crate the plugin was compiled
+/// against. Useful for diagnostic natives that report the SDK build
+/// back to the gamemode (e.g. `MyPlugin_GetSdkVersion()`), bug reports
+/// and runtime dashboards.
+#[must_use]
+pub fn version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 // Re-export so the generated macro does not leak the `log` dep into the user's Cargo.toml.
 #[doc(hidden)]
 pub use log;
@@ -77,6 +86,9 @@ pub use log;
 pub use samp_codegen::SampPlugin;
 pub use samp_sdk::exec_public;
 pub use samp_sdk::{args, cell, consts, error, exports, raw};
+
+#[cfg(feature = "debug")]
+pub use samp_sdk::debug;
 
 #[cfg(feature = "encoding")]
 pub use samp_sdk::encoding;
@@ -135,4 +147,13 @@ macro_rules! enable_logger_with {
         ));
         $crate::logger::install($cfg)
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn version_matches_cargo_pkg_version() {
+        assert_eq!(super::version(), env!("CARGO_PKG_VERSION"));
+        assert!(!super::version().is_empty());
+    }
 }

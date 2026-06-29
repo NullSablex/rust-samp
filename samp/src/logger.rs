@@ -22,8 +22,9 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::ptr;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, Ordering};
 
 use log::{LevelFilter, Log, Metadata, Record};
 use time::OffsetDateTime;
@@ -65,6 +66,60 @@ pub struct LoggerConfig {
     rotation: Option<Rotation>,
     file_format: String,
     server_format: String,
+    /// When the `compression` Cargo feature is enabled, rotated archives
+    /// are gzipped into `{filename}.{N}.gz` and the uncompressed file is
+    /// removed. Opt-in via [`LoggerConfig::compress_archives`].
+    #[cfg(feature = "compression")]
+    compress_archives: bool,
+    /// Additional log sinks supplied by the plugin author. The SDK never
+    /// instantiates one of these on its own — see [`Sink`].
+    sinks: Vec<Box<dyn Sink>>,
+}
+
+/// Receiver of formatted log records for forwarding to an **external
+/// destination chosen by the plugin author** — Sentry, an OTLP
+/// collector, an in-house HTTP endpoint, a database, anything.
+///
+/// # Privacy
+///
+/// The SDK never installs a `Sink` on its own. Records are only ever
+/// forwarded when the plugin's own source code calls
+/// [`LoggerConfig::add_sink`] with an instance. There is no default
+/// destination, no telemetry built into `rust-samp`, no opt-out
+/// switch hiding silent network traffic — if your plugin does not
+/// construct a `Sink`, nothing leaves the host.
+///
+/// Server operators who want to audit this can grep the plugin's
+/// source for `add_sink(`: zero hits means nothing is exported. The
+/// SDK itself contains zero `add_sink` calls.
+///
+/// # Implementing
+///
+/// Implement [`Sink::emit`] to forward records however you like. The
+/// method is called from inside the logger's lock and should not
+/// block on slow I/O — use a background thread / channel if your
+/// transport is HTTP-based.
+pub trait Sink: Send + Sync {
+    /// Called once per accepted log record.
+    fn emit(&self, record: &SinkRecord<'_>);
+}
+
+/// Single log record handed to a [`Sink`]. Borrows from the active
+/// `log::Record` and the SDK's per-record context — do not retain
+/// references past the `emit` call.
+#[derive(Debug)]
+pub struct SinkRecord<'a> {
+    /// Formatted timestamp (`YYYY-MM-DD HH:MM:SS`) of the record.
+    pub timestamp: &'a str,
+    /// Log level of the record (`ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`).
+    pub level: log::Level,
+    /// Log target reported by the `log::Record` (the originating
+    /// module path by default).
+    pub target: &'a str,
+    /// Formatted message body.
+    pub message: &'a str,
+    /// Plugin prefix (`[crate-name]` by default).
+    pub prefix: &'a str,
 }
 
 /// Type alias for the custom banner builder — receives the metadata
@@ -95,8 +150,8 @@ impl std::fmt::Debug for BannerMode {
 
 impl std::fmt::Debug for LoggerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LoggerConfig")
-            .field("crate_name", &self.crate_name)
+        let mut s = f.debug_struct("LoggerConfig");
+        s.field("crate_name", &self.crate_name)
             .field("directory", &self.directory)
             .field("filename", &self.filename)
             .field("prefix", &self.prefix)
@@ -106,7 +161,10 @@ impl std::fmt::Debug for LoggerConfig {
             .field("rotation", &self.rotation)
             .field("file_format", &self.file_format)
             .field("server_format", &self.server_format)
-            .finish()
+            .field("sinks", &format_args!("[{} sink(s)]", self.sinks.len()));
+        #[cfg(feature = "compression")]
+        s.field("compress_archives", &self.compress_archives);
+        s.finish()
     }
 }
 
@@ -149,6 +207,144 @@ impl LoggerConfig {
             }),
             file_format: DEFAULT_FILE_FORMAT.to_owned(),
             server_format: DEFAULT_SERVER_FORMAT.to_owned(),
+            #[cfg(feature = "compression")]
+            compress_archives: false,
+            sinks: Vec::new(),
+        }
+    }
+
+    /// Registers an additional [`Sink`] that will receive every accepted
+    /// log record alongside the file and server writes.
+    ///
+    /// **The SDK does not install any sink on its own.** This builder is
+    /// the *only* way a `Sink` ends up active — calling it is an
+    /// explicit choice by the plugin author. There is no hidden
+    /// telemetry, no default destination, no environment variable that
+    /// flips this on, and no automatic data collection. Server
+    /// operators auditing what a `rust-samp` plugin can export only need
+    /// to grep its source for `add_sink(` — zero hits means zero
+    /// external traffic from the logger.
+    ///
+    /// Multiple sinks may be registered; each one receives every record.
+    /// The order of calls is the order of dispatch.
+    ///
+    /// Sinks run inside the logger's lock — for HTTP-style backends
+    /// (Sentry, OTLP, …) forward to a background thread / channel
+    /// rather than calling the network from `emit`.
+    #[must_use]
+    pub fn add_sink(mut self, sink: Box<dyn Sink>) -> Self {
+        self.sinks.push(sink);
+        self
+    }
+
+    /// Gzip-compresses every rotated archive into `{filename}.{N}.gz` and
+    /// removes the uncompressed file. Off by default.
+    ///
+    /// Requires the `compression` Cargo feature, which pulls in `flate2`
+    /// with the pure-Rust backend. Compression runs synchronously inside
+    /// the rotation step — for verbose plugins this is a worthwhile
+    /// trade vs. unbounded disk usage; for low-volume plugins it is
+    /// usually unnecessary.
+    ///
+    /// Compatible with both rotation strategies (append-style and the
+    /// `rotation_keep(N)` shift-style cleanup).
+    #[cfg(feature = "compression")]
+    #[must_use]
+    pub fn compress_archives(mut self, yes: bool) -> Self {
+        self.compress_archives = yes;
+        self
+    }
+
+    /// Applies overrides read from environment variables. Lets server
+    /// operators retune the logger **without recompiling** the plugin —
+    /// flip a level, redirect the directory, change the rotation
+    /// threshold etc. by exporting an env var before starting the
+    /// server.
+    ///
+    /// The prefix is derived from the crate name passed to
+    /// [`LoggerConfig::new`] (typically `CARGO_PKG_NAME`) uppercased,
+    /// with non-alphanumeric characters replaced by `_`. For a plugin
+    /// named `streamer-rs` the prefix is `STREAMER_RS_LOG_`.
+    ///
+    /// | Env var | Equivalent builder |
+    /// | --- | --- |
+    /// | `<PREFIX>_LOG_LEVEL` (`off`/`error`/`warn`/`info`/`debug`/`trace`) | [`level`](Self::level) |
+    /// | `<PREFIX>_LOG_DIR` (path) | [`directory`](Self::directory) |
+    /// | `<PREFIX>_LOG_FILE` (filename) | [`filename`](Self::filename) |
+    /// | `<PREFIX>_LOG_ROTATION_MB` (u64) | [`rotation_size_mb`](Self::rotation_size_mb) |
+    /// | `<PREFIX>_LOG_ROTATION_KEEP` (u32) | [`rotation_keep`](Self::rotation_keep) |
+    /// | `<PREFIX>_LOG_NO_ROTATION` (`1`/`true`) | [`no_rotation`](Self::no_rotation) |
+    /// | `<PREFIX>_LOG_NO_BANNER` (`1`/`true`) | [`no_banner`](Self::no_banner) |
+    /// | `<PREFIX>_LOG_SERVER` (`0`/`false`) | [`also_to_server(false)`](Self::also_to_server) |
+    /// | `<PREFIX>_LOG_COMPRESS` (`1`/`true`, requires `compression` feature) | [`compress_archives(true)`](Self::compress_archives) |
+    ///
+    /// Missing env vars leave the existing value untouched, so calling
+    /// `.from_env()` at the end of a builder chain treats the env vars
+    /// as **overrides** of the code defaults — production wins. Invalid
+    /// values (unparseable integers, unknown level names) are reported
+    /// through the server console at startup and the previous value is
+    /// kept.
+    #[must_use]
+    pub fn from_env(mut self) -> Self {
+        let prefix = env_var_prefix(&self.crate_name);
+        self.apply_env(&prefix);
+        self
+    }
+
+    fn apply_env(&mut self, prefix: &str) {
+        if let Some(raw) = read_env(prefix, "LEVEL") {
+            match parse_level(&raw) {
+                Some(l) => self.level = l,
+                None => warn_invalid(prefix, "LEVEL", &raw),
+            }
+        }
+        if let Some(raw) = read_env(prefix, "DIR") {
+            self.directory = PathBuf::from(raw);
+        }
+        if let Some(raw) = read_env(prefix, "FILE") {
+            self.filename = Some(raw);
+        }
+        if let Some(raw) = read_env(prefix, "ROTATION_MB") {
+            match raw.parse::<u64>() {
+                Ok(0) => self.rotation = None,
+                Ok(mb) => {
+                    let max_bytes = mb.saturating_mul(1024 * 1024);
+                    let keep = self.rotation.and_then(|r| r.keep);
+                    self.rotation = Some(Rotation { max_bytes, keep });
+                }
+                Err(_) => warn_invalid(prefix, "ROTATION_MB", &raw),
+            }
+        }
+        if let Some(raw) = read_env(prefix, "ROTATION_KEEP") {
+            match raw.parse::<u32>() {
+                Ok(keep) => {
+                    let max_bytes = self
+                        .rotation
+                        .map_or(DEFAULT_ROTATION_BYTES, |r| r.max_bytes);
+                    self.rotation = Some(Rotation {
+                        max_bytes,
+                        keep: Some(keep),
+                    });
+                }
+                Err(_) => warn_invalid(prefix, "ROTATION_KEEP", &raw),
+            }
+        }
+        if let Some(raw) = read_env(prefix, "NO_ROTATION")
+            && parse_bool(&raw)
+        {
+            self.rotation = None;
+        }
+        if let Some(raw) = read_env(prefix, "NO_BANNER")
+            && parse_bool(&raw)
+        {
+            self.banner = BannerMode::Off;
+        }
+        if let Some(raw) = read_env(prefix, "SERVER") {
+            self.also_to_server = parse_bool(&raw);
+        }
+        #[cfg(feature = "compression")]
+        if let Some(raw) = read_env(prefix, "COMPRESS") {
+            self.compress_archives = parse_bool(&raw);
         }
     }
 
@@ -372,6 +568,14 @@ impl From<std::io::Error> for InstallError {
 /// Sentinel preventing two `install` calls from racing.
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 
+/// Raw pointer to the live `LoggerImpl` after a successful `install`.
+/// Set before `log::set_boxed_logger` takes ownership of the box, so it
+/// always points to the same allocation the `log` crate dispatches to.
+/// Used by [`flush`] to reach the file handle directly without going
+/// through `log::logger()` (whose `flush` is a no-op for any logger that
+/// returns from `Log::flush` without forcing the OS-level sync).
+static INSTANCE: AtomicPtr<LoggerImpl> = AtomicPtr::new(ptr::null_mut());
+
 /// Runtime-adjustable level filter. Mirrors `log::set_max_level` but lets
 /// the SDK route through `LevelFilter` without re-importing the crate.
 static LEVEL: AtomicU8 = AtomicU8::new(level_to_u8(LevelFilter::Info));
@@ -413,6 +617,29 @@ pub fn level() -> LevelFilter {
     u8_to_level(LEVEL.load(Ordering::Relaxed))
 }
 
+/// Forces the active log file to flush to disk.
+///
+/// `log::logger().flush()` only triggers the `flush` method of the
+/// currently registered logger, which is not guaranteed to drain the
+/// SDK's file handle when called via the trait object. This helper
+/// reaches the live `LoggerImpl` directly and calls `File::flush`
+/// under the same `Mutex` the writer uses, so panic hooks and
+/// shutdown paths can persist pending lines deterministically.
+///
+/// No-op when the logger has not been installed.
+pub fn flush() {
+    let ptr = INSTANCE.load(Ordering::Acquire);
+    if ptr.is_null() {
+        return;
+    }
+    // Safety: `INSTANCE` is set only inside `install` from the same
+    // allocation handed to `log::set_boxed_logger`, which leaks it for
+    // 'static. It is never written again, so the pointee outlives any
+    // call to `flush`.
+    let logger = unsafe { &*ptr };
+    log::Log::flush(logger);
+}
+
 // ---------------------------------------------------------------------------
 // Installer
 // ---------------------------------------------------------------------------
@@ -446,12 +673,15 @@ pub fn install(config: LoggerConfig) -> Result<(), InstallError> {
     let filename = config.resolved_filename();
     let archive_directory = config.resolved_archive_directory();
     let next_archive_index = find_next_archive_index(&archive_directory, &filename);
+    #[cfg(feature = "compression")]
+    let compress_archives = config.compress_archives;
     let LoggerConfig {
         also_to_server,
         banner,
         rotation,
         file_format,
         server_format,
+        sinks,
         ..
     } = config;
 
@@ -464,6 +694,9 @@ pub fn install(config: LoggerConfig) -> Result<(), InstallError> {
         archive_directory,
         file_format,
         server_format,
+        #[cfg(feature = "compression")]
+        compress_archives,
+        sinks,
         state: Mutex::new(LoggerState {
             file: Some(file),
             current_size: initial_size,
@@ -474,7 +707,10 @@ pub fn install(config: LoggerConfig) -> Result<(), InstallError> {
 
     set_level(level);
 
+    let logger_ptr: *const LoggerImpl = &raw const *logger;
+    INSTANCE.store(logger_ptr.cast_mut(), Ordering::Release);
     log::set_boxed_logger(logger).map_err(|_| {
+        INSTANCE.store(ptr::null_mut(), Ordering::Release);
         INSTALLED.store(false, Ordering::Release);
         InstallError::AlreadyInstalled
     })?;
@@ -497,6 +733,9 @@ struct LoggerImpl {
     archive_directory: PathBuf,
     file_format: String,
     server_format: String,
+    #[cfg(feature = "compression")]
+    compress_archives: bool,
+    sinks: Vec<Box<dyn Sink>>,
     state: Mutex<LoggerState>,
 }
 
@@ -574,6 +813,21 @@ impl Log for LoggerImpl {
                 }
             }
         }
+
+        // Forward to plugin-supplied external sinks (Sentry, OTLP, custom
+        // backends). Empty by default — the SDK never registers a sink.
+        if !self.sinks.is_empty() {
+            let sink_record = SinkRecord {
+                timestamp: &timestamp,
+                level: record.level(),
+                target: record.target(),
+                message: &message,
+                prefix: &self.prefix,
+            };
+            for sink in &self.sinks {
+                sink.emit(&sink_record);
+            }
+        }
     }
 
     fn flush(&self) {
@@ -613,25 +867,83 @@ impl LoggerImpl {
             _ => {
                 let index = state.next_archive_index;
                 state.next_archive_index = state.next_archive_index.saturating_add(1);
-                let _ = fs::rename(&self.path, self.archive_path(index));
+                let archived = self.archive_path(index);
+                if fs::rename(&self.path, &archived).is_ok() {
+                    self.compress_archive(&archived);
+                }
             }
         }
 
         self.reopen_active(state);
     }
 
+    /// Gzips `archived` into `archived.gz` and removes the original when
+    /// the `compression` feature is enabled **and** the dev opted in via
+    /// [`LoggerConfig::compress_archives`]. Silent no-op otherwise.
+    ///
+    /// Errors are intentionally swallowed: rotation must not block log
+    /// emission. A failure leaves the uncompressed `.log.N` in place,
+    /// which is still strictly better than data loss.
+    #[cfg(feature = "compression")]
+    fn compress_archive(&self, archived: &std::path::Path) {
+        if !self.compress_archives {
+            return;
+        }
+        let gz_path = {
+            let mut p = archived.as_os_str().to_owned();
+            p.push(".gz");
+            PathBuf::from(p)
+        };
+        let Ok(input) = fs::File::open(archived) else {
+            return;
+        };
+        let Ok(output) = fs::File::create(&gz_path) else {
+            return;
+        };
+        let mut encoder = flate2::write::GzEncoder::new(output, flate2::Compression::default());
+        let mut reader = std::io::BufReader::new(input);
+        if std::io::copy(&mut reader, &mut encoder).is_err() {
+            let _ = fs::remove_file(&gz_path);
+            return;
+        }
+        if encoder.finish().is_err() {
+            let _ = fs::remove_file(&gz_path);
+            return;
+        }
+        let _ = fs::remove_file(archived);
+    }
+
+    #[cfg(not(feature = "compression"))]
+    #[allow(clippy::unused_self)]
+    fn compress_archive(&self, _archived: &std::path::Path) {}
+
     /// Shift-style rotation: `.log.{keep}` is dropped, `.{i}` shifts to
-    /// `.{i+1}`, active becomes `.log.1`.
+    /// `.{i+1}`, active becomes `.log.1`. When the `compression` feature
+    /// is enabled, `.gz` variants are handled in lockstep so a mixed
+    /// archive directory (compressed + uncompressed) stays consistent.
     fn rotate_shift(&self, keep: u32) {
         let _ = fs::remove_file(self.archive_path(keep));
+        #[cfg(feature = "compression")]
+        let _ = fs::remove_file(append_gz(&self.archive_path(keep)));
         for index in (1..keep).rev() {
             let src = self.archive_path(index);
             let dst = self.archive_path(index + 1);
             if src.exists() {
                 let _ = fs::rename(&src, &dst);
             }
+            #[cfg(feature = "compression")]
+            {
+                let src_gz = append_gz(&src);
+                let dst_gz = append_gz(&dst);
+                if src_gz.exists() {
+                    let _ = fs::rename(&src_gz, &dst_gz);
+                }
+            }
         }
-        let _ = fs::rename(&self.path, self.archive_path(1));
+        let archived = self.archive_path(1);
+        if fs::rename(&self.path, &archived).is_ok() {
+            self.compress_archive(&archived);
+        }
     }
 
     fn reopen_active(&self, state: &mut LoggerState) {
@@ -667,6 +979,68 @@ impl LoggerImpl {
     }
 }
 
+/// Uppercased prefix derived from the crate name for env var lookup.
+/// Non-alphanumeric characters become `_`. `streamer-rs` → `STREAMER_RS`.
+fn env_var_prefix(crate_name: &str) -> String {
+    crate_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn read_env(prefix: &str, key: &str) -> Option<String> {
+    let name = format!("{prefix}_LOG_{key}");
+    std::env::var(&name).ok().filter(|s| !s.is_empty())
+}
+
+fn parse_level(raw: &str) -> Option<LevelFilter> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "off" => Some(LevelFilter::Off),
+        "error" => Some(LevelFilter::Error),
+        "warn" | "warning" => Some(LevelFilter::Warn),
+        "info" => Some(LevelFilter::Info),
+        "debug" => Some(LevelFilter::Debug),
+        "trace" => Some(LevelFilter::Trace),
+        _ => None,
+    }
+}
+
+fn parse_bool(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+/// Surfaces an invalid env var value to the server console at install
+/// time. The logger is not registered yet, so this routes through the
+/// raw [`Runtime`] log sink directly. Falls back to `eprintln!` when
+/// the runtime is not initialised (e.g. unit tests that exercise
+/// [`LoggerConfig::from_env`] in isolation).
+fn warn_invalid(prefix: &str, key: &str, raw: &str) {
+    let msg = format!(
+        "[rust-samp] ignoring invalid env var {prefix}_LOG_{key}={raw:?} — keeping previous value",
+    );
+    if let Some(rt) = Runtime::try_get() {
+        rt.log(msg);
+    } else {
+        eprintln!("{msg}");
+    }
+}
+
+#[cfg(feature = "compression")]
+fn append_gz(path: &std::path::Path) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".gz");
+    PathBuf::from(s)
+}
+
 /// Scans the archive directory for existing `{filename}.{N}` siblings of
 /// the active log and returns the next free `N`. Used to seed
 /// [`LoggerState::next_archive_index`] so append-style rotation never
@@ -678,9 +1052,13 @@ fn find_next_archive_index(archive_dir: &std::path::Path, filename: &str) -> u32
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str()
                 && let Some(rest) = name.strip_prefix(&prefix)
-                && let Ok(index) = rest.parse::<u32>()
             {
-                max = max.max(index);
+                // Accept both `.{N}` and `.{N}.gz` so the next index
+                // skips slots reused by an earlier compressed rotation.
+                let idx_str = rest.strip_suffix(".gz").unwrap_or(rest);
+                if let Ok(index) = idx_str.parse::<u32>() {
+                    max = max.max(index);
+                }
             }
         }
     }
@@ -1055,5 +1433,146 @@ mod tests {
         assert_eq!(level(), LevelFilter::Warn);
         set_level(LevelFilter::Trace);
         assert_eq!(level(), LevelFilter::Trace);
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn compress_archives_builder_sets_flag() {
+        let cfg = LoggerConfig::new("foo").compress_archives(true);
+        assert!(cfg.compress_archives);
+        let cfg = LoggerConfig::new("foo").compress_archives(false);
+        assert!(!cfg.compress_archives);
+        let cfg = LoggerConfig::new("foo");
+        assert!(
+            !cfg.compress_archives,
+            "compression must stay opt-in when the builder is not called"
+        );
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn find_next_archive_index_counts_gz_variants() {
+        let tmp = std::env::temp_dir().join(format!(
+            "rust-samp-test-archive-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        // mixed archive directory: one .gz and one plain
+        std::fs::write(tmp.join("foo.log.2.gz"), b"compressed").unwrap();
+        std::fs::write(tmp.join("foo.log.5"), b"plain").unwrap();
+
+        // Next free index must skip past the highest seen — regardless
+        // of whether the highest is `.N` or `.N.gz`.
+        let next = super::find_next_archive_index(&tmp, "foo.log");
+        assert_eq!(next, 6);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn env_var_prefix_uppercases_and_sanitises() {
+        assert_eq!(super::env_var_prefix("memcached"), "MEMCACHED");
+        assert_eq!(super::env_var_prefix("streamer-rs"), "STREAMER_RS");
+        assert_eq!(super::env_var_prefix("my.plugin"), "MY_PLUGIN");
+        assert_eq!(super::env_var_prefix("plugin_v2"), "PLUGIN_V2");
+    }
+
+    #[test]
+    fn parse_level_accepts_known_names() {
+        assert_eq!(super::parse_level("off"), Some(LevelFilter::Off));
+        assert_eq!(super::parse_level("ERROR"), Some(LevelFilter::Error));
+        assert_eq!(super::parse_level("warn"), Some(LevelFilter::Warn));
+        assert_eq!(super::parse_level("warning"), Some(LevelFilter::Warn));
+        assert_eq!(super::parse_level("  info "), Some(LevelFilter::Info));
+        assert_eq!(super::parse_level("debug"), Some(LevelFilter::Debug));
+        assert_eq!(super::parse_level("trace"), Some(LevelFilter::Trace));
+        assert_eq!(super::parse_level("nope"), None);
+        assert_eq!(super::parse_level(""), None);
+    }
+
+    #[test]
+    fn parse_bool_accepts_common_truthy() {
+        for s in ["1", "true", "TRUE", " yes ", "on"] {
+            assert!(super::parse_bool(s), "{s:?} should parse as true");
+        }
+        for s in ["0", "false", "no", "off", "", "anything"] {
+            assert!(!super::parse_bool(s), "{s:?} should parse as false");
+        }
+    }
+
+    #[test]
+    fn from_env_applies_overrides_and_ignores_garbage() {
+        // Use a unique prefix per test process to avoid collision with
+        // any real env the test runner already has set.
+        let crate_name = format!("rust_samp_test_{}", std::process::id());
+        let prefix = super::env_var_prefix(&crate_name);
+
+        // Set: valid level + dir + invalid rotation_mb (should be
+        // ignored, not panic) + bool toggles.
+        // SAFETY: tests run single-threaded enough for env mutation; the
+        // env is otherwise unused by the rest of the suite.
+        unsafe {
+            std::env::set_var(format!("{prefix}_LOG_LEVEL"), "debug");
+            std::env::set_var(format!("{prefix}_LOG_DIR"), "/tmp/rust-samp-from-env");
+            std::env::set_var(format!("{prefix}_LOG_ROTATION_MB"), "not-a-number");
+            std::env::set_var(format!("{prefix}_LOG_NO_BANNER"), "1");
+            std::env::set_var(format!("{prefix}_LOG_SERVER"), "false");
+        }
+
+        let cfg = LoggerConfig::new(crate_name).from_env();
+
+        assert_eq!(cfg.level, LevelFilter::Debug);
+        assert_eq!(cfg.directory, PathBuf::from("/tmp/rust-samp-from-env"));
+        assert!(matches!(cfg.banner, BannerMode::Off));
+        assert!(!cfg.also_to_server);
+        // ROTATION_MB was garbage — must have stayed on the default.
+        assert!(matches!(
+            cfg.rotation,
+            Some(Rotation {
+                max_bytes: DEFAULT_ROTATION_BYTES,
+                ..
+            })
+        ));
+
+        // SAFETY: same as above — cleaning up after ourselves.
+        unsafe {
+            std::env::remove_var(format!("{prefix}_LOG_LEVEL"));
+            std::env::remove_var(format!("{prefix}_LOG_DIR"));
+            std::env::remove_var(format!("{prefix}_LOG_ROTATION_MB"));
+            std::env::remove_var(format!("{prefix}_LOG_NO_BANNER"));
+            std::env::remove_var(format!("{prefix}_LOG_SERVER"));
+        }
+    }
+
+    #[test]
+    fn add_sink_appends_in_call_order() {
+        struct Counter(std::sync::atomic::AtomicUsize);
+        impl super::Sink for Counter {
+            fn emit(&self, _record: &super::SinkRecord<'_>) {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        let cfg = LoggerConfig::new("foo");
+        assert_eq!(cfg.sinks.len(), 0, "no sinks by default");
+
+        let cfg = cfg
+            .add_sink(Box::new(Counter(0.into())))
+            .add_sink(Box::new(Counter(0.into())));
+        assert_eq!(cfg.sinks.len(), 2);
+    }
+
+    #[test]
+    fn flush_without_install_is_noop() {
+        // `install` is not callable in unit tests (it tries to register a
+        // global `log` logger and create the `logs/` directory), but the
+        // public `flush` helper must remain safe when no instance is
+        // registered. Should not panic, deadlock, or touch any file.
+        super::flush();
+        super::flush();
     }
 }

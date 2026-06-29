@@ -24,10 +24,10 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: i686-unknown-linux-gnu
 
@@ -35,7 +35,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           cache-all-crates: true
           prefix-key: "v1-bench-release"
@@ -91,7 +91,7 @@ jobs:
           git push origin bench-data
 
       - name: Upload raw criterion output
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: criterion-${{ steps.ver.outputs.label }}
           path: target/criterion/

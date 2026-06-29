@@ -7,6 +7,7 @@ members = [
     "examples/hello",
     "examples/counter",
     "examples/advanced",
+    "examples/sink-demo",
 ]
 
 # Shared package metadata — each member inherits via `field.workspace = true`.
@@ -20,7 +21,7 @@ authors = [
 license = "MIT"
 repository = "https://github.com/NullSablex/rust-samp"
 homepage = "https://github.com/NullSablex/rust-samp"
-documentation = "https://nullsablex.github.io/rust-samp/"
+documentation = "https://rust-samp.nullsablex.com/"
 edition = "2024"
 rust-version = "1.88"
 

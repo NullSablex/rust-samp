@@ -261,6 +261,29 @@ LoggerConfig::new(env!("CARGO_PKG_NAME"))
 The active file grows indefinitely. Useful when an external rotator
 takes over (e.g. `logrotate` on a Linux server).
 
+### Compressing archives (feature `compression`)
+
+Rotated archives can be gzip-compressed on the fly. Enable the
+`compression` Cargo feature and opt in with the builder:
+
+```toml
+[dependencies]
+samp = { package = "rust-samp", version = "3", features = ["compression"] }
+```
+
+```rust
+LoggerConfig::new(env!("CARGO_PKG_NAME"))
+    .rotation_size_mb(50)
+    .compress_archives(true)
+```
+
+Each rotation then produces `my-plugin.log.1.gz` instead of
+`my-plugin.log.1` and removes the uncompressed file. Works with both
+rotation strategies, and the next-archive scan recognizes `.gz`
+variants so an index is never reused across restarts. The feature pulls
+in `flate2` with the pure-Rust backend; plugins that do not enable it
+pay no extra dependency cost.
+
 ## Adjusting the level at runtime
 
 ```rust
@@ -287,6 +310,90 @@ fn set_log_level(_amx: &Amx, level: i32) -> bool {
     samp::logger::set_level(target);
     true
 }
+```
+
+## Runtime overrides from the environment
+
+`LoggerConfig::from_env()` applies overrides from environment variables,
+so a server operator can change logging behaviour **without recompiling
+the plugin**:
+
+```rust
+let _ = samp::enable_logger_with!(
+    LoggerConfig::new(env!("CARGO_PKG_NAME"))
+        .from_env()
+);
+```
+
+The variable prefix is derived from the crate name, uppercased with every
+non-alphanumeric character replaced by `_` (so `streamer-rs` →
+`STREAMER_RS_LOG_*`). Recognized keys:
+
+| Variable (`{PREFIX}_LOG_…`) | Effect                                                   |
+| --------------------------- | -------------------------------------------------------- |
+| `LEVEL`                     | Level filter (`off`/`error`/`warn`/`info`/`debug`/`trace`). |
+| `DIR`                       | Log directory.                                           |
+| `FILE`                      | Active log filename.                                     |
+| `ROTATION_MB`               | Size threshold in MB; `0` disables rotation.             |
+| `ROTATION_KEEP`             | Number of archives to keep (shift-style).                |
+| `NO_ROTATION`               | Truthy disables rotation.                                |
+| `NO_BANNER`                 | Truthy suppresses the banner.                            |
+| `SERVER`                    | Truthy/falsy toggles forwarding to the server log.       |
+| `COMPRESS`                  | Truthy enables gzip (only with the `compression` feature). |
+
+Missing variables leave the builder value untouched; invalid values are
+reported to the server console and the previous value is kept. `from_env`
+is safe to call before the runtime is initialized.
+
+## External sinks
+
+`add_sink` forwards every **accepted** log record to a destination of the
+plugin author's choosing — Sentry, an OTLP collector, an in-house HTTP
+endpoint, anything. Implement the `Sink` trait and register an instance:
+
+```rust
+use samp::logger::{Sink, SinkRecord};
+
+struct MySink { /* channel, client handle, ... */ }
+
+impl Sink for MySink {
+    fn emit(&self, record: &SinkRecord<'_>) {
+        // Forward `record` to the external system. Keep this cheap and
+        // non-blocking — push onto a channel drained by a worker thread.
+    }
+}
+
+let _ = samp::enable_logger_with!(
+    LoggerConfig::new(env!("CARGO_PKG_NAME"))
+        .add_sink(Box::new(MySink::new()))
+);
+```
+
+!!! note "No telemetry is built into the SDK"
+    The SDK ships zero `add_sink` calls of its own and adds no `sentry` /
+    `opentelemetry` dependency. A sink becomes active only through an
+    explicit `add_sink(...)` in the plugin's own source — server operators
+    can audit this by grepping for `add_sink(`. There is no hidden flag,
+    environment override, or default destination.
+
+A complete, working **Sentry** integration (with the backpressure
+pattern: a `sync_channel` between the logger lock and a dedicated drainer
+thread) lives in [`examples/sink-demo/`](https://github.com/NullSablex/rust-samp/tree/master/examples/sink-demo).
+The DSN is read from an environment variable, never hardcoded.
+
+## Flushing
+
+`samp::logger::flush()` flushes the active log file directly through the
+live logger. Going through `log::logger().flush()` does **not** guarantee
+a sync of the SDK's own file handle; this does. It is a safe no-op when no
+logger has been installed — meant for panic hooks and custom shutdown
+paths:
+
+```rust
+std::panic::set_hook(Box::new(|info| {
+    log::error!("panic: {info}");
+    samp::logger::flush();
+}));
 ```
 
 ## Layer 3: DIY with `fern`

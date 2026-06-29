@@ -18,6 +18,8 @@ pub mod amx;
 pub mod args;
 pub mod cell;
 pub mod consts;
+#[cfg(feature = "debug")]
+pub mod debug;
 #[cfg(feature = "encoding")]
 pub mod encoding;
 pub mod error;

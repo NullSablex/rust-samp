@@ -160,6 +160,43 @@ Types supported by `get_as` / `set_as` / `iter_as`: `i8`, `u8`, `i16`,
 > converts individual cells of a buffer. They live in different layers
 > intentionally — `CellConvert` does not need an `&Amx`.
 
+## v3.1.0 → v3.2.0
+
+No breaking changes — every addition is opt-in and existing plugins keep
+compiling without edits. The workspace **MSRV is bumped to Rust 1.88**
+(was 1.87), required by the updated `time` dependency (`>= 0.3.47`).
+
+### What's new
+
+- **VM debugging primitives on `Amx`** — register accessors (`cip`,
+  `frame`, `stack`, `heap`, `stp`), bounds-checked cell access
+  (`read_cell`/`write_cell`) and debug-hook management
+  (`install_debug_hook`/`remove_debug_hook`). Always available.
+- **`samp::debug` (feature `debug`)** — an `AMX_DBG` debug-info parser,
+  plus the turnkey `samp::plugin::enable_debug_hook` +
+  `SampPlugin::on_debug_break`. See [VM Debugging](vm-debugging.md).
+- **External log sinks** — the `samp::logger::Sink` trait +
+  `LoggerConfig::add_sink`, for forwarding records to an external
+  destination chosen by the plugin author. No telemetry is built in.
+- **`LoggerConfig::from_env()`** — runtime overrides via environment
+  variables (level, directory, rotation, etc.) without recompiling.
+- **`LoggerConfig::compress_archives(bool)`** — opt-in gzip of rotated
+  archives, gated by the new `compression` Cargo feature.
+- **`samp::logger::flush()`** — flushes the active log file directly.
+- **`samp::version()`** — the `rust-samp` crate version at runtime.
+- **`Amx::call_native()`** — call a native registered by another plugin
+  (Streamer, MySQL, sscanf, …) straight from Rust.
+
+See [Logging](logging.md), [VM Debugging](vm-debugging.md) and
+[Calling Pawn from Rust](exec-public.md) for the full reference.
+
+### `rust-samp-sdk` version
+
+The `rust-samp-sdk` crate moves 3.0.0 → **3.1.0** (the new VM debugging
+primitives and the `samp::debug` parser are additive public API). The
+`rust-samp` crate's dependency requirement was updated accordingly;
+consumers of the umbrella `samp` crate need no change.
+
 ## v3.0.0 → v3.1.0
 
 No breaking changes — `rust-samp 3.1.0` adds a turnkey logger module

@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep the SHA-pinned GitHub Actions fresh: Dependabot bumps both the
+  # commit SHA and the trailing `# vX` comment, so pins never go stale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+
+  # Cargo dependencies across the workspace.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps

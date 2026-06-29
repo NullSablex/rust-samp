@@ -1,5 +1,6 @@
 [![CI](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml/badge.svg)](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NullSablex/rust-samp/badge)](https://scorecard.dev/viewer/?uri=github.com/NullSablex/rust-samp)
 [![dependency status](https://deps.rs/repo/github/NullSablex/rust-samp/status.svg)](https://deps.rs/repo/github/NullSablex/rust-samp)
 [![Benchmarks](https://img.shields.io/badge/benchmarks-criterion-blue)](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml)
 

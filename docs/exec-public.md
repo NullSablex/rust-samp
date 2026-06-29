@@ -115,3 +115,37 @@ scope — there is no need to free memory explicitly.
   (stack overflow, divide by zero, native failure, …).
 
 See [Error handling](error-handling.md) for the full list.
+
+## Calling another plugin's native — `call_native`
+
+`exec_public!` runs a **public** function of the script. To invoke a
+**native** registered by another plugin (Streamer, MySQL, sscanf, …) in
+the same AMX, use `Amx::call_native`:
+
+```rust
+// CreateDynamicObject(modelid, Float:x, Float:y, Float:z, ...)
+let params = [
+    19_300,                   // modelid
+    0.0_f32.to_bits() as i32, // x  (Float: cells are the f32 bits)
+    0.0_f32.to_bits() as i32, // y
+    3.5_f32.to_bits() as i32, // z
+];
+let object_id = amx.call_native("CreateDynamicObject", &params)?;
+```
+
+`call_native` resolves the host function pointer through `amx_FindNative`
+plus the natives table in the `AMX_HEADER`, builds the `params` block in
+the AMX convention (`[argc * sizeof(cell), arg0, arg1, …]`), and surfaces
+VM-side errors set by the native back through `amx.error`.
+
+Arguments are raw cells (`i32`): pass integers directly and `Float:`
+values as their IEEE-754 bits (`x.to_bits() as i32`). It returns
+`AmxResult<i32>` — `AmxError::NotFound` when the native is not registered,
+`AmxError::Index` when the resolved index is out of range, and any VM
+error forwarded from the native call.
+
+!!! note
+    Reference/array arguments must be allocated in the AMX heap first
+    (see [the manual equivalent](#manual-equivalent) above) and passed by
+    their cell address; `call_native` does not marshal Rust slices for
+    you the way `exec_public!` does.

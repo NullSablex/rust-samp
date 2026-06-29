@@ -1,0 +1,5 @@
+# Top-level documentation dependencies. The MkDocs Material theme pulls in
+# mkdocs and pymdown-extensions transitively. Compile the hash-pinned lockfile
+# with:
+#   pip-compile --generate-hashes --output-file=docs/requirements.txt docs/requirements.in
+mkdocs-material==9.7.6

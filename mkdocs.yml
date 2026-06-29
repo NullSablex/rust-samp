@@ -1,7 +1,7 @@
 site_name: rust-samp
 site_description: Complete guide to building SA-MP and Open Multiplayer plugins with Rust
 site_author: NullSablex
-site_url: https://nullsablex.github.io/rust-samp/
+site_url: https://rust-samp.nullsablex.com/
 
 repo_name: NullSablex/rust-samp
 repo_url: https://github.com/NullSablex/rust-samp
@@ -91,6 +91,7 @@ nav:
       - Error Handling: error-handling.md
   - Development:
       - Logging and Debug: logging.md
+      - VM Debugging: vm-debugging.md
       - Diagnostics: diagnostics.md
       - Build Scripts: build-scripts.md
       - Advanced Examples: advanced-examples.md

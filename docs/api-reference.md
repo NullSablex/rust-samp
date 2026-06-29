@@ -22,6 +22,7 @@ pub trait SampPlugin {
     fn on_unload(&mut self) {}
     fn on_amx_load(&mut self, amx: &Amx) {}
     fn on_amx_unload(&mut self, amx: &Amx) {}
+    fn on_debug_break(&mut self, amx: &Amx) {}
     fn on_tick(&mut self, ctx: TickContext) {}
 
     #[cfg(not(feature = "samp-only"))]
@@ -37,6 +38,7 @@ pub trait SampPlugin {
 | `on_unload`          | SA-MP / native Open Multiplayer | Server is unloading the plugin.                          |
 | `on_amx_load`        | SA-MP / native Open Multiplayer | A Pawn script (`.amx`) was loaded.                       |
 | `on_amx_unload`      | SA-MP / native Open Multiplayer | A Pawn script is being unloaded.                         |
+| `on_debug_break`     | SA-MP / native Open Multiplayer | VM debug hook fired on a source line. Requires `enable_debug_hook(amx)` and a `-d2`/`-d3` build. See [VM Debugging](vm-debugging.md). |
 | `on_tick`            | SA-MP / native Open Multiplayer | Periodic callback. Requires `enable_tick()` / `enable_tick_with(...)`. Cadence is the server's main loop on SA-MP, or the configured `omp_interval` on Open Multiplayer. |
 | `on_omp_ready`       | Native Open Multiplayer only | Every Open Multiplayer component initialized.              |
 | `on_component_free`  | Native Open Multiplayer only | Some Open Multiplayer component is being released.         |
@@ -89,6 +91,7 @@ pub trait AmxExt {
 | `exec(idx) -> AmxResult<i32>`                | Execute a function by index.                                           |
 | `find_public(name) -> AmxResult<AmxExecIdx>` | Resolve a Pawn `public`.                                               |
 | `find_native(name) -> AmxResult<i32>`        | Resolve a native by name.                                              |
+| `call_native(name, &params) -> AmxResult<i32>` | Call another plugin's native (raw cell params). See [exec-public](exec-public.md#calling-another-plugins-native-call_native). |
 | `find_pubvar::<T>(name) -> AmxResult<Ref<T>>`| Resolve a `pubvar` (`T: AmxPrimitive`).                                |
 | `push(value) -> AmxResult<()>`               | Push a value onto the VM stack (reverse argument order).               |
 | `get_ref::<T>(addr) -> AmxResult<Ref<T>>`    | Build a `Ref<T>` from an AMX address.                                  |
@@ -96,6 +99,9 @@ pub trait AmxExt {
 | `strlen(ptr) -> AmxResult<usize>`            | Length of an AMX string at the given pointer.                          |
 | `flags() -> AmxResult<AmxFlags>`             | Flags of the loaded `.amx`.                                            |
 | `amx()` / `header()`                         | Raw `*mut AMX` / `*mut AMX_HEADER` (via `NonNull`).                    |
+| `cip()` / `frame()` / `stack()` / `heap()` / `stp()` | VM register reads (`Option`, `None` if null). See [VM Debugging](vm-debugging.md). |
+| `read_cell(addr)` / `write_cell(addr, v)`    | Bounds-checked data-segment cell access (debug-hook safe).            |
+| `install_debug_hook(cb)` / `remove_debug_hook()` | Install/remove a raw debug hook (`amx_SetDebugHook`).             |
 
 ### `Allocator<'amx>`
 
@@ -265,8 +271,10 @@ exec_public!(amx, "PublicName", &vec => array);     // Rust slice
 
 | Path                | Contents                                                                |
 | ------------------- | ----------------------------------------------------------------------- |
+| *(crate root)*      | `samp::version()` — `rust-samp` crate version (`&'static str`).         |
 | `samp::amx`         | `Amx`, `AmxExt`, `AmxIdent`, `get(ident)`, `add(ptr)`.                  |
-| `samp::plugin`      | `SampPlugin`, `TickContext`, `TickSource`, `TickConfig`, `enable_tick`, `enable_tick_with`, `logger`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
+| `samp::plugin`      | `SampPlugin`, `TickContext`, `TickSource`, `TickConfig`, `enable_tick`, `enable_tick_with`, `enable_debug_hook`, `disable_debug_hook`, `logger`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
+| `samp::debug` ***   | `AmxDbg` (`from_amx`, `parse`, `lookup_line`, `lookup_file`, `lookup_function`, `line_to_address`, `symbols_in_scope`, `tag_name`), `DbgSymbol`, `Ident`, `VClass`. |
 | `samp::cell`        | `AmxCell`, `CellConvert`, `AmxPrimitive`, `AmxString`, `Ref`, `Buffer`, `UnsizedBuffer`. |
 | `samp::error`       | `AmxError`, `AmxResult`.                                                |
 | `samp::args`        | `Args`.                                                                 |
@@ -277,6 +285,7 @@ exec_public!(amx, "PublicName", &vec => array);     // Rust slice
 
 \* Available only when the `samp-only` feature is **not** set.
 \** Available only when the `encoding` feature is set.
+\*** Available only when the `debug` feature is set.
 
 ### `samp::plugin` — tick API
 
@@ -377,6 +386,11 @@ impl LoggerConfig {
     pub fn rotation_keep(self, keep: u32) -> Self;       // shift-style
     pub fn rotation_no_cleanup(self) -> Self;            // append-style (default)
     pub fn no_rotation(self) -> Self;                    // disable entirely
+    pub fn compress_archives(self, yes: bool) -> Self;   // gzip (feature `compression`)
+
+    // External sinks and environment overrides
+    pub fn add_sink(self, sink: Box<dyn Sink>) -> Self;  // forward accepted records
+    pub fn from_env(self) -> Self;                       // {PREFIX}_LOG_* overrides
 }
 ```
 
@@ -413,7 +427,21 @@ pub fn install(config: LoggerConfig) -> Result<(), InstallError>;
 pub fn set_level(level: log::LevelFilter);
 pub fn level() -> log::LevelFilter;
 pub fn print_banner();
+pub fn flush();                     // flush the active log file (no-op if uninstalled)
 ```
+
+#### `Sink` (external destinations)
+
+```rust
+pub trait Sink: Send + Sync {
+    fn emit(&self, record: &SinkRecord<'_>);
+}
+```
+
+Register with `LoggerConfig::add_sink`. See [Logging → External
+sinks](logging.md#external-sinks) and `examples/sink-demo/`. The SDK adds
+no telemetry of its own — a sink is active only via an explicit
+`add_sink(...)` in the plugin's source.
 
 `install` is rarely called directly — prefer the macros so the banner
 metadata is captured. `set_level` adjusts the global threshold at
@@ -445,4 +473,6 @@ optional alignment + width spec: `{level:<5}`, `{level:>5}`,
 | ------------ | -------------------------------------------------------------------------------------------- |
 | *(default)*  | SA-MP exports + Open Multiplayer `ComponentEntryPoint` (full dual support).                  |
 | `encoding`   | Enables `samp::encoding` (Windows-1251 / 1252 via `encoding_rs`).                            |
+| `debug`      | Enables `samp::debug` — the `AMX_DBG` debug-info parser (see [VM Debugging](vm-debugging.md)). Pure logic, no extra deps. |
+| `compression`| gzip-compresses rotated log archives (`LoggerConfig::compress_archives`); pulls in `flate2` (pure-Rust backend). |
 | `samp-only`  | Removes every Open Multiplayer code path — the plugin still loads on Open Multiplayer in legacy mode. |

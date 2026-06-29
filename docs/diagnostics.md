@@ -66,6 +66,20 @@ This kicks in only in the standard `#[native]` mode. In `raw` mode
 the macro hands the `Args` over verbatim and parsing is the plugin's
 responsibility.
 
+## Reporting the SDK version
+
+`samp::version()` returns the `CARGO_PKG_VERSION` of the `rust-samp`
+crate the plugin was built against. Surface it through a Pawn native so
+bug reports and diagnostic dashboards carry the exact SDK build:
+
+```rust
+#[native(name = "MyPlugin_GetSdkVersion")]
+fn get_sdk_version(_amx: &Amx, out: &mut UnsizedBuffer, size: usize) -> bool {
+    let buf = out.into_sized_buffer(size);
+    buf.write_str(samp::version()).is_ok()
+}
+```
+
 ## Reading the warnings
 
 All messages flow through whatever `log` implementation the plugin

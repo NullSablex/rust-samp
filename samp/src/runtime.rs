@@ -346,6 +346,23 @@ impl Runtime {
         unsafe { &*ptr }
     }
 
+    /// Non-panicking variant of [`get`]. Used by callers that can
+    /// reasonably be invoked before [`initialize`] — typically env-var
+    /// parsing that happens at config-build time, before the plugin's
+    /// `Load`/`on_load` runs.
+    ///
+    /// [`get`]: Self::get
+    /// [`initialize`]: Self::initialize
+    #[inline]
+    pub fn try_get() -> Option<&'static Runtime> {
+        let ptr = RUNTIME.load(Ordering::Acquire);
+        if ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { &*ptr })
+        }
+    }
+
     #[inline]
     pub fn plugin() -> &'static mut dyn SampPlugin {
         let rt = Runtime::get();

@@ -1,0 +1,28 @@
+[package]
+name = "sink-demo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+samp = { package = "rust-samp", path = "../../samp" }
+log = "0.4"
+# Real Sentry client. The example commits to a concrete upstream so
+# the dev sees the full pattern integrated, not a hand-rolled HTTP
+# stub. Features chosen for the smallest functional footprint:
+#   - `reqwest` + `rustls`  → working HTTP transport, no native TLS
+#   - `contexts`            → runtime / OS context attached to events
+# Pulls in a non-trivial dep tree (Tokio runtime + rustls). That cost
+# is paid only by plugins that ship this integration; the rust-samp
+# SDK itself does not depend on `sentry`.
+sentry = { version = "0.48.3", default-features = false, features = [
+    "reqwest",
+    "rustls",
+    "contexts",
+] }
+
+[package.metadata.samp]
+uid = "0x7c5e1b8f4a3d2e91"

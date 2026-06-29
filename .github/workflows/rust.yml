@@ -30,10 +30,10 @@ jobs:
       actions: write   # upload-artifact + rust-cache (cache write)
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       with:
         targets: ${{ matrix.target }}
 
@@ -42,7 +42,7 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
     - name: Cache cargo build
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       with:
         cache-all-crates: true
         prefix-key: "v1"
@@ -62,7 +62,7 @@ jobs:
 
     - name: Upload artifact
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: plugin-${{ matrix.target }}
         path: ${{ matrix.artifact }}
@@ -91,10 +91,10 @@ jobs:
       pull-requests: write   # post / update the sticky PR comment with the bench report
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       with:
         targets: i686-unknown-linux-gnu
 
@@ -102,13 +102,13 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
     - name: Cache cargo build
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       with:
         cache-all-crates: true
         prefix-key: "v1-bench"
 
     - name: Restore benchmark baseline
-      uses: actions/cache/restore@v5
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: target/criterion
         key: bench-baseline-main
@@ -252,7 +252,7 @@ jobs:
 
     - name: Post / update bench comment on the PR
       if: github.event_name == 'pull_request'
-      uses: marocchino/sticky-pull-request-comment@v2
+      uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2
       with:
         header: bench-report          # identifies which sticky comment to update
         path: pr_comment.md
@@ -269,13 +269,13 @@ jobs:
 
     - name: Save benchmark baseline
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-      uses: actions/cache/save@v5
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: target/criterion
         key: bench-baseline-${{ github.sha }}
 
     - name: Upload benchmark results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: bench-results
         path: |

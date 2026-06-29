@@ -167,6 +167,31 @@ impl Memcached {
     }
 }
 
+impl Memcached {
+    /// Smoke test for [`samp::amx::Amx::call_native`].
+    ///
+    /// Calls `GetTickCount` — a native the SA-MP server registers into
+    /// every loaded AMX via `amx_Register` — straight from Rust, without
+    /// going through the gamemode. The dispatch path is identical to
+    /// calling a native registered by another plugin (e.g. Streamer),
+    /// so this also exercises the cross-plugin use case end-to-end.
+    ///
+    /// Declared as an associated function (no `&mut self`) because the
+    /// native does not read or mutate plugin state — the `#[native]`
+    /// macro accepts both forms, and dropping `self` keeps the intent
+    /// explicit instead of silencing a `clippy::unused_self` warning.
+    ///
+    /// Pawn side:
+    /// ```pawn
+    /// new tick = Advanced_HostTickCount();
+    /// printf("tick=%d", tick);
+    /// ```
+    #[native(name = "Advanced_HostTickCount")]
+    pub fn host_tick_count(amx: &Amx) -> AmxResult<i32> {
+        amx.call_native("GetTickCount", &[])
+    }
+}
+
 impl SampPlugin for Memcached {
     fn on_load(&mut self) {
         info!("Memcached plugin loaded");
@@ -182,6 +207,7 @@ initialize_plugin!(
         Memcached::set_string,
         Memcached::increment,
         Memcached::delete,
+        Memcached::host_tick_count,
     ],
     {
         samp::plugin::enable_tick();

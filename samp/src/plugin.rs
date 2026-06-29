@@ -173,6 +173,54 @@ pub fn enable_tick_with(config: TickConfig) {
     Runtime::get().set_tick_config(config);
 }
 
+/// Installs the SDK's debug hook on `amx`, routing every executed line into
+/// [`SampPlugin::on_debug_break`]. Call from [`SampPlugin::on_amx_load`] for
+/// each AMX you want to debug (typically the gamemode).
+///
+/// The `.amx` must have been compiled with `-d2`/`-d3` for the VM to invoke the
+/// hook. To stop receiving callbacks, call [`disable_debug_hook`].
+///
+/// This is the turnkey alternative to [`Amx::install_debug_hook`]: instead of
+/// managing a raw `extern "C"` callback and global state yourself, the SDK owns
+/// a panic-guarded trampoline and dispatches into your plugin instance.
+///
+/// # Example
+/// ```rust,ignore
+/// impl SampPlugin for MyDebugger {
+///     fn on_amx_load(&mut self, amx: &Amx) {
+///         samp::plugin::enable_debug_hook(amx);
+///     }
+///     fn on_debug_break(&mut self, amx: &Amx) {
+///         let line = amx.cip();
+///         // inspect / pause / forward to a DAP client...
+///     }
+/// }
+/// ```
+pub fn enable_debug_hook(amx: &Amx) {
+    amx.install_debug_hook(debug_hook_trampoline);
+}
+
+/// Removes the SDK debug hook previously installed by [`enable_debug_hook`] on
+/// `amx`, so [`SampPlugin::on_debug_break`] stops firing for it.
+pub fn disable_debug_hook(amx: &Amx) {
+    amx.remove_debug_hook();
+}
+
+/// SDK-owned debug hook callback. The VM calls this on every source line of an
+/// AMX that opted in via [`enable_debug_hook`]. It wraps the raw `*mut AMX` and
+/// dispatches into the plugin's [`SampPlugin::on_debug_break`].
+///
+/// Crosses the FFI boundary, so it must never unwind: the dispatch is wrapped in
+/// `catch_unwind` and always returns `AMX_ERR_NONE` (0).
+extern "C" fn debug_hook_trampoline(amx: *mut samp_sdk::raw::types::AMX) -> i32 {
+    let _ = std::panic::catch_unwind(|| {
+        let Some(rt) = Runtime::try_get() else { return };
+        let wrapped = Amx::new(amx, rt.amx_exports());
+        Runtime::plugin().on_debug_break(&wrapped);
+    });
+    0 // AMX_ERR_NONE
+}
+
 /// Returns a [`fern::Dispatch`] already chained into the server's log system,
 /// disabling the SDK's default routing.
 ///
@@ -301,6 +349,20 @@ pub trait SampPlugin {
 
     /// A Pawn script is being unloaded. Clean per-AMX state here.
     fn on_amx_unload(&mut self, amx: &Amx) {
+        let _ = amx;
+    }
+
+    /// The VM's debug hook fired on a source line. Only called for AMXs the
+    /// plugin opted in via [`enable_debug_hook`], and only when the `.amx` was
+    /// compiled with `-d2`/`-d3`.
+    ///
+    /// This runs on the VM thread, synchronously, on every executed line — keep
+    /// it cheap, and block here (e.g. waiting for a debugger client) only if you
+    /// intend to freeze the server. Use the VM accessors on [`Amx`]
+    /// (`cip`, `frame`, `read_cell`/`write_cell`) to read the paused state, and
+    /// pair them with `samp::debug` (feature `debug`) to map addresses to source
+    /// lines and symbols.
+    fn on_debug_break(&mut self, amx: &Amx) {
         let _ = amx;
     }
 

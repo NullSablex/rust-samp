@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp-sdk"
-version = "3.0.0"
+version = "3.1.0"
 description = "Low-level FFI bindings for the SA-MP AMX virtual machine and open.mp native component ABI. Used internally by `rust-samp`; depend on it directly only if you need raw access without the higher-level macros and lifecycle."
 keywords = ["samp", "open-mp", "amx", "pawn", "ffi"]
 categories = ["external-ffi-bindings", "game-development"]
@@ -16,6 +16,10 @@ readme = "README.md"
 [features]
 default = []
 encoding = ["encoding_rs"]
+# Enables the `debug` module: an AMX_DBG debug-info parser for building
+# debuggers/tooling on top of the SDK (pairs with the VM register/cell
+# accessors on `Amx`). Pure logic, no extra dependencies.
+debug = []
 # Disables native Open Multiplayer support — the plugin runs only on SA-MP
 # (still compatible with Open Multiplayer via legacy mode)
 samp-only = []

@@ -4,6 +4,164 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.2.0] — 2026/06/30
+
+### New features
+
+- **VM debugging primitives on `Amx`** — safe accessors that previously had to
+  be hand-written by tooling poking the `#[repr(C, packed)]` `AMX` struct:
+  register reads (`cip`, `frame`, `stack`, `heap`, `stp`), bounds-checked
+  data-segment cell access (`read_cell`/`write_cell`, mirroring `amx_GetAddr`
+  and usable inside a debug hook where no native context exists), and debug
+  hook management (`install_debug_hook`/`remove_debug_hook`, the equivalent of
+  `amx_SetDebugHook`). Always available, no feature gate.
+- **`samp::debug` — AMX_DBG debug-info parser (feature `debug`)** — pure-logic
+  decoder for the debug block `pawncc -d2`/`-d3` appends to the `.amx`. Maps a
+  code address ↔ source line ↔ symbol ↔ function (`AmxDbg::from_amx`/`parse`,
+  `lookup_line`, `lookup_file`, `lookup_function`, `line_to_address`,
+  `symbols_in_scope`, `tag_name`), handling the 16-bit line-count overflow of
+  large gamemodes and corrupted-count sanity ceilings. No extra dependencies;
+  opt-in via the `debug` feature.
+
+- **External sinks (`samp::logger::Sink` trait + `LoggerConfig::add_sink`)** —
+  extension point for forwarding accepted log records to a destination
+  chosen by the plugin author (Sentry, an OTLP collector, an in-house
+  HTTP endpoint, anything). **No telemetry is built into the SDK.** No
+  dependency on `sentry` / `opentelemetry` is added; `rust-samp`
+  ships exactly the same dependency graph as before. The trait is an
+  opt-in surface only — implementing it is the plugin author's call,
+  and instances become active only through an explicit
+  `LoggerConfig::add_sink(Box::new(...))` in the plugin's own source.
+  The SDK contains zero `add_sink` invocations of its own; server
+  operators auditing what a `rust-samp` plugin can export only need
+  to grep its source for `add_sink(`. Zero hits means zero external
+  traffic from the logger. There is no hidden flag, no environment
+  override, and no default destination — this is not Microsoft-style
+  always-on telemetry, it is a hook for plugin authors who already
+  run their own observability stack to integrate with it on their own
+  terms.
+- **`samp::version()`** — free function returning the `CARGO_PKG_VERSION`
+  of the `rust-samp` (`samp`) crate. Pair it with a Pawn-side native
+  (e.g. `MyPlugin_GetSdkVersion()`) to surface the active SDK build in
+  bug reports and diagnostic dashboards.
+- **`samp::logger::flush()`** — public free function that flushes the
+  active log file directly through the live `LoggerImpl`. Going through
+  `log::logger().flush()` did not guarantee a sync of the SDK's own
+  file handle; calling `samp::logger::flush()` does. Safe no-op when
+  the logger has not been installed — meant for panic hooks and
+  custom shutdown paths.
+- **`LoggerConfig::from_env()`** — applies runtime overrides from
+  environment variables, so server operators can flip the log level,
+  redirect the directory, change the rotation threshold etc. **without
+  recompiling the plugin**. The prefix is derived from the plugin's
+  crate name uppercased with non-alphanumeric characters replaced by
+  `_` (`streamer-rs` → `STREAMER_RS_LOG_*`). Recognised keys:
+  `LEVEL`, `DIR`, `FILE`, `ROTATION_MB`, `ROTATION_KEEP`,
+  `NO_ROTATION`, `NO_BANNER`, `SERVER`, and `COMPRESS` (the last only
+  effective when the `compression` feature is enabled). Missing vars
+  leave the existing value untouched; invalid values are reported to
+  the server console and the previous value is kept. Pairs with
+  `Runtime::try_get()` (also new) so the parser can warn gracefully
+  even when called before the runtime is initialised (e.g. from a
+  unit test).
+- **`LoggerConfig::compress_archives(bool)`** — opt-in gzip of rotated
+  archives. When enabled, every rotation produces
+  `{filename}.{N}.gz` instead of `{filename}.{N}` and removes the
+  uncompressed file. Works with both rotation strategies (append-style
+  and `rotation_keep(N)` shift-style). Gated by the new `compression`
+  Cargo feature, which pulls in `flate2` with the pure-Rust backend —
+  not enabled by default, so plugins that do not need it pay no extra
+  dependency cost. The next-archive scan also recognizes `.gz`
+  variants so an index is never reused across restarts.
+- **`Amx::call_native()`** — invoke a native registered by **another
+  plugin** in the same AMX, straight from Rust. Resolves the host
+  function pointer through `amx_FindNative` + the natives table in the
+  `AMX_HEADER`, builds the `params` block in the AMX convention
+  (`[argc * sizeof(cell), arg0, ...]`) and surfaces VM-side errors back
+  via `amx.error`. Unblocks integration with the entire existing C++
+  plugin ecosystem (Streamer, MySQL, sscanf, …) without dropping down
+  to `samp_sdk::raw`. Originally surfaced by
+  [@Day-OS](https://github.com/Day-OS) (Discord `@daytheipc`), who
+  found `rust-samp` on crates.io while trying to drive the Streamer
+  plugin from Rust for an in-game PNG / video / YouTube-live 3D panel
+  and hit the gap that this API closes. May or may not have been
+  exactly what she needed — but it should help.
+
+### Examples
+
+- **New `examples/sink-demo/`** — complete, working **Sentry
+  integration** for the new `Sink` trait. Uses the real `sentry`
+  crate (`sentry = "0.43"` with `reqwest` + `rustls` + `contexts`,
+  `default-features = false`), with `sentry::init` and
+  `sentry::capture_event` wired up end-to-end — every `log!` call
+  becomes a real Sentry event. **DSN is read from the env var
+  `SINK_DEMO_SENTRY_DSN` at plugin load — never hardcoded.** Source
+  code stays clean, the DSN stays in the operator's environment
+  (systemd `Environment=`, Docker secret, vault sidecar, `.env`
+  outside the repo, …). Implements the full backpressure pattern
+  (`mpsc::sync_channel` between the logger lock and Sentry +
+  dedicated background drainer thread that owns the
+  `ClientInitGuard`, so its `Drop` flushes pending events at plugin
+  unload). When the env var is missing the example falls back to a
+  fake local DSN (`http://fake@127.0.0.1:9999/1`) — the Sentry
+  client still initializes but its HTTP transport refuses fast, so
+  no event ever reaches a real Sentry server. Going to production
+  is one `export` statement. When a real DSN is configured, the
+  plugin also emits a startup smoke test (one `info` + one
+  `warning` + one `error`) on `on_load` so the operator immediately
+  sees the wiring working on the Sentry dashboard. The heavy
+  `sentry` dep (pinned to 0.48.3) is paid by this example crate,
+  not by the SDK. Pawn natives: `SinkDemo_GetExportedCount`,
+  `SinkDemo_GetDroppedCount` for pipeline observability;
+  `SinkDemo_EmitInfo`, `SinkDemo_EmitWarn`, `SinkDemo_EmitError`
+  for firing test events at each severity from the gamemode.
+
+### Build
+
+- **New Cargo feature `compression`** on the `rust-samp` crate. Opt-in;
+  pulls in `flate2 = "1"` with the pure-Rust backend
+  (`default-features = false`, `features = ["rust_backend"]`) so plugins
+  that do not enable it remain dependency-free on this axis.
+- **`time` bumped to `>= 0.3.47`** (also pulls in `time-core 0.1.8`
+  and `time-macros 0.2.27`).
+- **MSRV bumped to Rust 1.88** (was 1.87) to satisfy those versions.
+  Declared via `[workspace.package].rust-version = "1.88"`.
+
+### Security & governance
+
+- **OpenSSF Scorecard** — new `.github/workflows/scorecard.yml` that runs
+  the OpenSSF Scorecard analysis, uploads the SARIF to code-scanning and
+  publishes the result. Scorecard badge added to the README.
+- **All GitHub Actions pinned by commit SHA** — every `uses:` across the
+  six workflows is now pinned to a full commit SHA (with a `# vX` comment),
+  satisfying the Scorecard *Pinned-Dependencies* check.
+- **`docs/requirements.txt` pinned by hash** — the MkDocs Material build
+  dependencies are now a fully hashed lockfile (`pip-compile
+  --generate-hashes` from the new `docs/requirements.in`), installed with
+  `pip install --require-hashes` in the docs workflow.
+- **`.github/dependabot.yml`** — weekly version updates for the
+  `github-actions` and `cargo` ecosystems, keeping the pinned SHAs and
+  crate dependencies fresh (Scorecard *Dependency-Update-Tool*).
+- **`SECURITY.md`** — security policy and private vulnerability reporting
+  via GitHub Security Advisory.
+- **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
+- **`CONTRIBUTING.md`** — build/test/lint workflow for the i686 targets,
+  project structure and code rules.
+
+### Crate versions
+
+- `rust-samp` (lib `samp`): 3.1.0 → 3.2.0
+- `rust-samp-sdk` (lib `samp_sdk`): 3.0.0 → 3.1.0 (new VM debugging
+  primitives on `Amx` and the `samp::debug` parser are additive public API)
+- `rust-samp-codegen` (lib `samp_codegen`): 1.3.0 — unchanged
+
+### CHANGELOG correction (v3.1.0)
+
+The v3.1.0 entry below described the `CNAME` removal as a switch to
+the default GitHub Pages URL. That was wrong: the file was simply
+unnecessary and the documentation URL is unchanged. Recorded here;
+the v3.1.0 section below is left as-published.
+
 ## [v3.1.0] — 2026/06/09
 
 Headline: turnkey logger — `samp::enable_logger!()` installs a complete
