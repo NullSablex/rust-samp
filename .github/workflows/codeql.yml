@@ -1,0 +1,46 @@
+name: CodeQL
+
+# Static application security testing (SAST). Analyzes the Rust sources with
+# CodeQL on every push/PR to master and weekly, publishing findings to the
+# Security tab (code-scanning).
+
+on:
+  push:
+    branches: [ "master" ]
+    paths-ignore: &doc-paths
+      - '**.md'
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'LICENSE'
+  pull_request:
+    branches: [ "master" ]
+    paths-ignore: *doc-paths
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload results to code-scanning
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: rust
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "/language:rust"

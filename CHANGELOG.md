@@ -150,6 +150,10 @@ for the full directory.
 - **`.github/dependabot.yml`** — weekly version updates for the
   `github-actions` and `cargo` ecosystems, keeping the pinned SHAs and
   crate dependencies fresh (Scorecard *Dependency-Update-Tool*).
+- **CodeQL (SAST)** — new `.github/workflows/codeql.yml` running static
+  analysis on the Rust sources (push/PR to `master` + weekly), publishing
+  to the Security tab. Satisfies the Scorecard *SAST* check (actions
+  pinned by SHA, docs-only changes ignored).
 - **CI tweaks** — the Scorecard workflow gained `workflow_dispatch` for
   on-demand re-scans; the benchmark job is skipped for `dependabot[bot]`
   (dependency bumps don't need a bench run, and Dependabot's read-only
