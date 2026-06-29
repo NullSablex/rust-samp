@@ -120,6 +120,30 @@ pub struct DbgSymbol {
     pub dims: Vec<DbgSymDim>,
 }
 
+impl DbgSymbol {
+    /// Effective data-segment address of this symbol given the current frame
+    /// pointer `frm`. Globals use their absolute address; locals and arguments
+    /// are relative to `frm`. For arrays this is the base address.
+    ///
+    /// Pairs with [`Amx::read_cell`](crate::amx::Amx::read_cell) /
+    /// [`write_cell`](crate::amx::Amx::write_cell) to read or edit the symbol's
+    /// value during a debug pause.
+    #[must_use]
+    pub fn effective_address(&self, frm: i32) -> i32 {
+        match self.vclass {
+            VClass::Global => i32::try_from(self.address).unwrap_or(0),
+            _ => frm.wrapping_add(self.address.cast_signed()),
+        }
+    }
+
+    /// Whether this symbol is an array (`iARRAY`/`iREFARRAY`) — its cell holds a
+    /// base address, not a directly editable scalar value.
+    #[must_use]
+    pub fn is_array(&self) -> bool {
+        matches!(self.ident, Ident::Array | Ident::RefArray)
+    }
+}
+
 /// Tag-table entry (`AMX_DBG_TAG`): id ↔ tag name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbgTag {

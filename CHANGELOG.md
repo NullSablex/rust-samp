@@ -21,7 +21,9 @@ for the full directory.
   `lookup_line`, `lookup_file`, `lookup_function`, `line_to_address`,
   `symbols_in_scope`, `tag_name`), handling the 16-bit line-count overflow of
   large gamemodes and corrupted-count sanity ceilings. No extra dependencies;
-  opt-in via the `debug` feature.
+  opt-in via the `debug` feature. `DbgSymbol::effective_address(frm)` and
+  `DbgSymbol::is_array()` remove the global-vs-frame address boilerplate when
+  pairing the parser with `Amx::read_cell`/`write_cell`.
 
 - **External sinks (`samp::logger::Sink` trait + `LoggerConfig::add_sink`)** —
   extension point for forwarding accepted log records to a destination

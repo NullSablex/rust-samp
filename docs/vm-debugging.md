@@ -120,17 +120,16 @@ depend on `rust-samp-sdk` with `default-features = false, features =
 
 ### Inspecting a variable
 
-Combine the parser with the cell accessors: resolve a symbol's effective
-address (global → absolute; local/argument → relative to `frm`), then read
-the cell.
+Combine the parser with the cell accessors. `DbgSymbol::effective_address`
+resolves the address for you (global → absolute; local/argument → relative
+to `frm`), so you just read the cell:
 
 ```rust
 for sym in dbg.symbols_in_scope(cip) {
-    let addr = match sym.vclass {
-        samp::debug::VClass::Global => i32::try_from(sym.address).unwrap_or(0),
-        _ => frm.wrapping_add(sym.address.cast_signed()),
-    };
-    let value = amx.read_cell(addr);
+    if sym.is_array() {
+        continue; // arrays hold a base address, not a scalar value
+    }
+    let value = amx.read_cell(sym.effective_address(frm));
     // interpret `value` according to sym.tag (Float bits, bool, integer...)
 }
 ```

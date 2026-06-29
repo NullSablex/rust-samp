@@ -203,6 +203,18 @@ mod tests {
     }
 
     #[test]
+    fn effective_address_global_and_local() {
+        let dbg = AmxDbg::parse(&sample_block()).unwrap();
+        let g = dbg.symbols.iter().find(|s| s.name == "g_score").unwrap();
+        let tmp = dbg.symbols.iter().find(|s| s.name == "tmp").unwrap();
+        // Global: absolute address, frame ignored.
+        assert_eq!(g.effective_address(9_999), 200);
+        // Local: frame-relative — frm(100) + (-4) = 96.
+        assert_eq!(tmp.effective_address(100), 96);
+        assert!(!g.is_array());
+    }
+
+    #[test]
     fn rejects_bad_magic() {
         let mut bad = sample_block();
         bad[4] = 0x00; // corrupt the magic
