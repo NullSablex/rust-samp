@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp-sdk"
-version = "3.1.0"
+version = "3.2.0"
 description = "Low-level FFI bindings for the SA-MP AMX virtual machine and open.mp native component ABI. Used internally by `rust-samp`; depend on it directly only if you need raw access without the higher-level macros and lifecycle."
 keywords = ["samp", "open-mp", "amx", "pawn", "ffi"]
 categories = ["external-ffi-bindings", "game-development"]

@@ -450,6 +450,54 @@ impl Amx {
         read_reg!(self.stp)
     }
 
+    /// Primary register (`pri`) — the VM's main accumulator. In a debug hook it
+    /// holds the operand the next instruction will act on; e.g. for `OP_BOUNDS`
+    /// it is the index being range-checked.
+    #[must_use]
+    pub fn pri(&self) -> Option<i32> {
+        read_reg!(self.pri)
+    }
+
+    /// Alternate register (`alt`) — the VM's secondary accumulator. For the
+    /// division opcodes (`OP_DIV`/`OP_SDIV`) it holds the divisor, so reading it
+    /// in a debug hook lets a debugger detect a divide-by-zero before it aborts.
+    #[must_use]
+    pub fn alt(&self) -> Option<i32> {
+        read_reg!(self.alt)
+    }
+
+    /// Reads a 32-bit cell from the **code** segment at `offset` (a code-segment
+    /// offset, like `cip`). Returns `None` when the VM pointer is null or the
+    /// offset is outside the code segment `[0, header.dat - header.cod)`.
+    ///
+    /// The code segment is read-only and laid out as `base + header.cod`; this is
+    /// the counterpart of [`read_cell`](Self::read_cell) for instructions. A
+    /// debugger uses it to decode the opcode at `cip` inside a debug hook (e.g. to
+    /// catch a runtime error before the VM aborts). Reads byte-wise (no alignment
+    /// assumption), since the `AMX_HEADER` is packed.
+    #[must_use]
+    pub fn read_code(&self, offset: u32) -> Option<i32> {
+        let amx = NonNull::new(self.ptr)?.as_ptr();
+        let base = unsafe { std::ptr::addr_of!((*amx).base).read_unaligned() };
+        if base.is_null() {
+            return None;
+        }
+        let hdr = base.cast::<AMX_HEADER>();
+        let cod = unsafe { std::ptr::addr_of!((*hdr).cod).read_unaligned() };
+        let dat = unsafe { std::ptr::addr_of!((*hdr).dat).read_unaligned() };
+        // Code segment spans `[cod, dat)`; the offset is relative to `cod`.
+        let size = u32::try_from(dat - cod).ok()?;
+        if offset >= size {
+            return None;
+        }
+        let cod = usize::try_from(cod).ok()?;
+        let off = usize::try_from(offset).ok()?;
+        let ptr = unsafe { base.add(cod + off) };
+        let mut buf = [0u8; 4];
+        unsafe { std::ptr::copy_nonoverlapping(ptr, buf.as_mut_ptr(), 4) };
+        Some(i32::from_ne_bytes(buf))
+    }
+
     /// Resolves a data-segment address to a raw pointer with the same bounds
     /// checking as `amx_GetAddr`, without going through the exported function
     /// table. Returns `None` when the address falls in the free region between
@@ -628,7 +676,7 @@ impl Drop for Allocator<'_> {
 #[cfg(test)]
 mod vm_tests {
     use super::Amx;
-    use crate::raw::types::AMX;
+    use crate::raw::types::{AMX, AMX_HEADER};
     use std::mem::MaybeUninit;
 
     /// Builds a synthetic `AMX` over `data` and runs `f` with an `Amx` wrapping
@@ -651,6 +699,9 @@ mod vm_tests {
             std::ptr::addr_of_mut!((*p).hea).write_unaligned(hea);
             std::ptr::addr_of_mut!((*p).stk).write_unaligned(stk);
             std::ptr::addr_of_mut!((*p).stp).write_unaligned(stp);
+            // pri/alt seeded deterministically so the register test can read them.
+            std::ptr::addr_of_mut!((*p).pri).write_unaligned(11);
+            std::ptr::addr_of_mut!((*p).alt).write_unaligned(0);
         }
         let amx = Amx::new(p, 0);
         f(&amx);
@@ -665,7 +716,42 @@ mod vm_tests {
             assert_eq!(amx.heap(), Some(64));
             assert_eq!(amx.stack(), Some(192));
             assert_eq!(amx.stp(), Some(256));
+            // pri/alt as seeded by `with_amx` (alt = 0 models a divide-by-zero).
+            assert_eq!(amx.pri(), Some(11));
+            assert_eq!(amx.alt(), Some(0));
         });
+    }
+
+    #[test]
+    fn read_code_reads_instructions_and_bounds() {
+        // Build a minimal blob: AMX_HEADER followed by the code segment. Only the
+        // `cod`/`dat` fields matter here — `cod` marks where the code starts and
+        // `dat` its end (the data segment would follow). The `base` pointer is the
+        // blob itself, mirroring how the loader lays the `.amx` out in memory.
+        let hdr_size = std::mem::size_of::<AMX_HEADER>();
+        let cod = i32::try_from(hdr_size).unwrap();
+        // Two 4-byte cells of code: 0xAABBCCDD then 0x00000011.
+        let mut blob = vec![0u8; hdr_size + 8];
+        blob[hdr_size..hdr_size + 4].copy_from_slice(&0xAABB_CCDDu32.to_ne_bytes());
+        blob[hdr_size + 4..hdr_size + 8].copy_from_slice(&0x11i32.to_ne_bytes());
+        let dat = i32::try_from(hdr_size + 8).unwrap();
+
+        let mut raw = MaybeUninit::<AMX>::uninit();
+        let p = raw.as_mut_ptr();
+        unsafe {
+            let base = blob.as_mut_ptr();
+            std::ptr::addr_of_mut!((*p).base).write_unaligned(base);
+            let hdr = base.cast::<AMX_HEADER>();
+            std::ptr::addr_of_mut!((*hdr).cod).write_unaligned(cod);
+            std::ptr::addr_of_mut!((*hdr).dat).write_unaligned(dat);
+        }
+        let amx = Amx::new(p, 0);
+        // Offset 0 and 4 are the two seeded cells.
+        assert_eq!(amx.read_code(0), Some(0xAABB_CCDDu32.cast_signed()));
+        assert_eq!(amx.read_code(4), Some(0x11));
+        // Past the end of the code segment (size = 8): rejected.
+        assert_eq!(amx.read_code(8), None);
+        assert_eq!(amx.read_code(100), None);
     }
 
     #[test]
@@ -695,7 +781,10 @@ mod vm_tests {
         assert_eq!(amx.cip(), None);
         assert_eq!(amx.frame(), None);
         assert_eq!(amx.stp(), None);
+        assert_eq!(amx.pri(), None);
+        assert_eq!(amx.alt(), None);
         assert_eq!(amx.read_cell(0), None);
+        assert_eq!(amx.read_code(0), None);
         assert!(!amx.write_cell(0, 1));
         // Installing/removing a hook on a null AMX must not crash.
         amx.remove_debug_hook();

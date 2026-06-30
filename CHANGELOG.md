@@ -4,6 +4,25 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [Unreleased]
+
+### Added
+
+- **`Amx::pri()` / `Amx::alt()`** — safe reads of the VM's primary and
+  alternate accumulator registers, completing the register set alongside the
+  existing `cip`/`frame`/`stack`/`heap`/`stp`. Read directly from the
+  `#[repr(C, packed)]` `AMX` struct with `read_unaligned` (taking a reference
+  to a packed field is UB), returning `None` when the VM pointer is null.
+- **`Amx::read_code(offset)`** — bounds-checked read of a 32-bit cell from the
+  **code** segment, the instruction-side counterpart of `read_cell`. Resolves
+  `base + header.cod + offset` and validates `offset` against the code segment
+  `[0, header.dat - header.cod)`, reading byte-wise (the header is packed). The
+  SDK exposes the raw bytes only; decoding the instruction is up to the consumer.
+
+### Crate versions
+
+- `rust-samp-sdk` (lib `samp_sdk`): 3.1.0 → 3.2.0 (additive public API)
+
 ## [v3.2.0] — 2026/06/30
 
 ### New features
