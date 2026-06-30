@@ -397,7 +397,7 @@ emitted; the plugin behaves exactly like in v2.x:
 
 ```toml
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0", features = ["samp-only"] }
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z", features = ["samp-only"] }
 ```
 
 No other change is required.
@@ -410,7 +410,7 @@ FNV-1a and writes it back to `Cargo.toml`:
 
 ```toml
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.0.0" }
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z" }
 ```
 
 After the first build the `Cargo.toml` ends up with a new section:
@@ -475,7 +475,7 @@ to the current `samp` crate.
 
 | Before                                  | Now                                                                            |
 | --------------------------------------- | ------------------------------------------------------------------------------ |
-| `samp_sdk = "*"`                        | `samp = { package = "rust-samp", version = "3" }` (crates.io, v3.1.0+) — or `samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }` (any version) |
+| `samp_sdk = "*"`                        | `samp = { package = "rust-samp", version = "3" }` (crates.io, v3.1.0+) — or `samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z" }` (any version) |
 | `new_plugin!(Plugin)`                   | `initialize_plugin!(type: T, natives: [...])` or constructor-block form        |
 | `define_native!(name, args)`            | `#[native(name = "Name")]`                                                     |
 | `impl Default for Plugin`               | `#[derive(Default)]` or a constructor block                                    |
@@ -487,7 +487,7 @@ to the current `samp` crate.
 
 ### 1. Update `Cargo.toml`
 
-From crates.io (v3.1.0 onwards):
+From crates.io:
 
 ```diff
 - [dependencies]
@@ -504,7 +504,7 @@ Or via git (any version, including v3.0.0 and earlier):
 - samp_sdk = "*"
 
 + [dependencies]
-+ samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
++ samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z" }
 ```
 
 ### 2. Update imports

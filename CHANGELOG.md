@@ -159,11 +159,24 @@ for the full directory.
   (a `changes` path-filter job gates it), never for `dependabot[bot]`
   (dependency bumps don't need a bench run, and Dependabot's read-only
   token cannot post the PR comment).
+- **Release Drafter removed** — `.github/release-drafter.yml` and
+  `.github/workflows/release-drafter.yml` dropped. Releases are cut
+  directly rather than drafted, so the workflow was dead weight.
 - **`SECURITY.md`** — security policy and private vulnerability reporting
   via GitHub Security Advisory.
 - **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1.
 - **`CONTRIBUTING.md`** — build/test/lint workflow for the i686 targets,
   project structure and code rules.
+
+### Documentation
+
+- **Single source of truth for crate versions** — the per-crate version
+  columns were removed from the `README.md` and `docs/index.md` workspace
+  tables (they duplicated `Cargo.toml` and had already drifted out of date).
+  Version-specific git tags in install snippets across the docs were replaced
+  with a `tag = "vX.Y.Z"` placeholder, and the dependency examples already use
+  the major-only `version = "3"`. Bumping a crate now means editing its
+  `Cargo.toml` and adding a CHANGELOG entry — no docs need touching.
 
 ### Dependencies
 

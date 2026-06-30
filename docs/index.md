@@ -47,11 +47,11 @@ rust-samp adds, on top of that foundation:
 
 ## Workspace structure
 
-| Crate          | Version | Description                                                              |
-| -------------- | :-----: | ------------------------------------------------------------------------ |
-| `samp`         | 3.1.0   | Main crate — depend on this one. Re-exports the SDK and the proc macros. |
-| `samp-sdk`     | 3.0.0   | Low-level bindings: AMX VM + Open Multiplayer component ABI.            |
-| `samp-codegen` | 1.3.0   | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`).    |
+| Crate          | Description                                                              |
+| -------------- | ------------------------------------------------------------------------ |
+| `samp`         | Main crate — depend on this one. Re-exports the SDK and the proc macros. |
+| `samp-sdk`     | Low-level bindings: AMX VM + Open Multiplayer component ABI.             |
+| `samp-codegen` | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`).     |
 
 In practice, only the `samp` crate is referenced by a plugin's
 `Cargo.toml`. It re-exports everything from `samp-sdk` and `samp-codegen`.

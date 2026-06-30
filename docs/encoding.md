@@ -16,7 +16,7 @@ or Cyrillic characters end up corrupted.
 
 ## Enabling the feature
 
-From crates.io (v3.1.0 onwards):
+From crates.io:
 
 ```toml
 [dependencies]
@@ -27,7 +27,7 @@ Or via git for earlier versions:
 
 ```toml
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0", features = ["encoding"] }
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z", features = ["encoding"] }
 ```
 
 Without the feature, `AmxString` decodes through `String::from_utf8_lossy`

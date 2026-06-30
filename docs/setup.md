@@ -52,7 +52,7 @@ preferred path is crates.io; the git dependency keeps working and is
 the only option for earlier releases (v3.0.0 and the v2.x line never
 made it to the registry).
 
-**From crates.io (v3.1.0 onwards):**
+**From crates.io:**
 
 ```toml
 [lib]
@@ -73,7 +73,7 @@ alias keeps the source-level `use samp::prelude::*;` imports unchanged.
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z" }
 ```
 
 > Always pin the dependency with `tag` or `rev` when using git. A bare
@@ -82,7 +82,7 @@ samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
 >
 > ```toml
 > # Pin by tag (recommended for named releases)
-> samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "v3.1.0" }
+> samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z" }
 >
 > # Pin by commit SHA (exact — SHA visible on the GitHub releases page)
 > samp = { git = "https://github.com/NullSablex/rust-samp.git", rev = "COMMIT_SHA" }
