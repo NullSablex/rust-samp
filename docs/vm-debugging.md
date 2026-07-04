@@ -22,6 +22,8 @@ packed struct). All return `None` when the `Amx` wraps a null pointer.
 | `amx.stack()` | `stk`    | Stack pointer.                                     |
 | `amx.heap()`  | `hea`    | Heap pointer.                                      |
 | `amx.stp()`   | `stp`    | Top of the stack — upper bound of the data space.  |
+| `amx.pri()`   | `pri`    | Primary accumulator — the operand the next opcode acts on. |
+| `amx.alt()`   | `alt`    | Alternate accumulator — e.g. the divisor of the division opcodes. |
 
 ## Cell access
 
@@ -43,6 +45,57 @@ let ok: bool = amx.write_cell(addr, new_value);
 Unlike [`get_ref`](cells-and-memory.md), these work inside a debug hook,
 where there is no native call context. They read/write byte-wise, so they
 make no alignment assumptions.
+
+## Reading the code segment
+
+`Amx::read_code(offset)` reads a 32-bit cell from the **code** segment — the
+instruction-side counterpart of `read_cell`. It resolves `base + header.cod +
+offset` and validates the offset against the code segment `[0, header.dat -
+header.cod)`, returning `None` when out of range or the VM is null.
+
+```rust
+// `cip` is a code-segment offset; read the raw cell of the next instruction.
+if let Some(raw) = amx.read_code(cip) {
+    // ...
+}
+```
+
+### Decoding an opcode
+
+On a server built with computed-goto threading (GCC/Clang — the SA-MP and
+open.mp builds), the loader rewrites each opcode in the code segment to the
+**address** of its handler label. So a `read_code` there yields a pointer, not
+the opcode number. `Amx::opcode_table(count)` returns the VM's dispatch table
+(`amx_opcodelist`) — `count` raw label addresses in opcode order — fetched the
+way the loader itself does it (set the `BROWSE` flag, call `amx_Exec` with index
+`0`, restore the flags). Invert that table (address → opcode) to recover the real
+opcode behind a `read_code` value:
+
+```rust
+use std::collections::HashMap;
+
+// Build once per VM (e.g. in on_amx_load). OP_NUM_OPCODES is the VM's opcode
+// count, which the caller supplies (the SDK does not hardcode it).
+let table = amx.opcode_table(OP_NUM_OPCODES).unwrap_or_default();
+let inverse: HashMap<usize, i32> =
+    table.iter().enumerate().map(|(op, &addr)| (addr, op as i32)).collect();
+
+// In the hook: raw code value → opcode number.
+let raw = amx.read_code(cip)?;
+let opcode = inverse.get(&(raw as usize)).copied()
+    .or(Some(raw)); // non-relocated image: the value is already the opcode
+```
+
+`opcode_table` does not consult the `AMX_FLAG_RELOC` header bit — it may not be
+visible at `AmxLoad` time even though the table is already available. On a
+non-computed-goto VM the returned addresses simply never match a real opcode, so
+inverting the table is harmless.
+
+Together with `pri()`/`alt()`, this lets a debugger predict a runtime error
+*before* the VM aborts it: read the next opcode at `cip`, and if it is a division
+(`OP_SDIV`/`OP_UDIV`, divisor in `alt`) or a bounds check (`OP_BOUNDS`, index in
+`pri`), pause instead of letting the VM's `ABORT` return without ever calling the
+hook again.
 
 ## Debug hook
 

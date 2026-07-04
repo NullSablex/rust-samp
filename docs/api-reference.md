@@ -99,8 +99,10 @@ pub trait AmxExt {
 | `strlen(ptr) -> AmxResult<usize>`            | Length of an AMX string at the given pointer.                          |
 | `flags() -> AmxResult<AmxFlags>`             | Flags of the loaded `.amx`.                                            |
 | `amx()` / `header()`                         | Raw `*mut AMX` / `*mut AMX_HEADER` (via `NonNull`).                    |
-| `cip()` / `frame()` / `stack()` / `heap()` / `stp()` | VM register reads (`Option`, `None` if null). See [VM Debugging](vm-debugging.md). |
+| `cip()` / `frame()` / `stack()` / `heap()` / `stp()` / `pri()` / `alt()` | VM register reads (`Option`, `None` if null). See [VM Debugging](vm-debugging.md). |
 | `read_cell(addr)` / `write_cell(addr, v)`    | Bounds-checked data-segment cell access (debug-hook safe).            |
+| `read_code(offset)`                          | Bounds-checked code-segment read (instruction-side counterpart of `read_cell`). |
+| `opcode_table(count)`                        | VM opcode dispatch table (`amx_opcodelist`), to decode an opcode behind a relocated `read_code` value. |
 | `install_debug_hook(cb)` / `remove_debug_hook()` | Install/remove a raw debug hook (`amx_SetDebugHook`).             |
 
 ### `Allocator<'amx>`

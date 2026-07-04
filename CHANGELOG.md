@@ -4,7 +4,7 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [Unreleased]
+## [v3.3.0] — 2026/07/04
 
 ### Added
 
@@ -18,10 +18,19 @@ for the full directory.
   `base + header.cod + offset` and validates `offset` against the code segment
   `[0, header.dat - header.cod)`, reading byte-wise (the header is packed). The
   SDK exposes the raw bytes only; decoding the instruction is up to the consumer.
+- **`Amx::opcode_table(count)`** — returns the VM's `amx_opcodelist` (the opcode
+  → handler-address dispatch table) as `count` raw addresses, fetched the way the
+  loader does it (set the `BROWSE` flag, call `amx_Exec` with index 0, restore the
+  flags). On computed-goto builds (GCC/Clang — SA-MP and open.mp) the loader
+  rewrites code-segment opcodes to these addresses, so a consumer can invert the
+  table to recover the real opcode behind a `read_code` value. Returns `None` for
+  a non-relocated image (`AMX_FLAG_RELOC` unset), where opcodes are stored raw.
 
 ### Crate versions
 
 - `rust-samp-sdk` (lib `samp_sdk`): 3.1.0 → 3.2.0 (additive public API)
+- `rust-samp` (lib `samp`): 3.2.0 — unchanged
+- `rust-samp-codegen` (lib `samp_codegen`): 1.3.0 — unchanged
 
 ## [v3.2.0] — 2026/06/30
 

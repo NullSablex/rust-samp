@@ -332,6 +332,61 @@ impl Amx {
         Ok(AmxFlags::from_bits_truncate(value))
     }
 
+    /// Returns the VM's opcode dispatch table (`amx_opcodelist`): `count` raw
+    /// label addresses, one per opcode, in opcode order.
+    ///
+    /// On a server built with computed-goto threading (GCC/Clang, the SA-MP and
+    /// open.mp builds), the loader rewrites each opcode in the code segment to the
+    /// *address* of its handler label, so a byte read with [`read_code`] yields a
+    /// pointer, not the opcode number. Inverting this table (address → opcode)
+    /// lets a debugger recover the real opcode at `cip`. The table is fetched the
+    /// way the loader itself does it — set the `BROWSE` flag and call `amx_Exec`
+    /// with index `0`, which returns `&amx_opcodelist` instead of running code.
+    ///
+    /// `count` is the number of opcodes the caller expects (`OP_NUM_OPCODES`);
+    /// the SDK does not hardcode the VM's opcode count. Returns `None` only when
+    /// the table cannot be obtained (null VM/table).
+    ///
+    /// The `AMX_FLAG_RELOC` header bit is intentionally **not** consulted: it is
+    /// set by the loader in the file header and may not yet be visible at
+    /// `AmxLoad` time, even though the dispatch table is already available. A
+    /// non-computed-goto VM would return a table whose addresses simply never
+    /// match a real opcode, so inverting it is harmless (the consumer finds no
+    /// match and treats the code value as a raw opcode).
+    ///
+    /// [`read_code`]: Self::read_code
+    pub fn opcode_table(&self, count: usize) -> Option<Vec<usize>> {
+        let amx = NonNull::new(self.ptr)?.as_ptr();
+
+        // Toggle the BROWSE flag so `amx_Exec(.., 0)` returns the label table
+        // instead of executing. Restore the previous flags afterwards.
+        let saved = unsafe { std::ptr::addr_of!((*amx).flags).read_unaligned() };
+        unsafe {
+            std::ptr::addr_of_mut!((*amx).flags)
+                .write_unaligned(saved | i32::from(AmxFlags::BROWSE.bits()));
+        }
+        let exec = Exec::from_table(self.fn_table);
+        // `retval` receives `(cell)amx_opcodelist` — a pointer to the table. On the
+        // 32-bit SA-MP/open.mp VMs `cell` and `void*` are both 32-bit (the VM
+        // asserts `sizeof(cell)==sizeof(void*)`), so it round-trips through i32.
+        let mut retval: i32 = 0;
+        let _ = exec(self.ptr, &raw mut retval, 0);
+        unsafe {
+            std::ptr::addr_of_mut!((*amx).flags).write_unaligned(saved);
+        }
+
+        let table = usize::try_from(retval.cast_unsigned()).ok()? as *const usize;
+        if table.is_null() {
+            return None;
+        }
+        // Read `count` pointer-sized entries from the table.
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            out.push(unsafe { table.add(i).read_unaligned() });
+        }
+        Some(out)
+    }
+
     /// Resolves an AMX cell (relative address) to a typed [`Ref<T>`].
     ///
     /// # Errors
@@ -785,6 +840,7 @@ mod vm_tests {
         assert_eq!(amx.alt(), None);
         assert_eq!(amx.read_cell(0), None);
         assert_eq!(amx.read_code(0), None);
+        assert_eq!(amx.opcode_table(256), None);
         assert!(!amx.write_cell(0, 1));
         // Installing/removing a hook on a null AMX must not crash.
         amx.remove_debug_hook();
