@@ -26,7 +26,15 @@ pub mod error;
 pub mod exports;
 #[doc(hidden)]
 pub mod macros;
-#[cfg(not(feature = "samp-only"))]
+// The open.mp component ABI on Windows uses the `thiscall` calling convention,
+// which only exists on 32-bit x86 — the target SA-MP/open.mp servers actually
+// run on. Compiling it for 64-bit MSVC fails (E0570: unsupported ABI), so the
+// module is skipped there. This lets host-side tooling (e.g. a DAP adapter that
+// only needs `samp::debug`) build for `x86_64-pc-windows-msvc`.
+#[cfg(all(
+    not(feature = "samp-only"),
+    not(all(windows, target_env = "msvc", target_pointer_width = "64"))
+))]
 pub mod omp;
 pub mod raw;
 #[cfg(test)]
