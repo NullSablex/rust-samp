@@ -90,11 +90,14 @@ jobs:
         cache-all-crates: true
         prefix-key: "v1"
 
-    # Cross-only target (aarch64): just type-check — it can't run on the x64
-    # runner. Catches ABI/type regressions like `c_char` (`i8` vs `u8`).
+    # Cross-only target (aarch64): just type-check the pure-Rust library crates —
+    # it can't run on the x64 runner. Catches ABI/type regressions like `c_char`
+    # (`i8` vs `u8`). Scoped to the SDK/codegen/samp crates so it doesn't drag in
+    # example-only deps with C build scripts (aws-lc-sys) that would need a cross
+    # C toolchain not installed here.
     - name: Check (cross-only target)
       if: matrix.check_only
-      run: cargo check --all-targets --target ${{ matrix.target }}
+      run: cargo check -p rust-samp-sdk -p rust-samp-codegen -p rust-samp --target ${{ matrix.target }}
 
     - name: Build
       if: '!matrix.check_only'

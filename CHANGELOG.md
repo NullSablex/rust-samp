@@ -4,6 +4,37 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.3.1] — 2026/07/04
+
+Bug-fix release: the v3.3.0 changes did not build for 64-bit targets. Both fixes
+matter to any consumer building the SDK for a 64-bit host (e.g. a DAP adapter
+that only needs `samp::debug`).
+
+### Fixed
+
+- **`omp` module failed to compile on 64-bit MSVC** (E0570) — the open.mp
+  component ABI uses `extern "thiscall"`, which only exists on 32-bit x86 (the
+  arch SA-MP/open.mp servers run on). The module is now skipped on
+  `windows + msvc + 64-bit`, where that ABI is invalid anyway; 32-bit and
+  non-MSVC targets are unchanged.
+- **FFI signatures used `i8` instead of `c_char`** (E0308 on aarch64) — the
+  `amx_Exports` function-pointer types hardcoded `i8` for C-string/char
+  arguments. `c_char` is `i8` on x86 but `u8` on aarch64, so `CString::as_ptr()`
+  mismatched the signatures when building for a 64-bit target. The C-string/char
+  pointers in `raw::functions` now use `c_char`.
+
+### Changed
+
+- **CI: added an `aarch64-unknown-linux-gnu` check job** (a 64-bit target where
+  `c_char == u8`) so this class of ABI/type mismatch is caught going forward —
+  the previous 32-bit-only matrix never exercised it.
+
+### Crate versions
+
+- `rust-samp-sdk` (lib `samp_sdk`): 3.2.0 → 3.2.1 (bug fixes only)
+- `rust-samp` (lib `samp`): 3.2.0 — unchanged
+- `rust-samp-codegen` (lib `samp_codegen`): 1.3.0 — unchanged
+
 ## [v3.3.0] — 2026/07/04
 
 ### Added
