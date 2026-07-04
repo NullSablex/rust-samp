@@ -9,7 +9,7 @@
 //! not from `amx_Exports`.
 
 use super::types::{AMX, AMX_NATIVE_INFO};
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void};
 
 /// Native function exposed by a plugin — invoked by the AMX VM on every call
 /// to it from the Pawn script.
@@ -29,41 +29,42 @@ pub type Callback = extern "C" fn(*mut AMX, i32, *mut i32, *mut i32) -> i32;
 pub type Cleanup = extern "C" fn(*mut AMX) -> i32;
 pub type Clone = extern "C" fn(*mut AMX, *mut AMX, *mut c_void) -> i32;
 pub type Exec = extern "C" fn(*mut AMX, *mut i32, i32) -> i32;
-pub type FindNative = extern "C" fn(*mut AMX, *const i8, *mut i32) -> i32;
-pub type FindPublic = extern "C" fn(*mut AMX, *const i8, *mut i32) -> i32;
-pub type FindPubVar = extern "C" fn(*mut AMX, *const i8, *mut i32) -> i32;
-pub type FindTagId = extern "C" fn(*mut AMX, i32, *mut i8) -> i32;
+pub type FindNative = extern "C" fn(*mut AMX, *const c_char, *mut i32) -> i32;
+pub type FindPublic = extern "C" fn(*mut AMX, *const c_char, *mut i32) -> i32;
+pub type FindPubVar = extern "C" fn(*mut AMX, *const c_char, *mut i32) -> i32;
+pub type FindTagId = extern "C" fn(*mut AMX, i32, *mut c_char) -> i32;
 pub type Flags = extern "C" fn(*mut AMX, *mut u16) -> i32;
 pub type GetAddr = extern "C" fn(*mut AMX, i32, *mut *mut i32) -> i32;
-pub type GetNative = extern "C" fn(*mut AMX, i32, *mut i8) -> i32;
-pub type GetPublic = extern "C" fn(*mut AMX, i32, *mut i8) -> i32;
-pub type GetPubVar = extern "C" fn(*mut AMX, i32, *mut i8, *mut i32) -> i32;
+pub type GetNative = extern "C" fn(*mut AMX, i32, *mut c_char) -> i32;
+pub type GetPublic = extern "C" fn(*mut AMX, i32, *mut c_char) -> i32;
+pub type GetPubVar = extern "C" fn(*mut AMX, i32, *mut c_char, *mut i32) -> i32;
 pub type GetString = extern "C" fn(*mut u8, *const i32, i32, usize) -> i32;
-pub type GetTag = extern "C" fn(*mut AMX, i32, *mut i8, *mut i32) -> i32;
+pub type GetTag = extern "C" fn(*mut AMX, i32, *mut c_char, *mut i32) -> i32;
 pub type GetUserData = extern "C" fn(*mut AMX, i64, *mut *mut c_void) -> i32;
 pub type Init = extern "C" fn(*mut AMX, *mut c_void) -> i32;
 pub type InitJIT = extern "C" fn(*mut AMX, *mut c_void, *mut c_void) -> i32;
 pub type MemInfo = extern "C" fn(*mut AMX, *mut i32, *mut i32, *mut i32) -> i32;
 pub type NameLength = extern "C" fn(*mut AMX, *mut i32) -> i32;
-pub type NativeInfo = extern "C" fn(*const i8, AmxNative) -> *mut AMX_NATIVE_INFO;
+pub type NativeInfo = extern "C" fn(*const c_char, AmxNative) -> *mut AMX_NATIVE_INFO;
 pub type NumNatives = extern "C" fn(*mut AMX, *mut i32) -> i32;
 pub type NumPublics = extern "C" fn(*mut AMX, *mut i32) -> i32;
 pub type NumPubVars = extern "C" fn(*mut AMX, *mut i32) -> i32;
 pub type NumTags = extern "C" fn(*mut AMX, *mut i32) -> i32;
 pub type Push = extern "C" fn(*mut AMX, i32) -> i32;
 pub type PushArray = extern "C" fn(*mut AMX, *mut i32, *mut *mut i32, *const i32, i32) -> i32;
-pub type PushString = extern "C" fn(*mut AMX, *mut i32, *mut *mut i32, *const i8, i32, i32) -> i32;
+pub type PushString =
+    extern "C" fn(*mut AMX, *mut i32, *mut *mut i32, *const c_char, i32, i32) -> i32;
 pub type RaiseError = extern "C" fn(*mut AMX, i32) -> i32;
 pub type Register = extern "C" fn(*mut AMX, *const AMX_NATIVE_INFO, i32) -> i32;
 pub type Release = extern "C" fn(*mut AMX, i32) -> i32;
 pub type SetCallback = extern "C" fn(*mut AMX, AmxCallback) -> i32;
 pub type SetDebugHook = extern "C" fn(*mut AMX, AmxDebug) -> i32;
-pub type SetString = extern "C" fn(*mut i32, *const i8, i32, i32, usize) -> i32;
+pub type SetString = extern "C" fn(*mut i32, *const c_char, i32, i32, usize) -> i32;
 pub type SetUserData = extern "C" fn(*mut AMX, i64, *mut c_void) -> i32;
 pub type StrLen = extern "C" fn(*const i32, *mut i32) -> i32;
-pub type UTF8Check = extern "C" fn(*const i8, *mut i32) -> i32;
-pub type UTF8Get = extern "C" fn(*const i8, *mut *const i8, *mut i32) -> i32;
+pub type UTF8Check = extern "C" fn(*const c_char, *mut i32) -> i32;
+pub type UTF8Get = extern "C" fn(*const c_char, *mut *const c_char, *mut i32) -> i32;
 pub type UTF8Len = extern "C" fn(*const i32, *mut i32) -> i32;
-pub type UTF8Put = extern "C" fn(*mut i8, *mut *mut i8, i32, i32) -> i32;
+pub type UTF8Put = extern "C" fn(*mut c_char, *mut *mut c_char, i32, i32) -> i32;
 
-pub type Logprintf = extern "C" fn(*const i8);
+pub type Logprintf = extern "C" fn(*const c_char);

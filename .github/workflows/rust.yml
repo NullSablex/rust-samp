@@ -59,6 +59,13 @@ jobs:
           - os: windows-latest
             target: i686-pc-windows-msvc
             artifact: target/i686-pc-windows-msvc/debug/plugin.dll
+          # 64-bit target where `c_char == u8` (unlike the 32-bit targets above,
+          # where it is `i8`). Cross-compiled and only `cargo check`ed — it can't
+          # run natively on the x64 runner — to catch ABI/type mismatches in the
+          # FFI signatures that a 32-bit-only matrix would miss.
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            check_only: true
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -83,21 +90,30 @@ jobs:
         cache-all-crates: true
         prefix-key: "v1"
 
+    # Cross-only target (aarch64): just type-check — it can't run on the x64
+    # runner. Catches ABI/type regressions like `c_char` (`i8` vs `u8`).
+    - name: Check (cross-only target)
+      if: matrix.check_only
+      run: cargo check --all-targets --target ${{ matrix.target }}
+
     - name: Build
+      if: '!matrix.check_only'
       run: cargo build --verbose --target ${{ matrix.target }}
 
     - name: Run tests
+      if: '!matrix.check_only'
       run: cargo test --verbose --target ${{ matrix.target }}
 
     - name: Run clippy
+      if: '!matrix.check_only'
       run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
 
     - name: Security audit
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && !matrix.check_only
       run: cargo install cargo-audit --locked && cargo audit
 
     - name: Upload artifact
-      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      if: '!matrix.check_only && github.event_name == ''push'' && github.ref == ''refs/heads/master'''
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       with:
         name: plugin-${{ matrix.target }}
