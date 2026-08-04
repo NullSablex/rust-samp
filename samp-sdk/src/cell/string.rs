@@ -94,6 +94,12 @@ impl<'amx> AmxString<'amx> {
     /// uncontrolled allocation if `len` is corrupted.
     pub fn to_bytes(&self) -> Vec<u8> {
         const MAX_STRING_LEN: usize = 1024 * 1024;
+        // An empty backing buffer has no first cell to probe for the
+        // packed/unpacked marker — return early instead of indexing `[0]`
+        // (which would panic). Reachable only via a corrupted length.
+        if self.inner.is_empty() {
+            return Vec::new();
+        }
         let len = self.len.min(MAX_STRING_LEN);
         let mut vec = Vec::with_capacity(len);
 
@@ -486,5 +492,60 @@ mod tests {
         let mut buf = make_buffer(&mut data);
         put_in_buffer(&mut buf, "").unwrap();
         assert_eq!(buf[0], 0);
+    }
+
+    // --- Adversarial / property tests: decoding must never panic or overrun,
+    //     whatever garbage (or a corrupted length) the script hands over. ---
+
+    /// Tiny deterministic LCG — dependency-free pseudo-randomness for fuzzing.
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (*seed >> 33) as u32
+    }
+
+    #[test]
+    fn to_bytes_declared_len_larger_than_buffer_is_bounded() {
+        // A corrupted length far beyond the backing cells must read only what
+        // exists, never past the slice.
+        let mut data = vec![0x41i32, 0x42, 0x43]; // "ABC", no terminator
+        let buf = make_buffer(&mut data);
+        let s = AmxString::from_buffer_parts(buf, 9999);
+        let bytes = s.to_bytes();
+        assert!(bytes.len() <= 3, "read past the backing buffer: {bytes:?}");
+    }
+
+    #[test]
+    fn to_bytes_non_utf8_decodes_lossy_without_panic() {
+        // 0xFF is not valid UTF-8; decoding must produce replacement chars,
+        // never panic.
+        let mut data = vec![0xFFi32, 0xFE, 0x41, 0];
+        let buf = make_buffer(&mut data);
+        let s = AmxString::from_buffer_parts(buf, 3);
+        let _ = &*s; // triggers decode
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn fuzz_decode_never_panics() {
+        // Random cell contents + a possibly-corrupted declared length, for both
+        // packed and unpacked interpretations. The contract: decoding is total
+        // (no panic, no overrun) no matter what the VM memory holds.
+        let mut seed = 0x0BAD_F00D_DEAD_BEEFu64;
+        for _ in 0..4000 {
+            let cells = (lcg(&mut seed) % 12) as usize + 1; // 1..=12 cells
+            let mut data: Vec<i32> = (0..cells).map(|_| lcg(&mut seed) as i32).collect();
+            // Declared length may be anything, including far beyond `cells`.
+            let declared = (lcg(&mut seed) % 64) as usize;
+            let buf = make_buffer(&mut data);
+            let s = AmxString::from_buffer_parts(buf, declared);
+
+            let bytes = s.to_bytes();
+            assert!(bytes.len() <= 1024 * 1024);
+            // Deref decodes and caches — must also be total.
+            let decoded = &*s;
+            assert!(decoded.len() <= bytes.len().max(4 * bytes.len() + 4));
+        }
     }
 }

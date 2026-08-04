@@ -103,6 +103,27 @@ let result    = amx.exec(idx)?;
 `allocator` releases every AMX heap allocation when it goes out of
 scope — there is no need to free memory explicitly.
 
+## Output arrays — `exec_public_scope`
+
+The `exec_public!` macro copies arrays *in*; it cannot read back an array a
+public **filled**. For that, `Amx::exec_public_scope` opens a managed
+[`Allocator`](amx-types.md) scope around the call so the output buffer stays
+alive until you have read it:
+
+```rust
+// Pawn: forward FillSquares(out[], size);
+let squares: Vec<i32> = amx.exec_public_scope("FillSquares", |alloc, idx| {
+    let buf = alloc.allot_buffer(8)?;   // output array on the AMX heap
+    amx.push(8)?;                        // size  (pushed first → last arg)
+    amx.push(&buf)?;                     // out[] (pushed last  → first arg)
+    amx.exec(idx)?;
+    Ok(buf.as_slice().to_vec())          // read it back before the scope frees
+})?;
+```
+
+The scope rewinds both the AMX heap **and** stack on exit, so a mid-sequence
+`push` failure cannot leave the VM stack unbalanced.
+
 ## Return value
 
 `exec_public!` returns `AmxResult<i32>`:

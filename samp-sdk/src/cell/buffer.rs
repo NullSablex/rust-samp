@@ -148,14 +148,24 @@ impl std::fmt::Debug for Buffer<'_> {
 /// [`into_sized_buffer`]: UnsizedBuffer::into_sized_buffer
 pub struct UnsizedBuffer<'amx> {
     inner: Ref<'amx, i32>,
+    /// Upper bound on cells reachable from the first cell without leaving the
+    /// VM's data region `[0, stp)`. Computed from `amx_StrLen`-independent VM
+    /// state at parse time and used to clamp [`into_sized_buffer`]. `usize::MAX`
+    /// when unknown (test constructor).
+    ///
+    /// [`into_sized_buffer`]: UnsizedBuffer::into_sized_buffer
+    max_cells: usize,
 }
 
 impl<'amx> UnsizedBuffer<'amx> {
     /// Converts into `Buffer` by declaring the size.
     ///
-    /// `len` must be <= the actual number of allocated cells — larger values
-    /// cause UB when accessing cells outside the Pawn array. The SDK caps it
-    /// at 1 MiB as a defense against a corrupted `len` from the script.
+    /// `len` should be the real Pawn array size (`sizeof(arr)`). A `len` larger
+    /// than the actual array still reads/writes neighbouring cells of the same
+    /// script (wrong data, not a crash), so never pass a size the script can
+    /// control independently. The SDK clamps `len` two ways as a safety net:
+    /// to the VM data region `[0, stp)` (so an oversized `len` cannot read or
+    /// write past the AMX allocation and segfault) and to a 1 MiB ceiling.
     #[must_use]
     pub fn into_sized_buffer(self, len: usize) -> Buffer<'amx> {
         const MAX_BUFFER_CELLS: usize = 1024 * 1024;
@@ -163,7 +173,7 @@ impl<'amx> UnsizedBuffer<'amx> {
             len <= MAX_BUFFER_CELLS,
             "into_sized_buffer() received len={len} above the {MAX_BUFFER_CELLS} limit"
         );
-        let len = len.min(MAX_BUFFER_CELLS);
+        let len = len.min(self.max_cells).min(MAX_BUFFER_CELLS);
         Buffer::new(self.inner, len)
     }
 
@@ -184,7 +194,10 @@ impl<'amx> UnsizedBuffer<'amx> {
     #[doc(hidden)]
     #[must_use]
     pub fn from_raw_parts(inner: Ref<'amx, i32>) -> Self {
-        UnsizedBuffer { inner }
+        UnsizedBuffer {
+            inner,
+            max_cells: usize::MAX,
+        }
     }
 
     /// Sizes the buffer to `max_len` and writes `s` in one call.
@@ -203,9 +216,14 @@ impl<'amx> UnsizedBuffer<'amx> {
 
 impl<'amx> AmxCell<'amx> for UnsizedBuffer<'amx> {
     fn from_raw(amx: &'amx Amx, cell: i32) -> AmxResult<UnsizedBuffer<'amx>> {
-        Ok(UnsizedBuffer {
-            inner: amx.get_ref(cell)?,
-        })
+        let inner = amx.get_ref(cell)?;
+        // Cells reachable from `cell` before leaving the data region `[0, stp)`.
+        // Bounds a caller-supplied size larger than the real Pawn array away from
+        // reading/writing past the AMX allocation. `None` (null VM) → no clamp.
+        let max_cells = amx.stp().map_or(usize::MAX, |stp| {
+            usize::try_from((stp - cell).max(0) / 4).unwrap_or(0)
+        });
+        Ok(UnsizedBuffer { inner, max_cells })
     }
 
     #[inline]
@@ -233,6 +251,7 @@ mod tests {
     fn make_unsized(data: &mut Vec<i32>) -> UnsizedBuffer<'_> {
         UnsizedBuffer {
             inner: make_ref(data),
+            max_cells: usize::MAX,
         }
     }
 
@@ -334,6 +353,19 @@ mod tests {
         let ub = make_unsized(&mut data);
         let buf = ub.into_sized_buffer(1024 * 1024);
         assert_eq!(buf.len(), 1024 * 1024);
+    }
+
+    #[test]
+    fn into_sized_clamps_to_segment_bound() {
+        // A caller-supplied size larger than the data-region bound (`max_cells`)
+        // is clamped to it, so the resulting slice can never read past the VM.
+        let mut data = vec![0i32; 8];
+        let ub = UnsizedBuffer {
+            inner: make_ref(&mut data),
+            max_cells: 3,
+        };
+        let buf = ub.into_sized_buffer(1000);
+        assert_eq!(buf.len(), 3);
     }
 
     #[test]
@@ -531,5 +563,55 @@ mod tests {
         let mut data = vec![0i32; 3];
         let ub = make_unsized(&mut data);
         assert!(ub.write_str(3, "abc").is_err());
+    }
+
+    // --- Adversarial / property tests: indexed access must stay in bounds for
+    //     any index, and sizing must never exceed the declared length. ---
+
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (*seed >> 33) as u32
+    }
+
+    #[test]
+    fn fuzz_get_set_as_respects_bounds() {
+        let mut seed = 0xDEAD_C0DE_1234_5678u64;
+        for _ in 0..4000 {
+            let len = (lcg(&mut seed) % 10) as usize; // 0..=9 cells
+            let mut data: Vec<i32> = vec![0; len];
+            let mut buf = make_buffer(&mut data);
+            let idx = (lcg(&mut seed) % 32) as usize; // may exceed len
+
+            // get_as: Some iff in bounds, never panics.
+            assert_eq!(buf.get_as::<i32>(idx).is_some(), idx < len);
+            // set_as: writes iff in bounds, returns the same predicate.
+            let wrote = buf.set_as::<i32>(idx, 7);
+            assert_eq!(wrote, idx < len);
+            if wrote {
+                assert_eq!(buf.get_as::<i32>(idx), Some(7));
+            }
+        }
+    }
+
+    #[test]
+    fn fuzz_into_sized_never_exceeds_declared_len() {
+        // With a finite segment bound, the resulting buffer length is always
+        // min(requested, bound, 1 MiB) and never larger than the real data.
+        let mut seed = 0x00C0_FFEE_BADD_F00Du64;
+        for _ in 0..2000 {
+            let cells = (lcg(&mut seed) % 8) as usize + 1;
+            let mut data: Vec<i32> = vec![0; cells];
+            let bound = (lcg(&mut seed) % 16) as usize;
+            let ub = UnsizedBuffer {
+                inner: make_ref(&mut data),
+                max_cells: bound,
+            };
+            let requested = (lcg(&mut seed) % 1000) as usize;
+            let buf = ub.into_sized_buffer(requested);
+            // Exact invariant: clamp to the segment bound and the 1 MiB ceiling.
+            assert_eq!(buf.len(), requested.min(bound).min(1024 * 1024));
+        }
     }
 }

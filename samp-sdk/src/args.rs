@@ -138,4 +138,40 @@ mod tests {
         args.reset();
         assert_eq!(args.offset, 0);
     }
+
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (*seed >> 33) as u32
+    }
+
+    #[test]
+    fn count_never_negative_or_absurd() {
+        // Whatever the header cell holds (including negatives and huge values),
+        // count() stays non-negative and consistent with `raw / 4`.
+        let mut seed = 0xA5A5_1234_9999_0001u64;
+        for _ in 0..4000 {
+            let raw = lcg(&mut seed) as i32; // full i32 range incl. negatives
+            let data: [i32; 1] = [raw];
+            let amx = Amx::new(std::ptr::null_mut(), 0);
+            let args = Args::new(&amx, data.as_ptr());
+            let count = args.count();
+            if raw <= 0 {
+                assert_eq!(count, 0);
+            } else {
+                assert_eq!(count, (raw / 4) as usize);
+            }
+        }
+    }
+
+    #[test]
+    fn get_beyond_count_is_none() {
+        // A header claiming 2 args: any index >= 2 must be None, never an OOB read.
+        let data: [i32; 3] = [2 * 4, 11, 22];
+        let amx = Amx::new(std::ptr::null_mut(), 0);
+        let args = Args::new(&amx, data.as_ptr());
+        assert!(args.get::<crate::cell::Ref<i32>>(2).is_none());
+        assert!(args.get::<crate::cell::Ref<i32>>(999).is_none());
+    }
 }

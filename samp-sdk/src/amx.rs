@@ -132,6 +132,49 @@ impl Amx {
         Ok(retval)
     }
 
+    /// Calls a public inside a managed [`Allocator`] scope — the escape hatch for
+    /// callbacks with **output arrays**, which the input-only [`exec_public!`]
+    /// macro cannot express.
+    ///
+    /// Resolves `name` to its public index and opens an [`Allocator`], then hands
+    /// both to `body`. Inside, allocate input/output buffers, [`push`] the
+    /// arguments (in reverse order), call [`exec`], and read any output buffers
+    /// back — all before the scope closes and frees the heap. The scope also
+    /// rewinds the VM stack, so a mid-sequence `push` failure cannot unbalance it.
+    ///
+    /// [`exec_public!`]: crate::exec_public
+    /// [`push`]: Amx::push
+    /// [`exec`]: Amx::exec
+    ///
+    /// # Errors
+    /// `AmxError::NotFound` if the public does not exist; otherwise whatever
+    /// `body` returns (typically propagated from `push`/`exec`).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use samp_sdk::amx::Amx;
+    /// # use samp_sdk::error::AmxResult;
+    /// # fn demo(amx: &Amx) -> AmxResult<Vec<i32>> {
+    /// // Pawn: forward FillSquares(out[], size);
+    /// let squares = amx.exec_public_scope("FillSquares", |alloc, idx| {
+    ///     let buf = alloc.allot_buffer(8)?; // output array
+    ///     amx.push(8)?;                      // size   (pushed first = last arg)
+    ///     amx.push(&buf)?;                   // out[]  (pushed last  = first arg)
+    ///     amx.exec(idx)?;
+    ///     Ok(buf.as_slice().to_vec())        // read the array back before it frees
+    /// })?;
+    /// # Ok(squares)
+    /// # }
+    /// ```
+    pub fn exec_public_scope<F, R>(&self, name: &str, body: F) -> AmxResult<R>
+    where
+        F: FnOnce(&Allocator<'_>, AmxExecIdx) -> AmxResult<R>,
+    {
+        let index = self.find_public(name)?;
+        let allocator = self.allocator();
+        body(&allocator, index)
+    }
+
     /// Index of a native by name (resolved via `amx_FindNative`).
     ///
     /// # Errors
@@ -406,12 +449,25 @@ impl Amx {
         unsafe { Ok(Ref::new(address, dest_addr.cast::<T>())) }
     }
 
+    /// Rewinds the VM heap and stack to the values captured when an
+    /// [`Allocator`] scope opened, freeing everything it allocated **and**
+    /// pushed in one shot.
+    ///
+    /// - `hea`: restores the heap top (frees `allot*` buffers).
+    /// - `stk`: restores the stack top. The stack grows downward, so this only
+    ///   rewinds when the current `stk` sits *below* the captured value (i.e.
+    ///   something was pushed and not yet consumed) — the corrective path for a
+    ///   `push` sequence that failed part-way through `exec_public!`. A balanced
+    ///   `exec` leaves `stk` back at the captured value, making this a no-op.
     #[inline]
-    pub(crate) fn release(&self, address: i32) {
+    pub(crate) fn release_scope(&self, hea: i32, stk: i32) {
         if let Some(mut amx) = self.amx() {
             let amx = unsafe { amx.as_mut() };
-            if address >= 0 && amx.hea > address {
-                amx.hea = address;
+            if hea >= 0 && amx.hea > hea {
+                amx.hea = hea;
+            }
+            if stk >= 0 && stk <= amx.stp && amx.stk < stk {
+                amx.stk = stk;
             }
         }
     }
@@ -645,18 +701,25 @@ impl Amx {
 /// heap point.
 pub struct Allocator<'amx> {
     amx: &'amx Amx,
-    release_addr: i32,
+    release_hea: i32,
+    release_stk: i32,
 }
 
 impl<'amx> Allocator<'amx> {
     pub(crate) fn new(amx: &'amx Amx) -> Allocator<'amx> {
-        let amx_ptr = amx
-            .amx()
-            .expect("Allocator::new() received Amx with null pointer")
-            .as_ptr();
-        let release_addr = unsafe { (*amx_ptr).hea };
+        // Capture the heap and stack tops to restore on drop. A null VM (only
+        // reachable from tests) yields `(0, 0)` and every `allot*` then fails
+        // gracefully via `amx_Allot` — no panic at construction.
+        let (release_hea, release_stk) = amx.amx().map_or((0, 0), |ptr| {
+            let ptr = ptr.as_ptr();
+            unsafe { ((*ptr).hea, (*ptr).stk) }
+        });
 
-        Allocator { amx, release_addr }
+        Allocator {
+            amx,
+            release_hea,
+            release_stk,
+        }
     }
 
     /// Allocates a single cell on the heap and initializes it with `init_value`.
@@ -723,8 +786,10 @@ impl<'amx> Allocator<'amx> {
 
 impl Drop for Allocator<'_> {
     fn drop(&mut self) {
-        // AMX::release never fails
-        self.amx.release(self.release_addr);
+        // Rewinds heap + stack to the captured scope. Never fails; on a balanced
+        // `exec_public!` the stack rewind is a no-op, on a failed push sequence
+        // it restores the leftover cells so the VM stack stays balanced.
+        self.amx.release_scope(self.release_hea, self.release_stk);
     }
 }
 
