@@ -4,6 +4,130 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.4.0] — 2026/08/05
+
+Feature release: **`#[event]`** — write Pawn callback handlers (observers, or
+handlers that cancel the callback) directly in Rust, the missing half for
+building gamemodes rather than only plugins. Ships alongside
+`Amx::exec_public_scope` for output-array callbacks and a round of buffer/stack
+hardening across the FFI boundary. Event delivery and the hardening were verified
+end-to-end on a live SA-MP server.
+
+### Added
+
+- **`#[event]` — Pawn callback handlers.** Observe gamemode callbacks
+  (`OnPlayerConnect`, `OnPlayerSpawn`, …) directly in Rust, the missing half for
+  writing gamemodes rather than only plugins. Mark a method
+  `#[event(name = "OnPlayerConnect")]` and register it via the new
+  `initialize_plugin!(events: [...])` list; arguments are marshalled exactly like
+  `#[native]`. Under the hood the SDK detours the VM's `amx_Exec` (via `retour`)
+  and dispatches each public into the matching handlers before the gamemode's own
+  public runs. The detour is installed lazily — plugins with no events never
+  touch `amx_Exec`.
+  - Handlers are **observers** by default (return `AmxResult<T>` / `T`, value
+    ignored, the public runs). A handler that returns `EventReturn` can instead
+    **cancel** the callback (`EventReturn::Suppress(value)` skips the gamemode's
+    public and returns `value`; `EventReturn::suppress(v)` encodes a typed
+    `f32`/`bool`/int for `Float:`/`bool:` callbacks). Dispatch is O(1) per public
+    (keyed by `(amx, index)`), reentrancy-guarded (a handler re-entering the same
+    public runs it directly instead of recursing), and de-duplicated per AMX.
+  - **`#[event(name = "…", raw)]`** hands the handler the `Args` cursor
+    (`fn(&mut self, amx: &Amx, args: &mut Args) -> EventReturn`) for variadic or
+    protocol-specific callbacks, mirroring `#[native(raw)]`.
+  - Verified end-to-end on a live SA-MP server (arg order for int/multi-arg/
+    string, observer vs suppression, reentrancy, panic isolation). The same
+    detour drives native open.mp, but that path has **not** been validated on a
+    live open.mp server yet.
+  - The detour is **x86/x86_64 only** (the arches SA-MP/open.mp run on); the
+    `retour` dependency and dispatch code are scoped accordingly, so the aarch64
+    check job still builds with events as a no-op.
+  - `retour` is pinned to `=0.4.0-alpha.4` — the only release line that compiles
+    on the stable channel (0.3.x needs nightly). Revisit when a stable `0.4` ships.
+  - Inspired by the API proposed upstream in
+    [samp-rs#29](https://github.com/zottce/samp-rs/pull/29) by **@SGmuwa** (and
+    the earlier request in upstream issue #3). The macro surface follows that
+    proposal; the implementation — including the `amx_Exec` detour and stack
+    marshalling the PR left untested — was written and validated here from scratch.
+- **`Amx::exec_public_scope`** — calls a public inside a managed `Allocator`
+  scope, the escape hatch for callbacks with **output arrays** (which the
+  input-only `exec_public!` macro cannot express): allocate buffers, push args,
+  `exec`, and read outputs back before the scope frees them. Validated on a live
+  SA-MP server.
+
+### Tests
+
+- **Property/fuzz tests for the marshalling boundary** (dependency-free,
+  deterministic): `AmxString` decoding is total (no panic/overrun) for random
+  cells, corrupted lengths and non-UTF8 bytes; `Buffer::get_as`/`set_as` stay in
+  bounds for any index; `into_sized_buffer` length is exactly
+  `min(requested, segment, 1 MiB)`; `Args::count` is never negative/absurd.
+
+### Hardened
+
+- **`UnsizedBuffer::into_sized_buffer` clamps the requested size to the VM data
+  region `[0, stp)`.** A native that passes a `size` larger than the real Pawn
+  array (e.g. a corrupted or attacker-influenced length) can no longer produce a
+  slice that reads or writes past the AMX allocation and segfaults; the size is
+  bounded to the script's own memory (and the existing 1 MiB ceiling). It still
+  cannot detect a size that overruns the array but stays inside the segment —
+  always pass the real `sizeof(arr)`. Verified on a live SA-MP server.
+- **`AmxString::to_bytes` no longer indexes an empty backing buffer**, returning
+  an empty string instead of panicking on a corrupted length.
+- **`Allocator` now rewinds the VM stack as well as the heap on drop.** If a
+  `push` sequence inside `exec_public!` fails part-way (VM stack exhausted), the
+  already-pushed cells are restored so the stack stays balanced instead of
+  drifting. On the normal balanced path it is a no-op — verified with 1000
+  `exec_public!` calls on a live SA-MP server (all succeeded, stack healthy).
+- **`Allocator::new` no longer panics on a null VM pointer** (only reachable from
+  tests); it captures `(0, 0)` and every `allot*` then fails gracefully via
+  `amx_Allot`.
+
+### Security
+
+- **RUSTSEC-2026-0204** (`crossbeam-epoch` invalid pointer dereference in the
+  `fmt::Pointer` impl for `Atomic`/`Shared`) — updated to 0.9.20. The advisory
+  reached the SDK only through a dev-dependency (`criterion` → `rayon` →
+  `crossbeam-deque`), so no shipped plugin was affected, but it was failing the
+  `cargo audit` CI step on `master`.
+- **CVE-2026-61632 / GHSA-9xwg-3r6f-jcx2** (`pymdown-extensions` b64 path
+  traversal) — bumped `10.21.3` → `11.0.1` in `docs/requirements.txt`. This is a
+  **docs-build-only** dependency (MkDocs) over the project's own trusted
+  markdown, shipped in no crate; the fix just clears the Dependabot alert.
+
+### Changed
+
+- **CI: benchmarks no longer run on GitHub.** The `bench` job (and its `changes`
+  gate) and the `bench-release.yml` workflow were removed — benches were noisy on
+  shared runners and added little signal on every push/PR/release. They are now
+  **dev-local only**: run `scripts/bench.sh` (criterion on i686, extra args
+  forwarded to `cargo bench`). The CI-only reporting scripts
+  (`extract-bench`/`render-bench-entry`/`build-bench-comment`/`append-bench-history`)
+  were dropped with it.
+- **Docs: added a "Not affiliated" disclaimer** to the READMEs (root + published
+  crates) and the docs home, making explicit that this is an independent fork
+  with no affiliation to SA-MP, open.mp, or the upstream `samp-rs` project.
+- **CI: the cross-only (aarch64) job now runs `clippy -D warnings`** instead of a
+  bare `cargo check`, so warnings that surface only on that arch — e.g.
+  `dead_code` from target-gated code — fail the build like on every other target.
+- **Dependency maintenance since v3.3.1.** Notable library bumps: `syn` 2 → 3
+  (`samp-codegen`), `time` 0.3.53 → 0.3.54 (`samp`), `quote` → 1.0.47,
+  `proc-macro2` → 1.0.107, `memcache` 0.19 → 0.20 (`advanced` example), and
+  `sentry` 0.48.5 → 0.49.0 (`sink-demo` example — its `ClientOptions` became
+  `#[non_exhaustive]`, now built via `ClientOptions::default()`). Routine GitHub
+  Actions bumps as well (`codeql-action/upload-sarif`, `dorny/paths-filter`,
+  `actions/checkout`, `actions/setup-python`, `ossf/scorecard-action`,
+  `softprops/action-gh-release`, `marocchino/sticky-pull-request-comment`). None
+  of these touch the shipped public API.
+
+### Crate versions
+
+- `rust-samp` (lib `samp`): 3.2.0 → 3.3.0 (new `#[event]`/`EventReturn` surface;
+  requires `rust-samp-sdk` 3.3.0).
+- `rust-samp-sdk` (lib `samp_sdk`): 3.2.1 → 3.3.0 (new `Amx::exec_public_scope`;
+  buffer/stack hardening).
+- `rust-samp-codegen` (lib `samp_codegen`): 1.3.0 → 1.4.0 (new `#[event]` macro,
+  including `raw` mode).
+
 ## [v3.3.1] — 2026/07/04
 
 Bug-fix release: the v3.3.0 changes did not build for 64-bit targets. Both fixes

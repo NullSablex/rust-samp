@@ -90,6 +90,7 @@ pub trait AmxExt {
 | `register(natives) -> AmxResult<()>`         | Register a native table via `amx_Register`.                            |
 | `exec(idx) -> AmxResult<i32>`                | Execute a function by index.                                           |
 | `find_public(name) -> AmxResult<AmxExecIdx>` | Resolve a Pawn `public`.                                               |
+| `exec_public_scope(name, body) -> AmxResult<R>` | Call a public inside a managed `Allocator` scope — for **output arrays**. See [exec-public](exec-public.md#output-arrays-exec_public_scope). |
 | `find_native(name) -> AmxResult<i32>`        | Resolve a native by name.                                              |
 | `call_native(name, &params) -> AmxResult<i32>` | Call another plugin's native (raw cell params). See [exec-public](exec-public.md#calling-another-plugins-native-call_native). |
 | `find_pubvar::<T>(name) -> AmxResult<Ref<T>>`| Resolve a `pubvar` (`T: AmxPrimitive`).                                |
@@ -154,7 +155,7 @@ Implements `Deref<Target = [i32]>` and `DerefMut`.
 
 | Method                          | Purpose                                                        |
 | ------------------------------- | -------------------------------------------------------------- |
-| `into_sized_buffer(len)`        | Convert into `Buffer<'amx>` (capped at 1 MiB cells).           |
+| `into_sized_buffer(len)`        | Convert into `Buffer<'amx>` (clamped to the VM data segment and 1 MiB). |
 | `write_str(max_len, s)`         | `into_sized_buffer(max_len)` + `write_str(s)` in one call.     |
 
 ### `Args<'a>`
@@ -227,6 +228,19 @@ Offsets inside the `ppData` table passed to `Load(void**)`.
 #[native(name = "PawnName", raw)]     // raw mode with Args
 ```
 
+### `#[event]`
+
+Observes a Pawn **callback**. Handlers are registered in the `events: [...]`
+list of `initialize_plugin!`. See [Events](events.md).
+
+```rust
+#[event(name = "OnPlayerConnect")]        // observer (return AmxResult<T> / T)
+#[event(name = "OnPlayerText")]           // return EventReturn to cancel:
+                                          //   EventReturn::Continue / Suppress(v)
+                                          //   EventReturn::suppress(1.5_f32)  (typed)
+#[event(name = "OnPlayerCommandText", raw)] // raw mode: fn(&Amx, &mut Args) -> EventReturn
+```
+
 ### `initialize_plugin!`
 
 Generates the server entry points and instantiates the plugin.
@@ -238,9 +252,10 @@ initialize_plugin!(
     natives: [MyPlugin::method],
 );
 
-// Full form — constructor block
+// Full form — constructor block, with optional #[event] handlers
 initialize_plugin!(
     natives: [MyPlugin::method],
+    events:  [MyPlugin::on_connect],   // optional; see #[event]
     { return MyPlugin::new(); }
 );
 ```

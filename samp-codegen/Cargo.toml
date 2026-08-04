@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp-codegen"
-version = "1.3.0"
+version = "1.4.0"
 description = "Proc macros (`#[native]`, `initialize_plugin!`, `#[derive(SampPlugin)]`) for the `rust-samp` SDK. Generates the FFI boilerplate that turns Rust methods into Pawn-callable natives and the entry points required by SA-MP and open.mp."
 keywords = ["samp", "open-mp", "pawn", "proc-macro", "codegen"]
 categories = ["development-tools::procedural-macro-helpers", "game-development"]
