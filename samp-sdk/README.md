@@ -9,6 +9,12 @@ open.mp `IComponent` interface that the high-level crate does not expose
 yet, or to write a custom plugin runtime that bypasses the macros and
 lifecycle management.
 
+> **Not affiliated.** Independent community fork of
+> [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs). Not affiliated with,
+> endorsed by, or connected to SA-MP, the open.mp (Open Multiplayer) project,
+> or the upstream `samp-rs` repository. "SA-MP" and "open.mp" belong to their
+> respective owners and are named only to describe compatibility.
+
 ```toml
 [dependencies]
 samp-sdk = { package = "rust-samp-sdk", version = "3" }

@@ -13,6 +13,13 @@ without any extra configuration.
 > component ABI (Itanium and MSVC), without `bindgen` or any C/C++
 > dependency.
 
+> **Not affiliated.** This is an independent, community-maintained project.
+> It is **not** affiliated with, endorsed by, sponsored by, or otherwise
+> connected to SA-MP, the open.mp (Open Multiplayer) project, or the upstream
+> `samp-rs` repository this fork derives from. It has no relationship with any
+> of them. "SA-MP" and "open.mp" belong to their respective owners and are
+> referenced here solely to describe what this toolkit is compatible with.
+
 ## Why Rust
 
 Traditional plugins are written in C/C++, where memory errors (buffer

@@ -3,6 +3,12 @@
 Proc macros that generate the FFI boilerplate for
 [`rust-samp`](https://crates.io/crates/rust-samp) plugins.
 
+> **Not affiliated.** Independent community fork of
+> [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs). Not affiliated with,
+> endorsed by, or connected to SA-MP, the open.mp (Open Multiplayer) project,
+> or the upstream `samp-rs` repository. "SA-MP" and "open.mp" belong to their
+> respective owners and are named only to describe compatibility.
+
 Provides:
 
 - `#[native(name = "Pawn_Name")]` — turns a Rust method or associated
@@ -10,10 +16,15 @@ Provides:
   argument parsing via `AmxCell`, panic isolation, and the
   `__samp_reg_*` registration function. Detects `Result<T, E>` vs `T`
   return types automatically.
-- `initialize_plugin!(type: T, natives: [...])` — emits the SA-MP entry
-  points (`Load`, `Unload`, `AmxLoad`, `AmxUnload`, `Supports`,
-  `ProcessTick`) and the open.mp `ComponentEntryPoint`, including the
-  vtable definitions for both Itanium (Linux GCC) and MSVC ABIs.
+- `#[event(name = "OnPlayerConnect")]` — turns a Rust method into an observer
+  of a Pawn callback. Parses the callback arguments like `#[native]` and runs
+  the handler when the gamemode's public executes. Register the handlers in the
+  `events: [...]` list below.
+- `initialize_plugin!(type: T, natives: [...], events: [...])` — emits the
+  SA-MP entry points (`Load`, `Unload`, `AmxLoad`, `AmxUnload`, `Supports`,
+  `ProcessTick`) and the open.mp `ComponentEntryPoint`, including the vtable
+  definitions for both Itanium (Linux GCC) and MSVC ABIs. The `natives` and
+  `events` lists are both optional.
 - `#[derive(SampPlugin)]` — generates `impl SampPlugin for T {}` with all
   defaults.
 

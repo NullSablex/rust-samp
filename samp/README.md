@@ -7,6 +7,12 @@ Windows (MSVC).
 
 This is the main crate — depend on it from your plugin's `Cargo.toml`.
 
+> **Not affiliated.** Independent community fork of
+> [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs). Not affiliated with,
+> endorsed by, or connected to SA-MP, the open.mp (Open Multiplayer) project,
+> or the upstream `samp-rs` repository. "SA-MP" and "open.mp" belong to their
+> respective owners and are named only to describe compatibility.
+
 ```toml
 [lib]
 crate-type = ["cdylib"]
