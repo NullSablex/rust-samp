@@ -18,7 +18,7 @@ log = "0.4"
 # Pulls in a non-trivial dep tree (Tokio runtime + rustls). That cost
 # is paid only by plugins that ship this integration; the rust-samp
 # SDK itself does not depend on `sentry`.
-sentry = { version = "0.48.3", default-features = false, features = [
+sentry = { version = "0.49.0", default-features = false, features = [
     "reqwest",
     "rustls",
     "contexts",

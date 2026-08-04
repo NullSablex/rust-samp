@@ -252,13 +252,13 @@ initialize_plugin!(
             .spawn(move || {
                 // `ClientInitGuard` keeps the Sentry transport
                 // running for the lifetime of this thread.
-                let _guard = sentry::init((
-                    dsn,
-                    sentry::ClientOptions {
-                        release: sentry::release_name!(),
-                        ..Default::default()
-                    },
-                ));
+                // `sentry::ClientOptions` is `#[non_exhaustive]` as of
+                // sentry 0.49 — build it via `default()` and set fields, since a
+                // struct literal (even with `..Default::default()`) is rejected
+                // for a non-exhaustive struct from another crate (E0639).
+                let mut options = sentry::ClientOptions::default();
+                options.release = sentry::release_name!();
+                let _guard = sentry::init((dsn, options));
 
                 while let Ok(record) = rx.recv() {
                     let event = record.into_sentry_event();
