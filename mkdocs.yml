@@ -83,6 +83,7 @@ nav:
       - Anatomy of a Plugin: plugin-anatomy.md
       - Open Multiplayer Support: omp-native.md
       - Native Functions: natives.md
+      - Events (Callbacks): events.md
       - The Amx Type: amx-types.md
       - Calling Pawn from Rust: exec-public.md
   - Working with Data:

@@ -56,6 +56,7 @@
 //! ```
 
 pub mod amx;
+pub mod events;
 #[doc(hidden)]
 pub mod interlayer;
 pub mod logger;
@@ -64,7 +65,7 @@ pub(crate) mod macros;
 pub mod plugin;
 pub(crate) mod runtime;
 
-pub use samp_codegen::{initialize_plugin, native};
+pub use samp_codegen::{event, initialize_plugin, native};
 
 /// Version of the `rust-samp` (`samp`) crate the plugin was compiled
 /// against. Useful for diagnostic natives that report the SDK build
@@ -101,6 +102,7 @@ pub mod prelude {
     pub use crate::amx::{Amx, AmxExt};
     pub use crate::cell::{AmxCell, AmxString, Buffer, CellConvert, Ref, UnsizedBuffer};
     pub use crate::error::AmxResult;
+    pub use crate::events::EventReturn;
     pub use crate::plugin::SampPlugin;
 }
 

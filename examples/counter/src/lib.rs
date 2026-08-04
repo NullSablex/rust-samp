@@ -20,7 +20,7 @@
 use log::info;
 use samp::plugin::TickContext;
 use samp::prelude::*;
-use samp::{initialize_plugin, native};
+use samp::{event, initialize_plugin, native};
 
 struct Counter {
     count: i32,
@@ -109,6 +109,40 @@ impl Counter {
     fn is_at_max(&mut self, _amx: &Amx) -> bool {
         self.count >= self.max
     }
+
+    /// Observes the gamemode's `OnPlayerConnect` callback. The handler runs
+    /// before the gamemode's own public — here it just logs the connecting
+    /// player. Registered via the `events: [...]` list below.
+    ///
+    /// ```pawn
+    /// public OnPlayerConnect(playerid) { return 1; }
+    /// ```
+    #[event(name = "OnPlayerConnect")]
+    fn on_player_connect(&mut self, _amx: &Amx, playerid: i32) -> AmxResult<i32> {
+        info!("[event] OnPlayerConnect: player {playerid} connected");
+        Ok(1)
+    }
+
+    /// Callback suppression: while the counter sits at its maximum, cancel the
+    /// gamemode's `OnPlayerText` so the chat message is dropped. Returning
+    /// `EventReturn::Suppress(0)` skips the original public and makes the
+    /// callback return `0`; `Continue` lets it run normally.
+    ///
+    /// ```pawn
+    /// public OnPlayerText(playerid, text[]) { return 1; }
+    /// ```
+    #[event(name = "OnPlayerText")]
+    fn on_player_text(&mut self, _amx: &Amx, playerid: i32, text: &AmxString) -> EventReturn {
+        if self.count >= self.max {
+            info!(
+                "[event] OnPlayerText suppressed for player {playerid}: {}",
+                &**text
+            );
+            EventReturn::Suppress(0)
+        } else {
+            EventReturn::Continue
+        }
+    }
 }
 
 initialize_plugin!(
@@ -119,6 +153,10 @@ initialize_plugin!(
         Counter::get,
         Counter::set_max,
         Counter::is_at_max,
+    ],
+    events: [
+        Counter::on_player_connect,
+        Counter::on_player_text,
     ],
     {
         samp::plugin::enable_tick();

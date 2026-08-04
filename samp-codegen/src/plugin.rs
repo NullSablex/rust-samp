@@ -21,7 +21,7 @@ use syn::{
     parse_macro_input,
 };
 
-use crate::REG_PREFIX;
+use crate::{EVENT_REG_PREFIX, REG_PREFIX};
 
 // ---------------------------------------------------------------------------
 // Helpers for automatic Open Multiplayer metadata resolution
@@ -169,6 +169,8 @@ enum Constructor {
 /// regardless of the presence or absence of these fields.
 struct InitPlugin {
     natives_list: Option<Punctuated<Path, Token![,]>>,
+    /// Optional `events: [...]` list of `#[event]` handlers to register.
+    events_list: Option<Punctuated<Path, Token![,]>>,
     constructor: Constructor,
     /// Explicit UID in the macro (`uid: 0x...`). Overrides Cargo.toml and the automatic fallback.
     explicit_uid: Option<Expr>,
@@ -181,6 +183,7 @@ struct InitPlugin {
 impl Parse for InitPlugin {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut natives_list = None;
+        let mut events_list = None;
         let mut default_type: Option<Path> = None;
         let mut explicit_uid: Option<Expr> = None;
         let mut explicit_name: Option<LitStr> = None;
@@ -203,6 +206,14 @@ impl Parse for InitPlugin {
                         let content;
                         let _ = bracketed!(content in input);
                         natives_list = Some(Punctuated::parse_terminated(&content)?);
+                        let _: Option<Token![,]> = input.parse()?;
+                    }
+                    "events" => {
+                        let _: Ident = input.parse()?;
+                        let _: Token![:] = input.parse()?;
+                        let content;
+                        let _ = bracketed!(content in input);
+                        events_list = Some(Punctuated::parse_terminated(&content)?);
                         let _: Option<Token![,]> = input.parse()?;
                     }
                     "uid" => {
@@ -249,6 +260,7 @@ impl Parse for InitPlugin {
 
         Ok(InitPlugin {
             natives_list,
+            events_list,
             constructor,
             explicit_uid,
             explicit_name,
@@ -265,8 +277,9 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
     let plugin = parse_macro_input!(input as InitPlugin);
 
     let natives = gen_natives_list(&plugin);
+    let events = gen_events_list(&plugin);
     let supports_body = gen_samp_constructor(&plugin.constructor);
-    let samp_entry_points = gen_samp_entry_points(&natives, &supports_body);
+    let samp_entry_points = gen_samp_entry_points(&natives, &events, &supports_body);
 
     // Native Open Multiplayer entry point.
     //
@@ -283,7 +296,7 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
     let omp_entry_point = if samp_only {
         quote! {}
     } else {
-        gen_omp_entry_point(&plugin, &cargo_meta, &natives)
+        gen_omp_entry_point(&plugin, &cargo_meta, &natives, &events)
     };
 
     let generated = quote! {
@@ -318,6 +331,25 @@ fn gen_natives_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
         .collect()
 }
 
+/// Converts the paths in the `events: [...]` list into `__samp_event_reg_*()`
+/// calls, emitting `path1(), path2(), ...` — each producing an `EventInfo`.
+fn gen_events_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
+    plugin
+        .events_list
+        .iter()
+        .flatten()
+        .map(|path| {
+            let mut path = path.clone();
+            if let Some(last_part) = path.segments.last_mut() {
+                let span = last_part.ident.span();
+                last_part.ident =
+                    Ident::new(&format!("{}{}", EVENT_REG_PREFIX, last_part.ident), span);
+            }
+            quote!(#path(),)
+        })
+        .collect()
+}
+
 /// Block that initializes `samp::plugin` in the `Supports` entry point (SA-MP).
 fn gen_samp_constructor(constructor: &Constructor) -> proc_macro2::TokenStream {
     match constructor {
@@ -335,12 +367,14 @@ fn gen_samp_constructor(constructor: &Constructor) -> proc_macro2::TokenStream {
 /// `Supports`/`ProcessTick` are looked up by the server by fixed name.
 fn gen_samp_entry_points(
     natives: &proc_macro2::TokenStream,
+    events: &proc_macro2::TokenStream,
     supports_body: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     quote! {
         #[unsafe(no_mangle)]
         pub extern "system" fn Load(server_data: *const usize) -> i32 {
             samp::interlayer::load(server_data);
+            samp::interlayer::register_events(vec![#events]);
             return 1;
         }
 
@@ -442,6 +476,7 @@ fn gen_omp_entry_point(
     plugin: &InitPlugin,
     cargo_meta: &SampMetadata,
     natives: &proc_macro2::TokenStream,
+    events: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let uid_expr = resolve_uid_expr(plugin, cargo_meta);
     let name_str = resolve_component_name(plugin, cargo_meta);
@@ -656,6 +691,7 @@ fn gen_omp_entry_point(
             pub extern "C" fn ComponentEntryPoint() -> *mut OmpComponent {
                 #omp_initialize
                 samp::interlayer::omp_store_natives(vec![#natives]);
+                samp::interlayer::register_events(vec![#events]);
                 let component = Box::new(OmpComponent::new(&VTABLE, &UID_VTABLE, #uid_expr));
                 Box::into_raw(component)
             }

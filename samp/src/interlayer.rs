@@ -183,6 +183,16 @@ pub fn unload() {
     plugin.on_unload();
 }
 
+/// Stores the plugin's `#[event]` handlers. Called once at init from the
+/// generated `Load` (SA-MP) and `ComponentEntryPoint` (Open Multiplayer).
+/// A no-op when the plugin declared no events.
+pub fn register_events(events: Vec<crate::events::EventInfo>) {
+    if events.is_empty() {
+        return;
+    }
+    Runtime::get().register_events(events);
+}
+
 pub fn amx_load(amx: *mut AMX, natives: &[AMX_NATIVE_INFO]) {
     let rt = Runtime::get();
     let plugin = Runtime::plugin();
@@ -190,12 +200,18 @@ pub fn amx_load(amx: *mut AMX, natives: &[AMX_NATIVE_INFO]) {
     let amx = rt.insert_amx(amx);
     let _ = amx.register(natives); // don't care about errors, that function always raises errors.
 
+    // Resolve `#[event]` handlers against this AMX and install the `amx_Exec`
+    // detour on first use. No-op when the plugin declared no events.
+    crate::events::on_amx_load(rt, amx);
+
     plugin.on_amx_load(amx);
 }
 
 pub fn amx_unload(amx: *mut AMX) {
     let rt = Runtime::get();
     let plugin = Runtime::plugin();
+
+    crate::events::on_amx_unload(rt, amx);
 
     if let Some(amx) = rt.remove_amx(amx) {
         plugin.on_amx_unload(&amx);
