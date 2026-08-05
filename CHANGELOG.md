@@ -43,11 +43,12 @@ end-to-end on a live SA-MP server.
     check job still builds with events as a no-op.
   - `retour` is pinned to `=0.4.0-alpha.4` — the only release line that compiles
     on the stable channel (0.3.x needs nightly). Revisit when a stable `0.4` ships.
-  - Inspired by the API proposed upstream in
-    [samp-rs#29](https://github.com/zottce/samp-rs/pull/29) by **@SGmuwa** (and
-    the earlier request in upstream issue #3). The macro surface follows that
-    proposal; the implementation — including the `amx_Exec` detour and stack
-    marshalling the PR left untested — was written and validated here from scratch.
+  - Inspired by an API proposal in the upstream `samp-rs` project
+    ([PR #29](https://github.com/zottce/samp-rs/pull/29), issue #3). The macro
+    surface follows that proposal; the implementation — including the `amx_Exec`
+    detour and stack marshalling the proposal left untested — was written and
+    validated here from scratch. No code from that proposal is used, and it is
+    not a contribution to this repository.
 - **`Amx::exec_public_scope`** — calls a public inside a managed `Allocator`
   scope, the escape hatch for callbacks with **output arrays** (which the
   input-only `exec_public!` macro cannot express): allocate buffers, push args,
