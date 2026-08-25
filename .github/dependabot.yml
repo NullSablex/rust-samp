@@ -1,18 +1,44 @@
 version: 2
 updates:
-  # Keep the SHA-pinned GitHub Actions fresh: Dependabot bumps both the
-  # commit SHA and the trailing `# vX` comment, so pins never go stale.
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
-      interval: weekly
+      interval: "weekly"
+    open-pull-requests-limit: 5
     commit-message:
-      prefix: ci
-
-  # Cargo dependencies across the workspace.
-  - package-ecosystem: cargo
-    directory: /
+      prefix: "chore(deps)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "cargo"
+    directory: "/"
     schedule:
-      interval: weekly
+      interval: "weekly"
+    open-pull-requests-limit: 5
     commit-message:
-      prefix: deps
+      prefix: "chore(deps)"
+    groups:
+      cargo:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      pip:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
