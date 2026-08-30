@@ -102,6 +102,27 @@ jobs:
         retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Formatting
+  # ---------------------------------------------------------------------------
+  # Kept out of the build matrix: rustfmt is target-independent, so running it
+  # once is enough and it reports a failure in seconds instead of behind a build.
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust (stable + rustfmt)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # ---------------------------------------------------------------------------
   # Aggregate gate: the single required status check on `master`.
   # ---------------------------------------------------------------------------
   # The `build` matrix produces check names derived from the matrix values, which
@@ -114,14 +135,17 @@ jobs:
   ci-status:
     name: ci-status
     if: always()
-    needs: [build]
+    needs: [build, rustfmt]
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Check build result
+      - name: Check job results
         env:
           BUILD_RESULT: ${{ needs.build.result }}
+          RUSTFMT_RESULT: ${{ needs.rustfmt.result }}
         run: |
-          echo "build: $BUILD_RESULT"
+          echo "build:   $BUILD_RESULT"
+          echo "rustfmt: $RUSTFMT_RESULT"
           [ "$BUILD_RESULT" = "success" ] || exit 1
+          [ "$RUSTFMT_RESULT" = "success" ] || exit 1
