@@ -1,0 +1,31 @@
+# Mirror of the `ci-status` gate in `rust.yml` for changes that workflow ignores.
+#
+# `rust.yml` skips docs-only changes via `paths-ignore`, which means it never
+# reports its `ci-status` check — and a required check that never reports blocks
+# the merge forever. This workflow triggers on exactly those paths and reports a
+# passing check under the same name, which is GitHub's documented pattern for
+# "skipped but required" checks.
+#
+# A PR touching both docs and code triggers both workflows; the real gate in
+# `rust.yml` still has to pass. Keep the job name identical to the one there.
+name: Rust (skipped)
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - '**.md'
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+
+jobs:
+  ci-status:
+    name: ci-status
+    runs-on: ubuntu-latest
+    steps:
+      - name: No code changes to build
+        run: echo "Docs-only change — the Rust build does not apply."
