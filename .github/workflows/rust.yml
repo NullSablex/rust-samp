@@ -24,6 +24,7 @@ jobs:
   # Cross-platform build, test and lint (i686)
   # ---------------------------------------------------------------------------
   build:
+    name: build (${{ matrix.target }})
     strategy:
       matrix:
         include:
@@ -99,3 +100,28 @@ jobs:
         name: plugin-${{ matrix.target }}
         path: ${{ matrix.artifact }}
         retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Aggregate gate: the single required status check on `master`.
+  # ---------------------------------------------------------------------------
+  # The `build` matrix produces check names derived from the matrix values, which
+  # change whenever a matrix entry is edited — too brittle to require directly.
+  # This job's name is stable, so the branch ruleset requires only this one.
+  #
+  # A docs-only PR never triggers this workflow at all (see `paths-ignore`), so
+  # `rust-skip.yml` reports a passing check under the same `ci-status` name to
+  # keep such PRs mergeable. Keep the two names in sync.
+  ci-status:
+    name: ci-status
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check build result
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          echo "build: $BUILD_RESULT"
+          [ "$BUILD_RESULT" = "success" ] || exit 1
