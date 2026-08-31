@@ -561,6 +561,15 @@ impl Amx {
         read_reg!(self.stp)
     }
 
+    /// Heap low-water mark (`hlw`) — the bottom of the heap segment. The heap
+    /// grows upward from here; releasing it below `hlw` is what the VM reports as
+    /// `AMX_ERR_HEAPLOW`. A debugger reads it in a debug hook to detect a heap
+    /// underflow before the VM aborts.
+    #[must_use]
+    pub fn hlw(&self) -> Option<i32> {
+        read_reg!(self.hlw)
+    }
+
     /// Primary register (`pri`) — the VM's main accumulator. In a debug hook it
     /// holds the operand the next instruction will act on; e.g. for `OP_BOUNDS`
     /// it is the index being range-checked.
