@@ -58,6 +58,8 @@ piece was already running against live SA-MP and open.mp servers.
   call stack.
 - [API reference](docs/api-reference.md) updated with the new `Amx` methods and
   the widened `samp::debug` surface.
+- README: the `debug` feature is no longer described as only a parser, and the
+  badge row gains crates.io version and downloads, docs.rs, MSRV and stars.
 
 ### Crate versions
 
