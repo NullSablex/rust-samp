@@ -102,8 +102,12 @@ pub trait AmxExt {
 | `amx()` / `header()`                         | Raw `*mut AMX` / `*mut AMX_HEADER` (via `NonNull`).                    |
 | `cip()` / `frame()` / `stack()` / `heap()` / `stp()` / `pri()` / `alt()` | VM register reads (`Option`, `None` if null). See [VM Debugging](vm-debugging.md). |
 | `read_cell(addr)` / `write_cell(addr, v)`    | Bounds-checked data-segment cell access (debug-hook safe).            |
+| `read_cells(addr, count)` / `read_bytes(addr, len)` | Bounds-checked range reads; stop early at the first inaccessible address. `read_bytes` needs no alignment. |
 | `read_code(offset)`                          | Bounds-checked code-segment read (instruction-side counterpart of `read_cell`). |
 | `opcode_table(count)`                        | VM opcode dispatch table (`amx_opcodelist`), to decode an opcode behind a relocated `read_code` value. |
+| `opcode_map()` ***                           | Ready-made `OpcodeMap` for this VM (inverts `opcode_table`). |
+| `call_stack(top_cip)` ***                    | Walks the frame chain into `(cip, frm)` per frame, top first. |
+| `data_only(ptr)`                             | Wraps a `*mut AMX` for data-side access only, with no function table (paused VM / debug hook). |
 | `install_debug_hook(cb)` / `remove_debug_hook()` | Install/remove a raw debug hook (`amx_SetDebugHook`).             |
 
 ### `Allocator<'amx>`
@@ -291,7 +295,7 @@ exec_public!(amx, "PublicName", &vec => array);     // Rust slice
 | *(crate root)*      | `samp::version()` — `rust-samp` crate version (`&'static str`).         |
 | `samp::amx`         | `Amx`, `AmxExt`, `AmxIdent`, `get(ident)`, `add(ptr)`.                  |
 | `samp::plugin`      | `SampPlugin`, `TickContext`, `TickSource`, `TickConfig`, `enable_tick`, `enable_tick_with`, `enable_debug_hook`, `disable_debug_hook`, `logger`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
-| `samp::debug` ***   | `AmxDbg` (`from_amx`, `parse`, `lookup_line`, `lookup_file`, `lookup_function`, `line_to_address`, `symbols_in_scope`, `tag_name`), `DbgSymbol`, `Ident`, `VClass`. |
+| `samp::debug` ***   | `AmxDbg` (`from_amx`, `parse`, `lookup_line`, `lookup_file`, `lookup_function`, `function_address`, `line_to_address`, `symbols_in_scope`, `tag_name`), `DbgSymbol`, `Ident`, `VClass`, `OpcodeMap`, `operand_cells`, `OP_NUM_OPCODES`, `OP_PARAMS`; submodules `opcode` (opcode numbers, `STK_MARGIN`) and `stack` (`walk`, `MAX_DEPTH`). |
 | `samp::cell`        | `AmxCell`, `CellConvert`, `AmxPrimitive`, `AmxString`, `Ref`, `Buffer`, `UnsizedBuffer`. |
 | `samp::error`       | `AmxError`, `AmxResult`.                                                |
 | `samp::args`        | `Args`.                                                                 |
@@ -490,6 +494,6 @@ optional alignment + width spec: `{level:<5}`, `{level:>5}`,
 | ------------ | -------------------------------------------------------------------------------------------- |
 | *(default)*  | SA-MP exports + Open Multiplayer `ComponentEntryPoint` (full dual support).                  |
 | `encoding`   | Enables `samp::encoding` (Windows-1251 / 1252 via `encoding_rs`).                            |
-| `debug`      | Enables `samp::debug` — the `AMX_DBG` debug-info parser (see [VM Debugging](vm-debugging.md)). Pure logic, no extra deps. |
+| `debug`      | Enables `samp::debug` — the `AMX_DBG` parser plus the opcode and call-stack helpers (see [VM Debugging](vm-debugging.md)). Pure logic, no extra deps. |
 | `compression`| gzip-compresses rotated log archives (`LoggerConfig::compress_archives`); pulls in `flate2` (pure-Rust backend). |
 | `samp-only`  | Removes every Open Multiplayer code path — the plugin still loads on Open Multiplayer in legacy mode. |

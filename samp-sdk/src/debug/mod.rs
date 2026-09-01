@@ -12,11 +12,19 @@
 //! Pair this with the VM register/cell accessors on [`crate::amx::Amx`]
 //! (`cip`, `frame`, `read_cell`/`write_cell`, `install_debug_hook`) to build a
 //! debugger on top of the SDK.
+//!
+//! Alongside the parser, this module carries the other AMX facts a debugger
+//! needs and would otherwise reimplement: [`opcode`] (opcode numbers, operand
+//! sizes and the computed-goto [`OpcodeMap`]) and [`stack`] (walking the frame
+//! chain into a call stack). Both are pure logic.
 
+pub mod opcode;
 mod parse;
 mod query;
+pub mod stack;
 mod types;
 
+pub use opcode::{OP_NUM_OPCODES, OP_PARAMS, OP_VARIABLE_LENGTH, OpcodeMap, operand_cells};
 pub use types::{AmxDbg, DbgError, DbgFile, DbgLine, DbgSymDim, DbgSymbol, DbgTag, Ident, VClass};
 
 /// Signature of the debug block (`AMX_DBG_HDR.magic`).

@@ -1630,7 +1630,7 @@ dependencies = [
 
 [[package]]
 name = "rust-samp"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "fern",
  "flate2",
@@ -1652,7 +1652,7 @@ dependencies = [
 
 [[package]]
 name = "rust-samp-sdk"
-version = "3.3.0"
+version = "3.4.0"
 dependencies = [
  "bitflags 2.13.1",
  "criterion",

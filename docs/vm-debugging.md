@@ -46,6 +46,23 @@ Unlike [`get_ref`](cells-and-memory.md), these work inside a debug hook,
 where there is no native call context. They read/write byte-wise, so they
 make no alignment assumptions.
 
+To read a range rather than a single cell, `Amx::read_cells(addr, count)`
+returns consecutive cells and `Amx::read_bytes(addr, len)` returns raw bytes —
+the backing read for a hex view. Both stop early at the first inaccessible
+address and return what they got (the natural case at the end of the data
+segment), returning `None` only when `addr` itself is inaccessible.
+`read_bytes` needs no alignment: it starts at the enclosing cell and trims.
+
+```rust
+let cells: Vec<i32> = amx.read_cells(addr, 8).unwrap_or_default();
+let bytes: Vec<u8> = amx.read_bytes(addr + 2, 16).unwrap_or_default();
+```
+
+When you hold a raw `*mut AMX` and no function table — the usual situation
+while a VM is paused — build the wrapper with `Amx::data_only(ptr)`. It states
+that only the data-side API is available, instead of passing a bare `0` as the
+function table.
+
 ## Reading the code segment
 
 `Amx::read_code(offset)` reads a 32-bit cell from the **code** segment — the
@@ -65,31 +82,65 @@ if let Some(raw) = amx.read_code(cip) {
 On a server built with computed-goto threading (GCC/Clang — the SA-MP and
 open.mp builds), the loader rewrites each opcode in the code segment to the
 **address** of its handler label. So a `read_code` there yields a pointer, not
-the opcode number. `Amx::opcode_table(count)` returns the VM's dispatch table
-(`amx_opcodelist`) — `count` raw label addresses in opcode order — fetched the
-way the loader itself does it (set the `BROWSE` flag, call `amx_Exec` with index
-`0`, restore the flags). Invert that table (address → opcode) to recover the real
-opcode behind a `read_code` value:
+the opcode number. `Amx::opcode_map()` builds the inverse table (address →
+opcode) for you, from the VM's own dispatch list:
 
 ```rust
-use std::collections::HashMap;
+use samp::debug::opcode::{OP_BOUNDS, OP_SDIV, OP_UDIV};
 
-// Build once per VM (e.g. in on_amx_load). OP_NUM_OPCODES is the VM's opcode
-// count, which the caller supplies (the SDK does not hardcode it).
-let table = amx.opcode_table(OP_NUM_OPCODES).unwrap_or_default();
-let inverse: HashMap<usize, i32> =
-    table.iter().enumerate().map(|(op, &addr)| (addr, op as i32)).collect();
+// Build once per VM (e.g. in on_amx_load) and keep it.
+let map = amx.opcode_map();
 
 // In the hook: raw code value → opcode number.
 let raw = amx.read_code(cip)?;
-let opcode = inverse.get(&(raw as usize)).copied()
-    .or(Some(raw)); // non-relocated image: the value is already the opcode
+match map.decode(raw)? {
+    OP_SDIV | OP_UDIV => { /* divisor is in `alt` */ }
+    OP_BOUNDS => { /* index is in `pri` */ }
+    _ => {}
+}
 ```
+
+On a non-relocated image the code segment already holds opcode numbers;
+`decode` passes those through, and `OpcodeMap::is_identity()` reports that case.
+Under the hood the map comes from `Amx::opcode_table(count)`, which is still
+public if you want the raw dispatch list — `opcode_map()` simply calls it with
+`OP_NUM_OPCODES`.
 
 `opcode_table` does not consult the `AMX_FLAG_RELOC` header bit — it may not be
 visible at `AmxLoad` time even though the table is already available. On a
 non-computed-goto VM the returned addresses simply never match a real opcode, so
 inverting the table is harmless.
+
+### Opcode numbers and instruction sizes
+
+`samp::debug::opcode` carries the AMX opcode numbering (the order of the opcode
+enum in `amx.c`, identical on SA-MP and open.mp) so tools do not have to
+hardcode magic numbers: `OP_SDIV`, `OP_BOUNDS`, `OP_BREAK`, `OP_PROC`,
+`OP_CALL`, the load/store and stack/heap opcodes, plus `STK_MARGIN` (the VM's
+`STKMARGIN`) and `OP_NUM_OPCODES`.
+
+`operand_cells(op)` gives how many inline operand cells an instruction carries,
+so a scanner can step to the next instruction — an instruction occupies
+`1 + operand_cells(op)` cells:
+
+```rust
+use samp::debug::{operand_cells, OP_BREAK};
+
+let mut at = line_start;
+while let Some(op) = map.decode(amx.read_code(at)?) {
+    if op == OP_BREAK && at != line_start {
+        break; // reached the next source line
+    }
+    // inspect `op` here...
+    let Some(operands) = operand_cells(op) else {
+        break; // variable-length instruction: cannot know where the next starts
+    };
+    at += 4 * (1 + u32::from(operands));
+}
+```
+
+`operand_cells` returns `None` for a variable-length instruction (`casetbl`) or
+an out-of-range opcode — the signal to stop scanning rather than guess.
 
 Together with `pri()`/`alt()`, this lets a debugger predict a runtime error
 *before* the VM aborts it: read the next opcode at `cip`, and if it is a division
@@ -186,3 +237,31 @@ for sym in dbg.symbols_in_scope(cip) {
     // interpret `value` according to sym.tag (Float bits, bool, integer...)
 }
 ```
+
+## Walking the call stack
+
+`Amx::call_stack(top_cip)` walks the AMX frame chain and returns the
+`(cip, frm)` of every frame — index 0 is the top, where the VM currently is.
+Inside a debug hook, `top_cip` is the address of the line's `OP_BREAK`, i.e.
+`cip()` minus one cell, since the hook is entered with the instruction pointer
+already past the break.
+
+```rust
+let top_cip = amx.cip()? - 4; // the break that opened this line
+
+for (cip, frm) in amx.call_stack(top_cip) {
+    let name = dbg.lookup_function(cip).unwrap_or("???");
+    let line = dbg.lookup_line(cip);
+    // `frm` is that frame's FRM: pass it to `effective_address` to read the
+    // locals of *that* frame, not only the top one.
+}
+```
+
+For each caller the `cip` is the saved return address, which maps to the line of
+the call site. The walk ends at the entry public (`amx_Exec` pushes a return
+address of `0` before it) and stops early — keeping what it has — if the chain
+leaves the stack, stops ascending, or cannot be read; `MAX_DEPTH` caps it so a
+corrupted stack cannot spin the hook.
+
+`samp::debug::stack::walk` is the same logic with an injected cell reader, so it
+can be unit-tested against a fake memory map or driven host-side.

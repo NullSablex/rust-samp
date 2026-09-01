@@ -61,6 +61,22 @@ impl Amx {
         Amx { ptr, fn_table }
     }
 
+    /// Wraps a VM for **data-side access only**, with no function table.
+    ///
+    /// The register accessors and `read_cell`/`write_cell`/`read_cells`/
+    /// `read_bytes`/`read_code` resolve addresses straight from the `AMX`
+    /// struct, so they need no exported function table. Anything that calls
+    /// into the VM (`register`, `exec`, `get_ref`, `allot`…) does, and will
+    /// fail on an `Amx` built here.
+    ///
+    /// Meant for a debug hook or a paused VM, where a plugin holds the pointer
+    /// but has no native call context — it states that intent instead of
+    /// passing a bare `0` as the function table.
+    #[must_use]
+    pub fn data_only(ptr: *mut AMX) -> Amx {
+        Amx { ptr, fn_table: 0 }
+    }
+
     /// Registers plugin natives in the VM via `amx_Register`.
     ///
     /// Generally called in `AmxLoad` — the `#[native]` macro + `initialize_plugin!`
@@ -666,6 +682,52 @@ impl Amx {
         Some(i32::from_ne_bytes(buf))
     }
 
+    /// Reads up to `count` consecutive cells starting at `addr`, validating
+    /// each one like [`read_cell`](Self::read_cell).
+    ///
+    /// Stops early and returns what it read when an address becomes
+    /// inaccessible — the natural case at the end of the data segment. `None`
+    /// only when `addr` itself is inaccessible.
+    ///
+    /// Unlike [`get_ref`](Self::get_ref)-based access (`Buffer`, `AmxString`),
+    /// this needs no function table, so it works inside a debug hook.
+    #[must_use]
+    pub fn read_cells(&self, addr: i32, count: usize) -> Option<Vec<i32>> {
+        let first = self.read_cell(addr)?;
+        let mut out = Vec::with_capacity(count);
+        out.push(first);
+        for i in 1..count {
+            let offset = i32::try_from(i.checked_mul(4)?).ok()?;
+            let Some(cell) = self.read_cell(addr.checked_add(offset)?) else {
+                break;
+            };
+            out.push(cell);
+        }
+        Some(out)
+    }
+
+    /// Reads up to `len` raw bytes of the data segment starting at `addr`, in
+    /// the VM's native byte order — the backing read for a hex view.
+    ///
+    /// `addr` needs no alignment: the read starts at the enclosing cell and the
+    /// leading bytes are trimmed. Like [`read_cells`](Self::read_cells), it
+    /// stops early at the first inaccessible address, so the result may be
+    /// shorter than `len`; `None` only when `addr` itself is inaccessible.
+    #[must_use]
+    pub fn read_bytes(&self, addr: i32, len: usize) -> Option<Vec<u8>> {
+        let aligned = addr & !3;
+        let skip = usize::try_from(addr - aligned).ok()?;
+        let cells = skip.checked_add(len)?.div_ceil(4);
+        let read = self.read_cells(aligned, cells)?;
+
+        let mut bytes = Vec::with_capacity(read.len() * 4);
+        for cell in read {
+            bytes.extend_from_slice(&cell.to_ne_bytes());
+        }
+        let end = skip.checked_add(len)?.min(bytes.len());
+        Some(bytes.get(skip..end).unwrap_or(&[]).to_vec())
+    }
+
     /// Writes a 32-bit cell to the data segment at `addr`, validating bounds
     /// like `amx_GetAddr`. Returns `false` if the address is inaccessible.
     ///
@@ -690,6 +752,37 @@ impl Amx {
         if let Some(amx) = NonNull::new(self.ptr) {
             unsafe { std::ptr::addr_of_mut!((*amx.as_ptr()).debug).write_unaligned(cb) };
         }
+    }
+
+    /// Builds this VM's [`OpcodeMap`](crate::debug::OpcodeMap), to decode the
+    /// raw values [`read_code`](Self::read_code) returns on a computed-goto
+    /// build. Build it once per VM (typically in `on_amx_load`).
+    ///
+    /// A VM whose dispatch table cannot be fetched yields an identity map,
+    /// which treats code values as plain opcode numbers.
+    #[cfg(feature = "debug")]
+    #[must_use]
+    pub fn opcode_map(&self) -> crate::debug::OpcodeMap {
+        crate::debug::OpcodeMap::new(self.opcode_table(crate::debug::OP_NUM_OPCODES))
+    }
+
+    /// Walks the call stack from `top_cip`, returning the `(cip, frm)` of every
+    /// frame — index 0 is the top, where the VM currently is.
+    ///
+    /// Inside a debug hook, `top_cip` is the address of the line's `OP_BREAK`,
+    /// i.e. [`cip`](Self::cip) minus one cell, since the hook is entered with
+    /// the instruction pointer already past the break.
+    ///
+    /// See [`debug::stack::walk`](crate::debug::stack::walk) for the frame
+    /// layout and the conditions that end the walk. Returns an empty vector
+    /// only when the VM's registers cannot be read.
+    #[cfg(feature = "debug")]
+    #[must_use]
+    pub fn call_stack(&self, top_cip: u32) -> Vec<(u32, i32)> {
+        let (Some(frm), Some(stp)) = (self.frame(), self.stp()) else {
+            return Vec::new();
+        };
+        crate::debug::stack::walk(top_cip, frm, stp, |addr| self.read_cell(addr))
     }
 
     /// Removes a previously installed debug hook, restoring `amx->debug` to a
@@ -905,6 +998,58 @@ mod vm_tests {
     }
 
     #[test]
+    fn read_cells_reads_a_run_and_stops_at_the_gap() {
+        let mut data = vec![0u8; 256];
+        for (i, cell) in [10i32, 20, 30, 40].iter().enumerate() {
+            data[i * 4..i * 4 + 4].copy_from_slice(&cell.to_ne_bytes());
+        }
+        // Heap/stack gap at [64, 192): cells 0..16 are readable.
+        with_amx(&mut data, 40, 100, 64, 192, |amx| {
+            assert_eq!(amx.read_cells(0, 4), Some(vec![10, 20, 30, 40]));
+            // Starting mid-run.
+            assert_eq!(amx.read_cells(8, 2), Some(vec![30, 40]));
+            // Runs into the gap at 64: returns only what was readable.
+            assert_eq!(amx.read_cells(56, 8).map(|v| v.len()), Some(2));
+            // The start itself is inside the gap.
+            assert_eq!(amx.read_cells(100, 2), None);
+        });
+    }
+
+    #[test]
+    fn read_bytes_handles_unaligned_start() {
+        let mut data = vec![0u8; 256];
+        // Bytes 0..8 = 0,1,2,3,4,5,6,7 (native order within each cell).
+        for (i, b) in (0u8..8).enumerate() {
+            data[i] = b;
+        }
+        with_amx(&mut data, 40, 100, 64, 192, |amx| {
+            assert_eq!(amx.read_bytes(0, 4), Some(vec![0, 1, 2, 3]));
+            // Unaligned start: begins at the enclosing cell and trims.
+            assert_eq!(amx.read_bytes(2, 4), Some(vec![2, 3, 4, 5]));
+            assert_eq!(amx.read_bytes(3, 2), Some(vec![3, 4]));
+            // Truncated at the heap/stack gap instead of failing.
+            let near_gap = amx.read_bytes(56, 32).expect("start is readable");
+            assert_eq!(near_gap.len(), 8);
+            // Unreadable start.
+            assert_eq!(amx.read_bytes(100, 4), None);
+        });
+    }
+
+    #[test]
+    fn data_only_reads_without_a_function_table() {
+        let mut data = vec![0u8; 256];
+        data[..4].copy_from_slice(&7i32.to_ne_bytes());
+        with_amx(&mut data, 40, 100, 64, 192, |amx| {
+            let ptr = amx.amx().expect("non-null").as_ptr();
+            let view = Amx::data_only(ptr);
+            assert_eq!(view.read_cell(0), Some(7));
+            assert_eq!(view.cip(), Some(40));
+            assert!(view.write_cell(0, 9));
+            assert_eq!(view.read_cell(0), Some(9));
+        });
+    }
+
+    #[test]
     fn null_amx_is_safe() {
         let amx = Amx::new(std::ptr::null_mut(), 0);
         assert_eq!(amx.cip(), None);
@@ -913,6 +1058,8 @@ mod vm_tests {
         assert_eq!(amx.pri(), None);
         assert_eq!(amx.alt(), None);
         assert_eq!(amx.read_cell(0), None);
+        assert_eq!(amx.read_cells(0, 4), None);
+        assert_eq!(amx.read_bytes(0, 4), None);
         assert_eq!(amx.read_code(0), None);
         assert_eq!(amx.opcode_table(256), None);
         assert!(!amx.write_cell(0, 1));
