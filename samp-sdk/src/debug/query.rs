@@ -71,6 +71,27 @@ impl AmxDbg {
             .map(|s| s.name.as_str())
     }
 
+    /// Address to break at when a function is entered, given its name — the
+    /// counterpart of [`Self::lookup_function`], for **function breakpoints**.
+    /// Finds the `iFUNCTN` symbol with that exact name (ignoring internal `@`
+    /// names) and returns the first breakable line address inside its body
+    /// (`[codestart, codeend)`), or `codestart` if the function has no line
+    /// entries. `None` if there is no such function.
+    #[must_use]
+    pub fn function_address(&self, name: &str) -> Option<u32> {
+        let func = self
+            .symbols
+            .iter()
+            .find(|s| s.ident == Ident::Function && s.name == name && !s.name.starts_with('@'))?;
+        let first_line = self
+            .lines
+            .iter()
+            .filter(|l| l.address >= func.codestart && l.address < func.codeend)
+            .map(|l| l.address)
+            .min();
+        Some(first_line.unwrap_or(func.codestart))
+    }
+
     /// Code address of a source line (`dbg_GetLineAddress`), to set a
     /// breakpoint by line. Moves to the next "breakable" line if the exact one
     /// does not exist; use [`Self::lookup_line`] to learn which line it landed
