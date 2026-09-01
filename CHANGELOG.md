@@ -46,6 +46,10 @@ piece was already running against live SA-MP and open.mp servers.
   registers, cell reads/writes, code reads — stating the intent instead of
   passing a bare `0` as the function table, the usual situation while a VM is
   paused.
+- **`Amx::hlw()` — heap low-water mark** (#54). The last VM register the accessors
+  were missing (`hlw` is where the heap starts, below which a release is a
+  `AMX_ERR_HEAPLOW` underflow). Reading it is what lets a debugger predict that
+  error the way `amx.c`'s `CHKHEAP` raises it.
 - **`AmxDbg::function_address`.** Resolves a function name to its entry address
   in the code segment, the missing half of `lookup_function` and what a
   debugger needs to place a breakpoint on a function by name.
@@ -60,6 +64,30 @@ piece was already running against live SA-MP and open.mp servers.
   the widened `samp::debug` surface.
 - README: the `debug` feature is no longer described as only a parser, and the
   badge row gains crates.io version and downloads, docs.rs, MSRV and stars.
+- The v3.4.0 entry dropped an `@`-mention that could read as crediting a
+  contribution that was not one (#36).
+
+### Changed
+
+- **CI: CodeQL migrated from default to advanced setup** (#52). The default
+  setup only analysed a pull request that touched files relevant to the
+  configured languages, so a docs-only PR produced no analysis at all while
+  `master` still carried one per language — leaving the `code_scanning` branch
+  rule unable to diff the two sides. The workflow runs with no path filter, so
+  both configurations (`actions`, `rust`) exist on every PR.
+- **CI: a stable `ci-status` gate** (#51) is now the required status check, with
+  a companion skip workflow, so the required check reports on every PR
+  regardless of which jobs the path filters select.
+- **Dependabot updates grouped into a single PR per ecosystem** (#44), across
+  `cargo`, `github-actions` and `pip`, cutting the PR noise from one per
+  dependency.
+- **Dependency updates.** `time` 0.3.54 → 0.3.55 (#37), `sentry` 0.49.0 →
+  0.49.1 (#38) then 0.49.2 with `log` and `syn` in the cargo group (#48),
+  `memcache` 0.20.0 → 0.21.0 (#49); GitHub Actions bumps for
+  `codeql-action/upload-sarif` (#39, #42, #46), `Swatinem/rust-cache` (#41,
+  #43) and the actions group (#53); docs toolchain bumps for
+  `mkdocs-material` (#45) and `pymdown-extensions` (#47). None of these touch
+  the shipped public API — `sentry` and `memcache` only reach the examples.
 
 ### Crate versions
 
