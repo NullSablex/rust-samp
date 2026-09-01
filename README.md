@@ -1,4 +1,9 @@
 [![CI](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml/badge.svg)](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml)
+[![crates.io](https://img.shields.io/crates/v/rust-samp?logo=rust)](https://crates.io/crates/rust-samp)
+[![downloads](https://img.shields.io/crates/d/rust-samp?logo=rust&label=downloads)](https://crates.io/crates/rust-samp)
+[![docs.rs](https://img.shields.io/docsrs/rust-samp?logo=docsdotrs&label=docs.rs)](https://docs.rs/rust-samp)
+[![MSRV](https://img.shields.io/crates/msrv/rust-samp?label=MSRV)](Cargo.toml)
+[![stars](https://img.shields.io/github/stars/NullSablex/rust-samp?logo=github)](https://github.com/NullSablex/rust-samp/stargazers)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NullSablex/rust-samp/badge)](https://scorecard.dev/viewer/?uri=github.com/NullSablex/rust-samp)
 [![dependency status](https://deps.rs/repo/github/NullSablex/rust-samp/status.svg)](https://deps.rs/repo/github/NullSablex/rust-samp)
@@ -103,8 +108,10 @@ are 32-bit.
   loads on Open Multiplayer in legacy mode.
 - `encoding` — Windows-1251 / Windows-1252 string conversion via
   `encoding_rs`.
-- `debug` — the `samp::debug` AMX_DBG debug-info parser, for building
-  debuggers/tooling on the VM (see [VM Debugging](docs/vm-debugging.md)).
+- `debug` — `samp::debug`: the AMX_DBG debug-info parser plus the opcode
+  helpers (numbering, instruction sizes, the computed-goto `OpcodeMap`) and
+  call-stack walking, for building debuggers and tooling on the VM (see
+  [VM Debugging](docs/vm-debugging.md)).
 - `compression` — gzip-compress rotated log archives
   (`LoggerConfig::compress_archives`); pulls in `flate2`.
 

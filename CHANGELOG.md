@@ -4,6 +4,100 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.5.0] — 2026/09/01
+
+Feature release for **debugger tooling**: the SDK now carries the AMX facts a
+debugger had to reimplement — opcode numbering and the computed-goto decoder,
+call-stack walking, and range reads of the data segment. Extracted from the
+[PawnPro Debugger](https://github.com/NullSablex/PawnPro-Debugger), where each
+piece was already running against live SA-MP and open.mp servers.
+
+### Added
+
+- **`samp::debug::opcode` — AMX opcode numbering and instruction sizes.** The
+  opcode constants (`OP_SDIV`, `OP_BOUNDS`, `OP_BREAK`, `OP_PROC`, `OP_CALL`,
+  the load/store and stack/heap opcodes…), `OP_NUM_OPCODES`, the VM's
+  `STK_MARGIN`, and `operand_cells(op)` — how many inline operand cells an
+  instruction carries, so a scanner can step to the next one. It returns `None`
+  for a variable-length instruction (`casetbl`) or an out-of-range opcode: the
+  signal to stop scanning rather than guess. Numbering follows the opcode enum
+  in `amx.c`, identical on SA-MP and open.mp.
+- **`OpcodeMap` — decoding a relocated code segment.** Inverts the VM's dispatch
+  table (label address → opcode) to undo the computed-goto rewrite the loader
+  applies on GCC/Clang builds, so `read_code` values become real opcodes.
+  `is_identity()` reports a non-relocated image, where code values are already
+  opcode numbers. `Amx::opcode_map()` builds one straight from a VM; consumers
+  no longer hand-roll the `HashMap` the docs used to show.
+- **`samp::debug::stack::walk` — call-stack walking.** Follows the AMX frame
+  chain (`[frm]` = the caller's FRM, `[frm + CELL]` = the return address) and
+  returns the `(cip, frm)` of every frame, top first. It takes an injected cell
+  reader, so it is unit-testable against a fake memory map and usable
+  host-side; `MAX_DEPTH` caps it so a corrupted stack cannot spin a debug hook.
+  `Amx::call_stack(top_cip)` is the wired-up version.
+- **`Amx::read_cells` / `Amx::read_bytes` — range reads.** Read consecutive
+  cells, or raw bytes for a hex view, with the same `amx_GetAddr` bounds
+  checking as `read_cell`. Both stop early at the first inaccessible address
+  and return what they read — the natural case at the end of the data segment —
+  returning `None` only when the start itself is inaccessible. `read_bytes`
+  needs no alignment: it starts at the enclosing cell and trims. Unlike the
+  `get_ref`-based `Buffer`/`AmxString` path, they need no function table, so
+  they work inside a debug hook.
+- **`Amx::data_only(ptr)`.** Wraps a raw `*mut AMX` for data-side access only —
+  registers, cell reads/writes, code reads — stating the intent instead of
+  passing a bare `0` as the function table, the usual situation while a VM is
+  paused.
+- **`Amx::hlw()` — heap low-water mark** (#54). The last VM register the accessors
+  were missing (`hlw` is where the heap starts, below which a release is a
+  `AMX_ERR_HEAPLOW` underflow). Reading it is what lets a debugger predict that
+  error the way `amx.c`'s `CHKHEAP` raises it.
+- **`AmxDbg::function_address`.** Resolves a function name to its entry address
+  in the code segment, the missing half of `lookup_function` and what a
+  debugger needs to place a breakpoint on a function by name.
+
+### Docs
+
+- [VM Debugging](docs/vm-debugging.md) rewritten around the new API: the
+  hand-rolled inverse-`HashMap` example is replaced by `opcode_map()`, and the
+  page gains sections on opcode numbers/instruction sizes and on walking the
+  call stack.
+- [API reference](docs/api-reference.md) updated with the new `Amx` methods and
+  the widened `samp::debug` surface.
+- README: the `debug` feature is no longer described as only a parser, and the
+  badge row gains crates.io version and downloads, docs.rs, MSRV and stars.
+- The v3.4.0 entry dropped an `@`-mention that could read as crediting a
+  contribution that was not one (#36).
+
+### Changed
+
+- **CI: CodeQL migrated from default to advanced setup** (#52). The default
+  setup only analysed a pull request that touched files relevant to the
+  configured languages, so a docs-only PR produced no analysis at all while
+  `master` still carried one per language — leaving the `code_scanning` branch
+  rule unable to diff the two sides. The workflow runs with no path filter, so
+  both configurations (`actions`, `rust`) exist on every PR.
+- **CI: a stable `ci-status` gate** (#51) is now the required status check, with
+  a companion skip workflow, so the required check reports on every PR
+  regardless of which jobs the path filters select.
+- **Dependabot updates grouped into a single PR per ecosystem** (#44), across
+  `cargo`, `github-actions` and `pip`, cutting the PR noise from one per
+  dependency.
+- **Dependency updates.** `time` 0.3.54 → 0.3.55 (#37), `sentry` 0.49.0 →
+  0.49.1 (#38) then 0.49.2 with `log` and `syn` in the cargo group (#48),
+  `memcache` 0.20.0 → 0.21.0 (#49); GitHub Actions bumps for
+  `codeql-action/upload-sarif` (#39, #42, #46), `Swatinem/rust-cache` (#41,
+  #43) and the actions group (#53); docs toolchain bumps for
+  `mkdocs-material` (#45) and `pymdown-extensions` (#47). None of these touch
+  the shipped public API — `sentry` and `memcache` only reach the examples.
+
+### Crate versions
+
+- `rust-samp` (lib `samp`): 3.3.0 → 3.4.0 (re-exports the widened `samp::debug`
+  surface and the new `Amx` methods; requires `rust-samp-sdk` 3.4.0).
+- `rust-samp-sdk` (lib `samp_sdk`): 3.3.0 → 3.4.0 (additive public API: the
+  `opcode`/`stack` modules, the range readers, `data_only`, `function_address`).
+- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 — unchanged (no macro
+  changes).
+
 ## [v3.4.0] — 2026/08/05
 
 Feature release: **`#[event]`** — write Pawn callback handlers (observers, or

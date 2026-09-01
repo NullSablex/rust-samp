@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp"
-version = "3.3.0"
+version = "3.4.0"
 description = "Write SA-MP and open.mp plugins in safe Rust instead of C++. A single binary runs natively on both servers, with proc macros (`#[native]`, `initialize_plugin!`) that hide the FFI boilerplate and ABI-correct marshalling for Linux (Itanium) and Windows (MSVC)."
 keywords = ["samp", "open-mp", "pawn", "plugin", "gamedev"]
 categories = ["external-ffi-bindings", "game-development", "api-bindings"]
@@ -39,7 +39,7 @@ compression = ["dep:flate2"]
 # `package = "..."` rename keeps the internal `use samp_sdk::...` and
 # `use samp_codegen::...` imports working without sprinkling renames.
 [dependencies]
-samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.3.0" }
+samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.4.0" }
 samp-codegen = { package = "rust-samp-codegen", path = "../samp-codegen", version = "1.4.0" }
 fern = "0.7"
 log = "0.4"
