@@ -21,13 +21,36 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    # Transitive dependencies too, not just what Cargo.toml declares.
+    #
+    # By default Dependabot only tracks the manifest, and most of what the
+    # lockfile pins arrives through other crates rather than from here. A
+    # fixed version of one of those never shows up on its own: nothing is
+    # watching it, so `cargo audit` only reports the problem once someone
+    # happens to open a pull request - and then it fails that pull request,
+    # which did not cause it.
+    #
+    # With `all`, the weekly run refreshes transitive crates as well, so a
+    # patched version arrives as an ordinary lockfile bump and goes through
+    # `cargo audit` in CI like any other change. Supported for cargo:
+    # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+    allow:
+      - dependency-type: "all"
     groups:
+      # One pull request per week for the lot, rather than one per crate.
       cargo:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
+      # Security updates are not grouped by the block above: a group applies
+      # to version updates unless it says otherwise. Without this, several
+      # advisories at once would mean several pull requests.
+      cargo-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
   - package-ecosystem: "pip"
     directory: "/docs"
     schedule:
