@@ -791,7 +791,11 @@ mod tests {
         let vt = make_vtable();
         let uvt = make_uid_vtable();
         let comp = OmpComponent::new(&raw const vt, &raw const uvt, 0xCAFE_BABE_u64);
-        let uid_ptr = (&raw const comp.uid_vtable).cast::<u8>();
+        // Derive from the whole object, as the server does: a pointer taken from the
+        // field alone only carries provenance for that field.
+        let uid_ptr = (&raw const comp)
+            .cast::<u8>()
+            .wrapping_add(std::mem::offset_of!(OmpComponent, uid_vtable));
         let recovered = unsafe { uid_get_uid(uid_ptr) };
         assert_eq!(recovered, 0xCAFE_BABE_u64);
     }

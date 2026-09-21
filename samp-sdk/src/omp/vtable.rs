@@ -15,6 +15,10 @@
 //! function type, because the calling convention varies (`extern "C"`,
 //! `extern "thiscall"`, variadic vs fixed arity).
 //!
+//! Slots are read and returned as `*const ()`, never as `usize`: a function
+//! pointer rebuilt from an integer carries no provenance, and calling it is
+//! undefined behavior under Rust's memory model.
+//!
 //! ## Example usage
 //!
 //! ```rust,no_run
@@ -24,7 +28,7 @@
 //! # fn example(core: *mut u8, level: c_int, fmt: *const c_char, arg: *const c_char) -> Option<()> {
 //! // ILogger at offset 56 inside ICore; logLn at slot [2].
 //! let (this, f_ptr) = unsafe {
-//!     vtable::secondary_call_target(core, 56, 2)?
+//!     vtable::secondary_call_target_ptr(core, 56, 2)?
 //! };
 //! let f: LogLnFn = unsafe { std::mem::transmute(f_ptr) };
 //! unsafe { f(this, level, fmt, arg) };
@@ -58,23 +62,63 @@ pub unsafe fn subobject_ptr(obj: *mut u8, offset: isize) -> Option<*mut u8> {
 /// `subobject` must point to a valid C++ object whose first member is the vptr.
 /// `slot` must be within the valid range of the vtable — reading a non-existent
 /// slot yields an undefined value (but not aliasing UB).
+#[deprecated(
+    since = "3.5.0",
+    note = "returns the address without provenance; use `vtable_slot_ptr`"
+)]
 #[inline]
 pub unsafe fn vtable_slot(subobject: *mut u8, slot: usize) -> Option<usize> {
+    unsafe { vtable_slot_ptr(subobject, slot) }.map(|f| f.addr())
+}
+
+/// Reads the slot `slot` function pointer from the vtable pointed to by `subobject`.
+///
+/// Returns `None` if `subobject` is null, the vtable is null, or the slot
+/// is null (defensive against uninitialized or corrupted vtables). The pointer
+/// keeps its provenance, so the caller may `transmute` it to a function type.
+///
+/// # Safety
+/// `subobject` must point to a valid C++ object whose first member is the vptr.
+/// `slot` must be within the valid range of the vtable.
+#[inline]
+pub unsafe fn vtable_slot_ptr(subobject: *mut u8, slot: usize) -> Option<*const ()> {
     if subobject.is_null() {
         return None;
     }
     // FFI: the first field of any C++ object with a virtual method is the
     // vtable pointer, always pointer-aligned by the ABI (Itanium and MSVC).
     #[allow(clippy::cast_ptr_alignment)]
-    let vtable = unsafe { *(subobject as *const *const usize) };
+    let vtable = unsafe { *(subobject as *const *const *const ()) };
     if vtable.is_null() {
         return None;
     }
     let f_ptr = unsafe { *vtable.add(slot) };
-    if f_ptr == 0 {
+    if f_ptr.is_null() {
         return None;
     }
     Some(f_ptr)
+}
+
+/// Combines [`subobject_ptr`] + [`vtable_slot_ptr`] in a single helper.
+///
+/// Returns `(this, f_ptr)`: the `this` adjusted for the subobject (the first
+/// arg of virtual method calls on that subobject) and the function pointer at
+/// the slot. The caller does the `transmute` to the correct function type and
+/// invokes it.
+///
+/// Returns `None` on any failure (`obj` null, vtable null, slot null).
+///
+/// # Safety
+/// See [`subobject_ptr`] and [`vtable_slot_ptr`].
+#[inline]
+pub unsafe fn secondary_call_target_ptr(
+    obj: *mut u8,
+    offset: isize,
+    slot: usize,
+) -> Option<(*mut u8, *const ())> {
+    let this = unsafe { subobject_ptr(obj, offset)? };
+    let f_ptr = unsafe { vtable_slot_ptr(this, slot)? };
+    Some((this, f_ptr))
 }
 
 /// Combines [`subobject_ptr`] + [`vtable_slot`] in a single helper.
@@ -88,46 +132,47 @@ pub unsafe fn vtable_slot(subobject: *mut u8, slot: usize) -> Option<usize> {
 ///
 /// # Safety
 /// See [`subobject_ptr`] and [`vtable_slot`].
+#[deprecated(
+    since = "3.5.0",
+    note = "returns the address without provenance; use `secondary_call_target_ptr`"
+)]
 #[inline]
 pub unsafe fn secondary_call_target(
     obj: *mut u8,
     offset: isize,
     slot: usize,
 ) -> Option<(*mut u8, usize)> {
-    let this = unsafe { subobject_ptr(obj, offset)? };
-    let f_ptr = unsafe { vtable_slot(this, slot)? };
-    Some((this, f_ptr))
+    unsafe { secondary_call_target_ptr(obj, offset, slot) }.map(|(this, f)| (this, f.addr()))
 }
+
+/// Function-pointer table for unit-test mocks. Raw pointers are not `Sync`,
+/// so the wrapper lets a mock vtable live in a `static`.
+#[cfg(test)]
+pub(crate) struct MockTable<const N: usize>(pub [*const (); N]);
+
+// SAFETY: the table is written once at init and only read afterwards.
+#[cfg(test)]
+unsafe impl<const N: usize> Sync for MockTable<N> {}
+#[cfg(test)]
+unsafe impl<const N: usize> Send for MockTable<N> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    static MOCK_VTABLE: std::sync::OnceLock<[usize; 8]> = std::sync::OnceLock::new();
+    const DUMMY: [u8; 8] = [0; 8];
 
-    fn mock_vtable() -> &'static [usize; 8] {
-        MOCK_VTABLE.get_or_init(|| {
-            [
-                0xDEAD_0000,
-                0xDEAD_0001,
-                0xDEAD_0002,
-                0xDEAD_0003,
-                0xDEAD_0004,
-                0xDEAD_0005,
-                0xDEAD_0006,
-                0xDEAD_0007,
-            ]
-        })
+    /// Fake function pointers into `DUMMY`: never called, only compared.
+    fn fake(i: usize) -> *const () {
+        DUMMY.as_ptr().wrapping_add(i).cast()
     }
 
-    /// Creates a 128-byte buffer (32x`usize` on i686) naturally aligned;
-    /// at `byte_offset` it installs the vptr for `mock_vtable`.
-    fn make_obj_with_secondary_vtable(byte_offset: isize) -> [usize; 32] {
-        let mut buf = [0usize; 32];
-        let vptr = mock_vtable().as_ptr() as usize;
+    /// Creates a 32-pointer buffer; at `byte_offset` it installs the vptr for `table`.
+    fn make_obj_with_secondary_vtable(byte_offset: isize, table: &[*const ()]) -> [*const (); 32] {
+        let mut buf = [std::ptr::null::<()>(); 32];
         let idx = usize::try_from(byte_offset).expect("byte_offset must be >= 0")
-            / std::mem::size_of::<usize>();
-        buf[idx] = vptr;
+            / std::mem::size_of::<*const ()>();
+        buf[idx] = table.as_ptr().cast();
         buf
     }
 
@@ -138,51 +183,58 @@ mod tests {
 
     #[test]
     fn subobject_ptr_adds_offset_correctly() {
-        let base = 0x1000 as *mut u8;
+        let mut buf = [0u8; 64];
+        let base = buf.as_mut_ptr();
         let sub = unsafe { subobject_ptr(base, 56) }.unwrap();
-        assert_eq!(sub as usize, 0x1000 + 56);
+        assert_eq!(sub, base.wrapping_add(56));
     }
 
     #[test]
-    fn vtable_slot_returns_none_for_null_subobject() {
-        assert!(unsafe { vtable_slot(std::ptr::null_mut(), 0) }.is_none());
+    fn vtable_slot_ptr_returns_none_for_null_subobject() {
+        assert!(unsafe { vtable_slot_ptr(std::ptr::null_mut(), 0) }.is_none());
     }
 
     #[test]
-    fn vtable_slot_returns_zero_check() {
-        // Buffer with a vtable containing 0 at slot 2
-        let zero_table: [usize; 3] = [0xDEAD, 0xDEAD, 0];
-        let mut buf = [0usize; 8];
-        buf[0] = zero_table.as_ptr() as usize;
+    fn vtable_slot_ptr_null_slot_returns_none() {
+        let table = [fake(0), fake(1), std::ptr::null()];
+        let mut buf = make_obj_with_secondary_vtable(0, &table);
         let buf_u8 = buf.as_mut_ptr().cast::<u8>();
-        // Slot 2 is zero — must return None
-        assert!(unsafe { vtable_slot(buf_u8, 2) }.is_none());
-        // Slot 0 is non-zero
-        assert_eq!(unsafe { vtable_slot(buf_u8, 0) }, Some(0xDEAD));
+        assert!(unsafe { vtable_slot_ptr(buf_u8, 2) }.is_none());
+        assert_eq!(unsafe { vtable_slot_ptr(buf_u8, 0) }, Some(fake(0)));
     }
 
     #[test]
-    fn secondary_call_target_combines_both() {
-        let mut buf = make_obj_with_secondary_vtable(56);
+    fn secondary_call_target_ptr_combines_both() {
+        let table: Vec<*const ()> = (0..8).map(fake).collect();
+        let mut buf = make_obj_with_secondary_vtable(56, &table);
         let buf_u8 = buf.as_mut_ptr().cast::<u8>();
-        let (this, f_ptr) = unsafe { secondary_call_target(buf_u8, 56, 3).unwrap() };
-        assert_eq!(this as usize, buf_u8 as usize + 56);
-        assert_eq!(f_ptr, 0xDEAD_0003);
+        let (this, f_ptr) = unsafe { secondary_call_target_ptr(buf_u8, 56, 3).unwrap() };
+        assert_eq!(this, buf_u8.wrapping_add(56));
+        assert_eq!(f_ptr, fake(3));
     }
 
     #[test]
-    fn secondary_call_target_null_obj_returns_none() {
-        assert!(unsafe { secondary_call_target(std::ptr::null_mut(), 56, 0) }.is_none());
+    fn secondary_call_target_ptr_null_obj_returns_none() {
+        assert!(unsafe { secondary_call_target_ptr(std::ptr::null_mut(), 56, 0) }.is_none());
     }
 
     #[test]
-    fn secondary_call_target_zero_slot_returns_none() {
-        // Buffer with a 1-slot zeroed vtable
-        let zero_table: [usize; 1] = [0];
-        let mut buf = [0usize; 16];
-        // byte offset 8 = index 2 on i686 (usize = 4 bytes)
-        buf[2] = zero_table.as_ptr() as usize;
+    fn secondary_call_target_ptr_null_slot_returns_none() {
+        let table = [std::ptr::null::<()>()];
+        let mut buf = make_obj_with_secondary_vtable(8, &table);
         let buf_u8 = buf.as_mut_ptr().cast::<u8>();
-        assert!(unsafe { secondary_call_target(buf_u8, 8, 0) }.is_none());
+        assert!(unsafe { secondary_call_target_ptr(buf_u8, 8, 0) }.is_none());
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_wrappers_return_the_same_address() {
+        let table: Vec<*const ()> = (0..8).map(fake).collect();
+        let mut buf = make_obj_with_secondary_vtable(56, &table);
+        let buf_u8 = buf.as_mut_ptr().cast::<u8>();
+        let (_, f) = unsafe { secondary_call_target(buf_u8, 56, 3).unwrap() };
+        assert_eq!(f, fake(3).addr());
+        let sub = buf_u8.wrapping_add(56);
+        assert_eq!(unsafe { vtable_slot(sub, 5) }, Some(fake(5).addr()));
     }
 }

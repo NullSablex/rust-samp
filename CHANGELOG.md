@@ -4,6 +4,60 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.6.0] — 2026/09/21
+
+Soundness release: the SDK now runs clean under
+[Miri](https://github.com/rust-lang/miri) on `i686-unknown-linux-gnu`, with the
+default (strict) provenance and Stacked Borrows checks. No behavior change on a
+real server — the fixes remove undefined behavior that the compiler was free to
+exploit, not crashes observed in the field.
+
+### Added
+
+- **`samp::omp::vtable::vtable_slot_ptr` and `secondary_call_target_ptr`.**
+  Same contract as `vtable_slot` / `secondary_call_target`, but the slot is
+  read and returned as `*const ()` instead of `usize`, so the function pointer
+  keeps its provenance before the caller `transmute`s it to a function type.
+
+### Deprecated
+
+- `samp::omp::vtable::vtable_slot` and `secondary_call_target`. A function
+  pointer rebuilt from a `usize` carries no provenance, and calling it is
+  undefined behavior. Both remain as wrappers over the `_ptr` variants and
+  return the same address; switch to `vtable_slot_ptr` /
+  `secondary_call_target_ptr`.
+
+### Fixed
+
+- **Open.mp calls through server vtables** (`core_print_ln`, `core_log_ln`,
+  the `_u8` variants, `component_name`, `component_version`, the repeating
+  timer helpers) went through the integer path above. They now use the
+  `_ptr` helpers.
+- **`Amx::call_native` path** rebuilt the native's function pointer by
+  `transmute`-ing the `u32` address read from the AMX header. It now goes
+  through `std::ptr::with_exposed_provenance`, the sanctioned int-to-pointer
+  conversion.
+
+### Tests
+
+- Mock vtables in the `omp::core`, `omp::component_api` and `omp::vtable`
+  tests store pointers instead of integers, so Miri can follow them.
+- `uid_get_uid_recovers_from_subobject_pointer` derived the `IUIDProvider`
+  pointer from the `uid_vtable` field alone, then stepped back to the whole
+  object — a Stacked Borrows violation in the test, not in `uid_get_uid`. It
+  now derives the pointer from the whole object, as the server does.
+- The `AmxString` test helper leaked its backing buffer on purpose; it now
+  hands the buffer to the caller, which keeps it alive for the test.
+
+### Crate versions
+
+- `rust-samp` (lib `samp`): 3.4.0 → 3.5.0 (re-exports the new `omp::vtable`
+  helpers; requires `rust-samp-sdk` 3.5.0).
+- `rust-samp-sdk` (lib `samp_sdk`): 3.4.0 → 3.5.0 (additive public API plus
+  two deprecations).
+- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 — unchanged (no macro
+  changes).
+
 ## [v3.5.0] — 2026/09/01
 
 Feature release for **debugger tooling**: the SDK now carries the AMX facts a

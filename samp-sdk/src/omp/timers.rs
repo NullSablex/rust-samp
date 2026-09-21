@@ -150,7 +150,7 @@ pub unsafe fn create_repeating_timer(
         return std::ptr::null_mut();
     }
     let Some((_, slot)) = (unsafe {
-        super::vtable::secondary_call_target(timers.cast::<u8>(), 0, SLOT_CREATE_INTERVAL)
+        super::vtable::secondary_call_target_ptr(timers.cast::<u8>(), 0, SLOT_CREATE_INTERVAL)
     }) else {
         return std::ptr::null_mut();
     };
@@ -228,9 +228,9 @@ impl TimersComponent {
 /// # Safety
 /// `timer` must be a valid pointer returned by `create_repeating_timer`.
 pub unsafe fn kill_timer(timer: *mut ITimer) {
-    let Some((_, slot)) =
-        (unsafe { super::vtable::secondary_call_target(timer.cast::<u8>(), 0, SLOT_TIMER_KILL) })
-    else {
+    let Some((_, slot)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(timer.cast::<u8>(), 0, SLOT_TIMER_KILL)
+    }) else {
         return;
     };
     let kill: KillFn = unsafe { std::mem::transmute(slot) };

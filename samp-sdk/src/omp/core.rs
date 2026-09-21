@@ -85,13 +85,13 @@ type LogLnFn =
 
 /// Loads a slot from the `ILogger` vtable given the `ICore` pointer.
 ///
-/// Thin wrapper over [`vtable::secondary_call_target`] with the offset
+/// Thin wrapper over [`vtable::secondary_call_target_ptr`] with the offset
 /// pre-resolved for the `ILogger` subobject.
 ///
 /// # Safety
 /// `core` must point to a valid `ICore` (alive, with the secondary vtable initialized).
-unsafe fn logger_slot(core: *mut ICore, slot: usize) -> Option<(*mut u8, usize)> {
-    unsafe { super::vtable::secondary_call_target(core.cast::<u8>(), ILOGGER_OFFSET, slot) }
+unsafe fn logger_slot(core: *mut ICore, slot: usize) -> Option<(*mut u8, *const ())> {
+    unsafe { super::vtable::secondary_call_target_ptr(core.cast::<u8>(), ILOGGER_OFFSET, slot) }
 }
 
 /// `ICore::printLn(message)` — writes a line to the server log.
@@ -188,6 +188,7 @@ mod tests {
     //! Runs serially via `TEST_LOCK` because the captured state is global.
 
     use super::*;
+    use crate::omp::vtable::MockTable;
     use std::ffi::CStr;
     use std::sync::Mutex;
 
@@ -267,39 +268,41 @@ mod tests {
 
     unsafe extern "C" fn unused_slot() {}
 
-    /// Mock vtable — initialized at runtime via `OnceLock` because `fn as usize`
+    /// Mock vtable — initialized at runtime via `OnceLock` because `fn as *const ()`
     /// is not const-evaluable. 10 slots = 8 of the `ILogger` header + 2 spare.
-    static MOCK_VTABLE: std::sync::OnceLock<[usize; 10]> = std::sync::OnceLock::new();
+    static MOCK_VTABLE: std::sync::OnceLock<MockTable<10>> = std::sync::OnceLock::new();
 
-    fn mock_vtable() -> &'static [usize; 10] {
-        MOCK_VTABLE.get_or_init(|| {
-            [
-                mock_print_ln as *const () as usize,    // [0] printLn
-                unused_slot as *const () as usize,      // [1] vprintLn
-                mock_log_ln as *const () as usize,      // [2] logLn
-                unused_slot as *const () as usize,      // [3] vlogLn
-                mock_print_ln_u8 as *const () as usize, // [4] printLnU8
-                unused_slot as *const () as usize,      // [5] vprintLnU8
-                mock_log_ln_u8 as *const () as usize,   // [6] logLnU8
-                unused_slot as *const () as usize,      // [7] vlogLnU8
-                0,
-                0,
-            ]
-        })
+    fn mock_vtable() -> &'static [*const (); 10] {
+        &MOCK_VTABLE
+            .get_or_init(|| {
+                MockTable([
+                    mock_print_ln as *const (),    // [0] printLn
+                    unused_slot as *const (),      // [1] vprintLn
+                    mock_log_ln as *const (),      // [2] logLn
+                    unused_slot as *const (),      // [3] vlogLn
+                    mock_print_ln_u8 as *const (), // [4] printLnU8
+                    unused_slot as *const (),      // [5] vprintLnU8
+                    mock_log_ln_u8 as *const (),   // [6] logLnU8
+                    unused_slot as *const (),      // [7] vlogLnU8
+                    std::ptr::null(),
+                    std::ptr::null(),
+                ])
+            })
+            .0
     }
 
     /// Builds a buffer simulating the `ICore` layout:
     /// `[0..ILOGGER_OFFSET]` represent the `IExtensible` subobject (zeroed garbage);
     /// `[ILOGGER_OFFSET..ILOGGER_OFFSET+4]` is the vptr to our mock vtable.
     ///
-    /// Size 32x`usize` = 128 bytes on i686 (target); `usize` ensures natural
-    /// alignment for the `*mut usize` cast at the vptr slot.
-    fn make_mock_core() -> [usize; 32] {
-        let mut buf = [0usize; 32];
-        let vptr = mock_vtable().as_ptr() as usize;
-        // ILOGGER_OFFSET in bytes; on i686 each `usize` = 4 bytes.
+    /// Size 32 pointers = 128 bytes on i686 (target); pointer elements give
+    /// natural alignment at the vptr slot and keep the vptr's provenance.
+    fn make_mock_core() -> [*const (); 32] {
+        let mut buf = [std::ptr::null::<()>(); 32];
+        let vptr = mock_vtable().as_ptr().cast::<()>();
+        // ILOGGER_OFFSET in bytes; on i686 each pointer = 4 bytes.
         let idx = usize::try_from(ILOGGER_OFFSET).expect("ILOGGER_OFFSET must be >= 0")
-            / std::mem::size_of::<usize>();
+            / std::mem::size_of::<*const ()>();
         buf[idx] = vptr;
         buf
     }

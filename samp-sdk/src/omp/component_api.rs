@@ -74,8 +74,9 @@ type ComponentVersionFn =
 pub fn component_name<T: OmpComponentHandle>(c: &T) -> Option<String> {
     let raw = c.as_raw().as_ptr();
     // The primary vtable (IComponent) is at offset 0 of the object.
-    let (_, slot) =
-        unsafe { super::vtable::secondary_call_target(raw.cast::<u8>(), 0, SLOT_COMPONENT_NAME)? };
+    let (_, slot) = unsafe {
+        super::vtable::secondary_call_target_ptr(raw.cast::<u8>(), 0, SLOT_COMPONENT_NAME)?
+    };
     let f: ComponentNameFn = unsafe { std::mem::transmute(slot) };
     let mut sv = StringView {
         data: std::ptr::null(),
@@ -96,7 +97,7 @@ pub fn component_name<T: OmpComponentHandle>(c: &T) -> Option<String> {
 pub fn component_version<T: OmpComponentHandle>(c: &T) -> Option<SemanticVersion> {
     let raw = c.as_raw().as_ptr();
     let (_, slot) = unsafe {
-        super::vtable::secondary_call_target(raw.cast::<u8>(), 0, SLOT_COMPONENT_VERSION)?
+        super::vtable::secondary_call_target_ptr(raw.cast::<u8>(), 0, SLOT_COMPONENT_VERSION)?
     };
     let f: ComponentVersionFn = unsafe { std::mem::transmute(slot) };
     let mut version = SemanticVersion::new(0, 0, 0);
@@ -113,21 +114,24 @@ mod tests {
     //! [`OmpComponentHandle`].
 
     use super::*;
+    use crate::omp::vtable::MockTable;
     use std::sync::Mutex;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     // Mock vtable: 16 slots (minimum size of IComponent MSVC).
     // Only slots [6] (name) and [8] (version) are populated.
-    static MOCK_VTABLE: std::sync::OnceLock<[usize; 16]> = std::sync::OnceLock::new();
+    static MOCK_VTABLE: std::sync::OnceLock<MockTable<16>> = std::sync::OnceLock::new();
 
-    fn mock_vtable() -> &'static [usize; 16] {
-        MOCK_VTABLE.get_or_init(|| {
-            let mut v = [unused as *const () as usize; 16];
-            v[SLOT_COMPONENT_NAME] = mock_name as *const () as usize;
-            v[SLOT_COMPONENT_VERSION] = mock_version as *const () as usize;
-            v
-        })
+    fn mock_vtable() -> &'static [*const (); 16] {
+        &MOCK_VTABLE
+            .get_or_init(|| {
+                let mut v = [unused as *const (); 16];
+                v[SLOT_COMPONENT_NAME] = mock_name as *const ();
+                v[SLOT_COMPONENT_VERSION] = mock_version as *const ();
+                MockTable(v)
+            })
+            .0
     }
 
     // The mock functions MUST match the calling convention declared in
@@ -211,8 +215,8 @@ mod tests {
 
     /// Builds a value simulating `ServerComponent`: vptr at offset 0.
     /// The caller must bind to a local to get a stable address.
-    fn make_mock_component() -> usize {
-        mock_vtable().as_ptr() as usize
+    fn make_mock_component() -> *const *const () {
+        mock_vtable().as_ptr()
     }
 
     #[test]

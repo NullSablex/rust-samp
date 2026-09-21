@@ -301,8 +301,11 @@ impl Amx {
 
         // SAFETY: SA-MP / open.mp are 32-bit; the AMX cell width and host
         // function pointer width are both 4 bytes. `address` came from
-        // `amx_Register`, which writes a valid `AmxNative` pointer.
-        let native: AmxNative = unsafe { std::mem::transmute(address as usize) };
+        // `amx_Register`, which writes a valid `AmxNative` pointer. The address
+        // is only known as an integer, so rebuild the pointer with exposed
+        // provenance instead of transmuting the integer directly.
+        let native_ptr = std::ptr::with_exposed_provenance::<()>(address as usize);
+        let native: AmxNative = unsafe { std::mem::transmute(native_ptr) };
 
         // Build the params block: `[argc * sizeof(cell), arg0, arg1, ...]`.
         // Bytes, not cells — matches the convention every AMX native
