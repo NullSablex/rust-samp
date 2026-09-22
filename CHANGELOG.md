@@ -9,9 +9,8 @@ for the full directory.
 Correctness release, in two parts.
 
 **Bug fix:** `SampPlugin::on_tick` never fired for native open.mp components on
-Linux. The timer vtable slots were the MSVC ones, applied to both ABIs — see
-*Fixed* below. Anyone running a Rust component under open.mp on Linux wants this
-release.
+Linux. The timer vtable slots were the MSVC ones, applied to both ABIs. Anyone
+running a Rust component under open.mp on Linux wants this release.
 
 **Soundness:** the SDK now runs clean under
 [Miri](https://github.com/rust-lang/miri) on `i686-unknown-linux-gnu`, with the
@@ -19,22 +18,13 @@ default (strict) provenance and Stacked Borrows checks. That part changes no
 behavior on a real server — it removes undefined behavior the compiler was free
 to exploit, not crashes observed in the field.
 
-### Added
+Every change below is in `rust-samp-sdk`; the other crates only follow it.
 
-- **`samp::omp::vtable::vtable_slot_ptr` and `secondary_call_target_ptr`.**
-  Same contract as `vtable_slot` / `secondary_call_target`, but the slot is
-  read and returned as `*const ()` instead of `usize`, so the function pointer
-  keeps its provenance before the caller `transmute`s it to a function type.
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0
 
-### Deprecated
+Additive public API plus two deprecations.
 
-- `samp::omp::vtable::vtable_slot` and `secondary_call_target`. A function
-  pointer rebuilt from a `usize` carries no provenance, and calling it is
-  undefined behavior. Both remain as wrappers over the `_ptr` variants and
-  return the same address; switch to `vtable_slot_ptr` /
-  `secondary_call_target_ptr`.
-
-### Fixed
+#### Fixed
 
 - **`on_tick` never fired for native open.mp components on Linux.** The
   `ITimersComponent` and `ITimer` slot indices were the MSVC ones, used on both
@@ -44,41 +34,66 @@ to exploit, not crashes observed in the field.
   16, and `ITimer::kill()` is **11**, not 10. The SDK was calling
   `TimersComponent::reset()`, which returns non-null, so no warning was logged
   and the plugin believed the timer existed. Slots now confirmed against the
-  official `Timers.so` and `Timers.dll` of open.mp 1.5.8.3079, and pinned by a
-  regression test. SA-MP (`ProcessTick`) and MSVC builds were never affected.
+  official `Timers.so` and `Timers.dll` of open.mp 1.5.8.3079, pinned by a
+  regression test, and verified on a live server: a component that logged
+  nothing before now delivers its callbacks to Pawn. SA-MP (`ProcessTick`) and
+  MSVC builds were never affected.
 - **`component_name()` / `component_version()` read the wrong slots on Linux**,
   for the same reason: `componentName()` is `[7]` and `componentVersion()` is
   `[9]` on Itanium, against `[6]` and `[8]` on MSVC. Both returned `None`
   instead of the component's data. The correct per-ABI numbers were already in
   `docs/internals/omp-abi.md`; the code disagreed with its own documentation.
-- **Open.mp calls through server vtables** (`core_print_ln`, `core_log_ln`,
-  the `_u8` variants, `component_name`, `component_version`, the repeating
-  timer helpers) went through the integer path above. They now use the
-  `_ptr` helpers.
-- **`Amx::call_native` path** rebuilt the native's function pointer by
+- **Calls through server vtables** (`core_print_ln`, `core_log_ln`, the `_u8`
+  variants, `component_name`, `component_version`, the repeating timer helpers)
+  rebuilt the function pointer from a `usize`, which carries no provenance.
+  They now use the `_ptr` helpers below.
+- **`Amx::call_native`** rebuilt the native's function pointer by
   `transmute`-ing the `u32` address read from the AMX header. It now goes
   through `std::ptr::with_exposed_provenance`, the sanctioned int-to-pointer
   conversion.
 
-### Tests
+#### Added
 
-- Mock vtables in the `omp::core`, `omp::component_api` and `omp::vtable`
-  tests store pointers instead of integers, so Miri can follow them.
+- **`omp::vtable::vtable_slot_ptr` and `secondary_call_target_ptr`.** Same
+  contract as `vtable_slot` / `secondary_call_target`, but the slot is read and
+  returned as `*const ()` instead of `usize`, so the function pointer keeps its
+  provenance before the caller `transmute`s it to a function type.
+
+#### Deprecated
+
+- **`omp::vtable::vtable_slot` and `secondary_call_target`.** A function pointer
+  rebuilt from a `usize` carries no provenance, and calling it is undefined
+  behavior. Both remain as wrappers over the `_ptr` variants and return the same
+  address; switch to `vtable_slot_ptr` / `secondary_call_target_ptr`.
+
+#### Tests
+
+- Timer and component slot indices are pinned per ABI, with the dump of the
+  official binary named as the source.
+- Mock vtables in the `omp::core`, `omp::component_api` and `omp::vtable` tests
+  store pointers instead of integers, so Miri can follow them.
 - `uid_get_uid_recovers_from_subobject_pointer` derived the `IUIDProvider`
   pointer from the `uid_vtable` field alone, then stepped back to the whole
-  object — a Stacked Borrows violation in the test, not in `uid_get_uid`. It
-  now derives the pointer from the whole object, as the server does.
-- The `AmxString` test helper leaked its backing buffer on purpose; it now
-  hands the buffer to the caller, which keeps it alive for the test.
+  object — a Stacked Borrows violation in the test, not in `uid_get_uid`. It now
+  derives the pointer from the whole object, as the server does.
+- The `AmxString` test helper leaked its backing buffer on purpose; it now hands
+  the buffer to the caller, which keeps it alive for the test.
 
-### Crate versions
+### `rust-samp` (lib `samp`) — 3.5.0
 
-- `rust-samp` (lib `samp`): 3.4.0 → 3.5.0 (re-exports the new `omp::vtable`
-  helpers; requires `rust-samp-sdk` 3.5.0).
-- `rust-samp-sdk` (lib `samp_sdk`): 3.4.0 → 3.5.0 (additive public API plus
-  two deprecations).
-- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 — unchanged (no macro
-  changes).
+No changes of its own. It re-exports `samp::omp::vtable`, so the new helpers and
+the two deprecations reach plugin authors through it, and it now requires
+`rust-samp-sdk` 3.5.0 — which is where the `on_tick` fix lives.
+
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.4.0
+
+Unchanged — no macro changes.
+
+### Docs
+
+- `docs/internals/omp-abi.md` gains the per-ABI slot tables for
+  `ITimersComponent` and `ITimer`, and states that a wrong slot fails silently.
+  The `vtable` helper table now lists the `_ptr` variants.
 
 ## [v3.5.0] — 2026/09/01
 
