@@ -4,13 +4,20 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [v3.6.0] — 2026/09/21
+## [v3.6.0] — Unreleased
 
-Soundness release: the SDK now runs clean under
+Correctness release, in two parts.
+
+**Bug fix:** `SampPlugin::on_tick` never fired for native open.mp components on
+Linux. The timer vtable slots were the MSVC ones, applied to both ABIs — see
+*Fixed* below. Anyone running a Rust component under open.mp on Linux wants this
+release.
+
+**Soundness:** the SDK now runs clean under
 [Miri](https://github.com/rust-lang/miri) on `i686-unknown-linux-gnu`, with the
-default (strict) provenance and Stacked Borrows checks. No behavior change on a
-real server — the fixes remove undefined behavior that the compiler was free to
-exploit, not crashes observed in the field.
+default (strict) provenance and Stacked Borrows checks. That part changes no
+behavior on a real server — it removes undefined behavior the compiler was free
+to exploit, not crashes observed in the field.
 
 ### Added
 
@@ -29,6 +36,21 @@ exploit, not crashes observed in the field.
 
 ### Fixed
 
+- **`on_tick` never fired for native open.mp components on Linux.** The
+  `ITimersComponent` and `ITimer` slot indices were the MSVC ones, used on both
+  ABIs. On Itanium every method shifts: the destructor takes two slots (D1 + D0)
+  instead of one, and the `getUID()` override from `PROVIDE_UID` sits in the
+  primary vtable. So `create(handler, interval, repeating)` is slot **18**, not
+  16, and `ITimer::kill()` is **11**, not 10. The SDK was calling
+  `TimersComponent::reset()`, which returns non-null, so no warning was logged
+  and the plugin believed the timer existed. Slots now confirmed against the
+  official `Timers.so` and `Timers.dll` of open.mp 1.5.8.3079, and pinned by a
+  regression test. SA-MP (`ProcessTick`) and MSVC builds were never affected.
+- **`component_name()` / `component_version()` read the wrong slots on Linux**,
+  for the same reason: `componentName()` is `[7]` and `componentVersion()` is
+  `[9]` on Itanium, against `[6]` and `[8]` on MSVC. Both returned `None`
+  instead of the component's data. The correct per-ABI numbers were already in
+  `docs/internals/omp-abi.md`; the code disagreed with its own documentation.
 - **Open.mp calls through server vtables** (`core_print_ln`, `core_log_ln`,
   the `_u8` variants, `component_name`, `component_version`, the repeating
   timer helpers) went through the integer path above. They now use the

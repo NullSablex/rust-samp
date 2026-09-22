@@ -42,10 +42,23 @@ pub trait OmpComponentHandle: Sized + Copy {
     fn as_raw(&self) -> NonNull<ServerComponent>;
 }
 
-/// Slot of `componentName()` in the `IComponent` vtable (same on both ABIs — `[6]`).
+/// Slot of `componentName()` in the `IComponent` vtable.
+///
+/// Itanium emits two destructor slots (D1 + D0) where MSVC emits a single
+/// scalar deleting one, which shifts every method after it by one. Both
+/// numbers are confirmed against the official `Timers.so` / `Timers.dll`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_COMPONENT_NAME: usize = 7;
+
+#[cfg(target_env = "msvc")]
 const SLOT_COMPONENT_NAME: usize = 6;
 
-/// Slot of `componentVersion()` in the `IComponent` vtable (same on both ABIs — `[8]`).
+/// Slot of `componentVersion()` in the `IComponent` vtable (same shift as
+/// [`SLOT_COMPONENT_NAME`]).
+#[cfg(not(target_env = "msvc"))]
+const SLOT_COMPONENT_VERSION: usize = 9;
+
+#[cfg(target_env = "msvc")]
 const SLOT_COMPONENT_VERSION: usize = 8;
 
 /// Signature of `componentName()` — returns `StringView` via hidden pointer.
@@ -66,7 +79,7 @@ type ComponentVersionFn =
 type ComponentVersionFn =
     unsafe extern "thiscall" fn(*mut ServerComponent, *mut SemanticVersion) -> *mut SemanticVersion;
 
-/// Reads the component name by calling `componentName()` (slot [6] of the `IComponent` vtable).
+/// Reads the component name by calling `componentName()` ([`SLOT_COMPONENT_NAME`] of the `IComponent` vtable).
 ///
 /// Returns a `String` with the UTF-8 name (copied — does not retain pointers from the component).
 /// `None` if the component or vtable are null, the slot is empty, the returned
@@ -90,7 +103,7 @@ pub fn component_name<T: OmpComponentHandle>(c: &T) -> Option<String> {
     std::str::from_utf8(bytes).ok().map(String::from)
 }
 
-/// Reads the component version by calling `componentVersion()` (slot [8] of the `IComponent` vtable).
+/// Reads the component version by calling `componentVersion()` ([`SLOT_COMPONENT_VERSION`] of the `IComponent` vtable).
 ///
 /// Official Open Multiplayer components return the server version (e.g. `1.5.8.3079`).
 /// `None` if the component or vtable are null or the slot is empty.
@@ -109,8 +122,8 @@ pub fn component_version<T: OmpComponentHandle>(c: &T) -> Option<SemanticVersion
 mod tests {
     //! Smoke tests for `component_name` and `component_version`.
     //!
-    //! Sets up a fake `ServerComponent` with a mock vtable at slots [6] (name)
-    //! and [8] (version). Covers typed wrappers via a test type that implements
+    //! Sets up a fake `ServerComponent` with a mock vtable at the name
+    //! and version slots for the target ABI. Covers typed wrappers via a test type that implements
     //! [`OmpComponentHandle`].
 
     use super::*;
@@ -120,7 +133,7 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     // Mock vtable: 16 slots (minimum size of IComponent MSVC).
-    // Only slots [6] (name) and [8] (version) are populated.
+    // Only the name and version slots are populated.
     static MOCK_VTABLE: std::sync::OnceLock<MockTable<16>> = std::sync::OnceLock::new();
 
     fn mock_vtable() -> &'static [*const (); 16] {
@@ -217,6 +230,22 @@ mod tests {
     /// The caller must bind to a local to get a stable address.
     fn make_mock_component() -> *const *const () {
         mock_vtable().as_ptr()
+    }
+
+    /// Slots verified against the official `Timers.so` (Itanium) and
+    /// `Timers.dll` (MSVC) vtables of open.mp 1.5.8.3079.
+    #[test]
+    fn component_slots_match_the_official_binaries() {
+        #[cfg(not(target_env = "msvc"))]
+        {
+            assert_eq!(SLOT_COMPONENT_NAME, 7);
+            assert_eq!(SLOT_COMPONENT_VERSION, 9);
+        }
+        #[cfg(target_env = "msvc")]
+        {
+            assert_eq!(SLOT_COMPONENT_NAME, 6);
+            assert_eq!(SLOT_COMPONENT_VERSION, 8);
+        }
     }
 
     #[test]

@@ -186,17 +186,41 @@ calling convention.
 
 ## `ITimersComponent` and `ITimer`
 
-`ITimersComponent` inherits from `IComponent`. The first new slot
-after the 16 inherited ones (MSVC) or 17 (Itanium) is
-`create(handler, ms, repeating)`.
+`ITimersComponent` inherits from `IComponent`, so the slot indices
+differ per ABI. Two effects stack up on Itanium: the extra destructor
+slot (D1 + D0), and the `getUID()` override from `PROVIDE_UID`, which
+Itanium places in the primary vtable while MSVC keeps it in the
+secondary `IUIDProvider` vtable.
 
-The SDK uses slot **16** through the shared helper
-`vtable::secondary_call_target(component_ptr, 0, 16)`, which works
-on both ABIs because the helper reads from the primary vtable
-pointer regardless of layout (only the *slot index* must match, and
-in this case 16 happens to align on both ABIs).
+| Method                                      | Itanium | MSVC |
+| ------------------------------------------- | :-----: | :--: |
+| `getUID()`                                  | 17      | —    |
+| `create(handler, interval, repeating)`      | **18**  | **16** |
+| `create(handler, initial, interval, count)` | 19      | 17   |
+| `count() const`                             | 20      | 18   |
 
-`ITimer::kill()` lives at slot **10** and is called the same way.
+`ITimer` declares no destructor of its own but inherits the virtual
+`~IExtensible()`, so every method shifts by one on Itanium:
+
+| Method              | Itanium | MSVC |
+| ------------------- | :-----: | :--: |
+| `running() const`   | 6       | 5    |
+| `remaining() const` | 7       | 6    |
+| `calls() const`     | 8       | 7    |
+| `interval() const`  | 9       | 8    |
+| `trigger()`         | 10      | 9    |
+| `kill()`            | **11**  | **10** |
+| `handler() const`   | 12      | 11   |
+
+Both tables come from vtable dumps of the official binaries of
+open.mp 1.5.8.3079: `Timers.so` (symbols via `nm -C`) and `Timers.dll`
+(vtable located through its RTTI complete object locator).
+
+> A wrong slot here fails silently. The server returns a non-null
+> value from whatever virtual function sits at that index, the SDK
+> sees "a timer was created", and no tick ever fires. Until v3.6.0 the
+> SDK used the MSVC indices on both ABIs, so `on_tick` never ran for
+> native components on Linux.
 
 ## `ICore::ILogger` subobject
 
@@ -231,14 +255,18 @@ argument — ABI-equivalent to the variadic call.
 
 ## Helpers in `samp_sdk::omp::vtable`
 
-Three small `unsafe fn`s centralize the repeated pattern of
+A few small `unsafe fn`s centralize the repeated pattern of
 "adjust pointer to a subobject, read its vtable, load slot N":
 
 | Function                              | Returns                            | Used for                                           |
 | ------------------------------------- | ---------------------------------- | -------------------------------------------------- |
 | `subobject_ptr(obj, offset)`          | `Option<*mut u8>`                  | Pointer adjustment for secondary bases.            |
-| `vtable_slot(subobject, slot)`        | `Option<usize>`                    | Read a slot pointer from a vtable.                 |
-| `secondary_call_target(obj, off, n)`  | `Option<(*mut u8, usize)>`         | Combination — `(this_to_pass, fn_ptr)` in one go.  |
+| `vtable_slot_ptr(subobject, slot)`    | `Option<*const ()>`                | Read a slot pointer from a vtable.                 |
+| `secondary_call_target_ptr(o, off, n)`| `Option<(*mut u8, *const ())>`     | Combination — `(this_to_pass, fn_ptr)` in one go.  |
+
+The `usize`-returning `vtable_slot` and `secondary_call_target` are
+deprecated since v3.6.0: a function pointer rebuilt from an integer
+carries no provenance, and calling it is undefined behavior.
 
 All three return `None` on null pointers, null vtables, or null
 slot entries — they are the defensive layer that prevents an
@@ -252,7 +280,7 @@ To wrap another Open Multiplayer component:
    for the server-owned object.
 2. Find the component's `UID` and any slot offsets you need (read
    the open.mp SDK header, then verify with disasm).
-3. Use `samp::omp::vtable::secondary_call_target` to call methods —
+3. Use `samp::omp::vtable::secondary_call_target_ptr` to call methods —
    the SDK does this for `componentName`, `componentVersion`,
    `create_repeating_timer`, `kill_timer`, and the `ILogger` calls.
 4. Implement `OmpComponentHandle` on a `#[derive(Debug, Clone, Copy)]`

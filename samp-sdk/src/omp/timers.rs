@@ -11,24 +11,39 @@
 //!
 //! [`SampPlugin::on_tick`]: ../../../samp/plugin/trait.SampPlugin.html#method.on_tick
 //!
-//! ## Primary `ITimersComponent` vtable (19 slots — confirmed via disasm of `Timers.dll`)
+//! ## Primary `ITimersComponent` vtable
 //!
-//! Slots `[0..15]` are inherited from `IComponent`. New slots:
-//! - **[16]** `create(handler*, Milliseconds interval, bool repeating)` -> `ITimer*`
-//! - **[17]** `create(handler*, Milliseconds initial, Milliseconds interval, unsigned count)` -> `ITimer*`
-//! - **[18]** `count() const` -> `size_t`
+//! The slot numbering differs per ABI, because Itanium emits two destructor
+//! slots (D1 + D0) where MSVC emits a single scalar deleting one, and because
+//! Itanium places the `getUID()` override (from `PROVIDE_UID`) in the primary
+//! vtable while MSVC keeps it in the secondary `IUIDProvider` vtable.
+//!
+//! **Itanium ABI** — confirmed by `nm`/vtable dump of the official `Timers.so`:
+//! `[0..3]` `IExtensible`, `[4..5]` destructors, `[6..16]` `IComponent`,
+//! **[17]** `getUID()`, **[18]** `create(handler, interval, repeating)`,
+//! `[19]` `create(handler, initial, interval, count)`, `[20]` `count()`.
+//!
+//! **MSVC ABI** — confirmed by RTTI + vtable dump of the official `Timers.dll`:
+//! `[0..3]` `IExtensible`, `[4]` destructor, `[5..15]` `IComponent`,
+//! **[16]** `create(handler, interval, repeating)`,
+//! `[17]` `create(handler, initial, interval, count)`, `[18]` `count()`.
 //!
 //! ## `ITimer` vtable (slots starting from `IExtensible`)
 //!
-//! - **[0..3]** `IExtensible` (`getExtension`, `addExtension`, `removeExtension`x2)
-//! - **[4]** destructor (1 slot MSVC / 2 slots Itanium)
-//! - **[5]** `running()` const
-//! - **[6]** `remaining()` const -> Milliseconds (8 bytes, hidden ptr)
-//! - **[7]** `calls()` const
-//! - **[8]** `interval()` const -> Milliseconds (8 bytes, hidden ptr)
-//! - **[9]** `trigger()`
-//! - **[10]** `kill()`
-//! - **[11]** `handler() const`
+//! `ITimer` declares no destructor of its own, but inherits the virtual
+//! `~IExtensible()`, so the same D1/D0 shift applies.
+//!
+//! | Method                 | Itanium | MSVC |
+//! |------------------------|---------|------|
+//! | `IExtensible` (4)      | [0..3]  | [0..3] |
+//! | destructor             | [4..5]  | [4]  |
+//! | `running() const`      | [6]     | [5]  |
+//! | `remaining() const`    | [7]     | [6]  |
+//! | `calls() const`        | [8]     | [7]  |
+//! | `interval() const`     | [9]     | [8]  |
+//! | `trigger()`            | [10]    | [9]  |
+//! | `kill()`               | [11]    | [10] |
+//! | `handler() const`      | [12]    | [11] |
 //!
 //! ## `TimerTimeOutHandler` vtable (interface provided by the plugin)
 //!
@@ -45,9 +60,21 @@ use std::ptr::NonNull;
 pub const TIMERS_COMPONENT_UID: UID = 0x2ad8_124c_5ea2_57a3;
 
 /// Slot of `create(handler, interval, repeating)` in the `ITimersComponent` vtable.
+///
+/// Itanium carries two destructor slots plus `getUID()` in the primary vtable;
+/// MSVC has one destructor and keeps `getUID()` in a secondary vtable.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CREATE_INTERVAL: usize = 18;
+
+#[cfg(target_env = "msvc")]
 const SLOT_CREATE_INTERVAL: usize = 16;
 
-/// Slot of `kill()` in the `ITimer` vtable.
+/// Slot of `kill()` in the `ITimer` vtable (shifted by the extra Itanium
+/// destructor slot inherited from `IExtensible`).
+#[cfg(not(target_env = "msvc"))]
+const SLOT_TIMER_KILL: usize = 11;
+
+#[cfg(target_env = "msvc")]
 const SLOT_TIMER_KILL: usize = 10;
 
 /// Opaque pointer to the server's `ITimersComponent`.
@@ -246,6 +273,24 @@ mod tests {
     //! inputs.
 
     use super::*;
+
+    /// Slots verified against the official binaries shipped with open.mp
+    /// 1.5.8.3079: vtable dump of `Timers.so` (Itanium) and of `Timers.dll`
+    /// via its RTTI (MSVC). Getting these wrong is silent: the server returns
+    /// a non-null pointer from the wrong virtual function and no timer runs.
+    #[test]
+    fn slots_match_the_official_binaries() {
+        #[cfg(not(target_env = "msvc"))]
+        {
+            assert_eq!(SLOT_CREATE_INTERVAL, 18, "Timers.so vtable [18] = create");
+            assert_eq!(SLOT_TIMER_KILL, 11, "Timer vtable [11] = kill");
+        }
+        #[cfg(target_env = "msvc")]
+        {
+            assert_eq!(SLOT_CREATE_INTERVAL, 16, "Timers.dll vtable [16] = create");
+            assert_eq!(SLOT_TIMER_KILL, 10, "Timer vtable [10] = kill");
+        }
+    }
 
     #[test]
     fn timers_component_uid_is_known_value() {
