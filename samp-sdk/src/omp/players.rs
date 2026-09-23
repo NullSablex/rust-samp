@@ -56,6 +56,24 @@ pub struct IPlayerPool {
     _opaque: [u8; 0],
 }
 
+/// Slot of `IPlayer::kick()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_KICK: usize = 6;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_KICK: usize = 5;
+
+/// Slot of `IPlayer::isBot()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_IS_BOT: usize = 8;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_IS_BOT: usize = 7;
+
+/// Slot of `IPlayer::getName()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_NAME: usize = 27;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_NAME: usize = 26;
+
 /// Opaque handle for the server's `IPlayer*`, as received by a handler.
 #[repr(C)]
 pub struct IPlayer {
@@ -479,6 +497,91 @@ handler_vtable! {
     }
 }
 
+/// Calls `IPlayer::kick()` — drops the player from the server.
+///
+/// # Safety
+/// `player` must be an `IPlayer*` the server handed to a handler, and still
+/// connected.
+pub unsafe fn player_kick(player: *mut IPlayer) {
+    #[cfg(not(target_env = "msvc"))]
+    type KickFn = unsafe extern "C" fn(*mut u8);
+    #[cfg(target_env = "msvc")]
+    type KickFn = unsafe extern "thiscall" fn(*mut u8);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_KICK)
+    }) else {
+        return;
+    };
+    let kick: KickFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { kick(this) };
+}
+
+/// `IPlayer::isBot()` — whether this "player" is an NPC.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_is_bot(player: *mut IPlayer) -> bool {
+    #[cfg(not(target_env = "msvc"))]
+    type IsBotFn = unsafe extern "C" fn(*mut u8) -> bool;
+    #[cfg(target_env = "msvc")]
+    type IsBotFn = unsafe extern "thiscall" fn(*mut u8) -> bool;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_IS_BOT)
+    }) else {
+        return false;
+    };
+    let is_bot: IsBotFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { is_bot(this) }
+}
+
+/// `IPlayer::getName()` — the player's name, copied into a `String`.
+///
+/// The server returns a `StringView` into memory it owns, so the bytes are
+/// copied out rather than borrowed. `None` when the view is empty or not valid
+/// UTF-8.
+///
+/// Both ABIs return the 8-byte `StringView` through a hidden pointer, the same
+/// shape `component_name` uses.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_name(player: *mut IPlayer) -> Option<String> {
+    // Return convention differs: the Itanium ABI hands back this 8-byte,
+    // trivially copyable struct in EAX:EDX, while MSVC writes it through a
+    // hidden pointer the caller supplies.
+    #[cfg(not(target_env = "msvc"))]
+    type GetNameFn = unsafe extern "C" fn(*mut u8) -> StringView;
+    #[cfg(target_env = "msvc")]
+    type GetNameFn = unsafe extern "thiscall" fn(*mut u8, *mut StringView) -> *mut StringView;
+
+    let (this, f_ptr) = unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_GET_NAME)
+    }?;
+    let get_name: GetNameFn = unsafe { std::mem::transmute(f_ptr) };
+
+    #[cfg(not(target_env = "msvc"))]
+    let view = unsafe { get_name(this) };
+
+    #[cfg(target_env = "msvc")]
+    let view = {
+        let mut view = StringView {
+            data: std::ptr::null(),
+            len: 0,
+        };
+        unsafe { get_name(this, &raw mut view) };
+        view
+    };
+    if view.data.is_null() || view.len == 0 {
+        return None;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(view.data, view.len) };
+    std::str::from_utf8(bytes).ok().map(String::from)
+}
+
 /// Writes the `get<X>Dispatcher` + `add_<x>_handler` pair for one event group.
 macro_rules! dispatcher_pair {
     ($getter:ident -> $dispatcher:ident @ $slot:ident, $adder:ident($handler:ident)) => {
@@ -629,6 +732,25 @@ mod tests {
         assert_eq!(std::mem::size_of::<PlayerClickHandlerVTable>(), 2 * p);
         assert_eq!(std::mem::size_of::<PlayerCheckHandlerVTable>(), p);
         assert_eq!(std::mem::size_of::<PlayerUpdateHandlerVTable>(), p);
+    }
+
+    #[test]
+    fn player_method_slots_match_the_dump() {
+        // `Player` vtable of the official `omp-server`: [6] kick, [8] isBot,
+        // [27] getName. MSVC drops the second destructor slot, and no
+        // `IEntity` override (secondary base) sits before any of these, so the
+        // shift is exactly one. Unlike the component classes, the Windows
+        // server carries no RTTI for `Player`, so these cannot be re-derived
+        // from the binary — they are pinned here and validated by running a
+        // server on both platforms.
+        #[cfg(not(target_env = "msvc"))]
+        let expected = [6, 8, 27];
+        #[cfg(target_env = "msvc")]
+        let expected = [5, 7, 26];
+        assert_eq!(
+            [SLOT_PLAYER_KICK, SLOT_PLAYER_IS_BOT, SLOT_PLAYER_GET_NAME],
+            expected
+        );
     }
 
     #[test]

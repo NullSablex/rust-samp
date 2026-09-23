@@ -61,19 +61,19 @@ const SLOT_COMPONENT_VERSION: usize = 9;
 #[cfg(target_env = "msvc")]
 const SLOT_COMPONENT_VERSION: usize = 8;
 
-/// Signature of `componentName()` — returns `StringView` via hidden pointer.
+/// Signature of `componentName()`. The Itanium ABI returns the 8-byte
+/// `StringView` in registers; MSVC returns it through a hidden pointer.
 #[cfg(not(target_env = "msvc"))]
-type ComponentNameFn =
-    unsafe extern "C" fn(*mut ServerComponent, *mut StringView) -> *mut StringView;
+type ComponentNameFn = unsafe extern "C" fn(*mut ServerComponent) -> StringView;
 
 #[cfg(target_env = "msvc")]
 type ComponentNameFn =
     unsafe extern "thiscall" fn(*mut ServerComponent, *mut StringView) -> *mut StringView;
 
-/// Signature of `componentVersion()` — returns `SemanticVersion` via hidden pointer.
+/// Signature of `componentVersion()`. Same split as `componentName`: registers
+/// under Itanium, hidden pointer under MSVC.
 #[cfg(not(target_env = "msvc"))]
-type ComponentVersionFn =
-    unsafe extern "C" fn(*mut ServerComponent, *mut SemanticVersion) -> *mut SemanticVersion;
+type ComponentVersionFn = unsafe extern "C" fn(*mut ServerComponent) -> SemanticVersion;
 
 #[cfg(target_env = "msvc")]
 type ComponentVersionFn =
@@ -91,11 +91,23 @@ pub fn component_name<T: OmpComponentHandle>(c: &T) -> Option<String> {
         super::vtable::secondary_call_target_ptr(raw.cast::<u8>(), 0, SLOT_COMPONENT_NAME)?
     };
     let f: ComponentNameFn = unsafe { std::mem::transmute(slot) };
-    let mut sv = StringView {
-        data: std::ptr::null(),
-        len: 0,
+
+    // The Itanium ABI hands back a struct this small in EAX:EDX; MSVC writes it
+    // through a hidden pointer the caller supplies. Getting this backwards
+    // reads whatever the registers happened to hold — or crashes the server, as
+    // it did when the same mistake was made for `IPlayer::getName`.
+    #[cfg(not(target_env = "msvc"))]
+    let sv = unsafe { f(raw) };
+
+    #[cfg(target_env = "msvc")]
+    let sv = {
+        let mut sv = StringView {
+            data: std::ptr::null(),
+            len: 0,
+        };
+        unsafe { f(raw, &raw mut sv) };
+        sv
     };
-    unsafe { f(raw, &raw mut sv) };
     if sv.data.is_null() || sv.len == 0 {
         return None;
     }
@@ -113,8 +125,16 @@ pub fn component_version<T: OmpComponentHandle>(c: &T) -> Option<SemanticVersion
         super::vtable::secondary_call_target_ptr(raw.cast::<u8>(), 0, SLOT_COMPONENT_VERSION)?
     };
     let f: ComponentVersionFn = unsafe { std::mem::transmute(slot) };
-    let mut version = SemanticVersion::new(0, 0, 0);
-    unsafe { f(raw, &raw mut version) };
+
+    #[cfg(not(target_env = "msvc"))]
+    let version = unsafe { f(raw) };
+
+    #[cfg(target_env = "msvc")]
+    let version = {
+        let mut version = SemanticVersion::new(0, 0, 0);
+        unsafe { f(raw, &raw mut version) };
+        version
+    };
     Some(version)
 }
 
@@ -161,17 +181,12 @@ mod tests {
     static MOCK_NAME_BYTES: &[u8] = b"test-comp";
 
     #[cfg(not(target_env = "msvc"))]
-    unsafe extern "C" fn mock_name(
-        _this: *mut ServerComponent,
-        out: *mut StringView,
-    ) -> *mut StringView {
-        unsafe {
-            *out = StringView {
-                data: MOCK_NAME_BYTES.as_ptr(),
-                len: MOCK_NAME_BYTES.len(),
-            };
+    // Mirrors the real convention: Itanium returns the struct in registers.
+    unsafe extern "C" fn mock_name(_this: *mut ServerComponent) -> StringView {
+        StringView {
+            data: MOCK_NAME_BYTES.as_ptr(),
+            len: MOCK_NAME_BYTES.len(),
         }
-        out
     }
 
     #[cfg(target_env = "msvc")]
@@ -189,14 +204,8 @@ mod tests {
     }
 
     #[cfg(not(target_env = "msvc"))]
-    unsafe extern "C" fn mock_version(
-        _this: *mut ServerComponent,
-        out: *mut SemanticVersion,
-    ) -> *mut SemanticVersion {
-        unsafe {
-            *out = SemanticVersion::new(2, 7, 3);
-        }
-        out
+    unsafe extern "C" fn mock_version(_this: *mut ServerComponent) -> SemanticVersion {
+        SemanticVersion::new(2, 7, 3)
     }
 
     #[cfg(target_env = "msvc")]

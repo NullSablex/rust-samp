@@ -79,6 +79,14 @@ Additive public API plus two deprecations.
   boundary means aborting the server. Every such call now returns
   `AmxError::NotFound`. The scenario is a debugger or a paused VM, where a
   plugin holds the `AMX*` without a call context.
+- **`component_name()` / `component_version()` used the wrong return
+  convention on Linux.** Both call functions returning a small struct, and the
+  caller was written for MSVC's hidden pointer on both ABIs. The Itanium ABI
+  hands a struct that size back in `EAX:EDX`, so the reads came back empty —
+  and the same mistake applied to `IPlayer::getName` crashed a live server,
+  which is how it surfaced. Now split per ABI, and verified against a running
+  server: the Timers component reports `name="Timers" version=(1, 5, 8)` on
+  Linux and on Windows.
 - **`Amx::call_native`** rebuilt the native's function pointer by
   `transmute`-ing the `u32` address read from the AMX header. It now goes
   through `std::ptr::with_exposed_provenance`, the sanctioned int-to-pointer
@@ -161,6 +169,12 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **Reading an `IPlayer`**: `player_name`, `player_is_bot` and `player_kick`,
+  the first methods called on a player object the server hands a handler.
+  Validated live on both platforms — the NPC reports `name="TesteDetour"
+  bot=true`. Unlike the component classes, the Windows server carries no RTTI
+  for `Player`, so these indices cannot be re-derived from the binary; they are
+  pinned by tests and proven by running a server.
 - **The remaining player dispatchers**: stream, shot, change, click, check and
   update, closing the eleven `IPlayerPool` exposes. `onPlayerUpdate` fires for
   every player on every tick and was validated on both platforms;

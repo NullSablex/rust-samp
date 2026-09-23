@@ -88,6 +88,16 @@ impl SampPlugin for Counter {
             info!("[omp] update handler registered: {ok}");
         }
 
+        // Reading another component's identity — exercises componentName and
+        // componentVersion, whose return convention differs per ABI.
+        if let Some(timers) = samp::plugin::omp_query::<samp::omp::TimersComponent>() {
+            info!(
+                "[omp] Timers component: name={:?} version={:?}",
+                timers.name(),
+                timers.version().map(|v| (v.major, v.minor, v.patch))
+            );
+        }
+
         let text = unsafe { samp::omp::player_text_dispatcher(pool) };
         if !text.is_null() {
             let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(
@@ -310,7 +320,12 @@ mod omp_players {
 
     handler!(
         fn on_connect(_this: *mut PlayerConnectHandler, player: *mut IPlayer) {
-            info!("[omp-event] onPlayerConnect straight from the server ({player:p})");
+            // Reading from the IPlayer the server just handed us: the name
+            // comes back as a StringView through a hidden pointer on both ABIs.
+            let is_bot = unsafe { samp::omp::player_is_bot(player) };
+            info!("[omp-event] onPlayerConnect: bot={is_bot}");
+            let name = unsafe { samp::omp::player_name(player) };
+            info!("[omp-event] name={:?}", name.as_deref().unwrap_or("<none>"));
         }
     );
 
