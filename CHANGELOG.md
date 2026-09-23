@@ -104,13 +104,29 @@ Additive public API plus two deprecations.
 
 ### `rust-samp` (lib `samp`) — 3.5.0
 
-No changes of its own. It re-exports `samp::omp::vtable`, so the new helpers and
-the two deprecations reach plugin authors through it, and it now requires
+#### Added
+
+- **Generated Pawn include.** `#[native]` now derives each native's Pawn
+  declaration from its Rust signature, and the plugin can write the `.inc` the
+  script side includes: start the server once with `SAMP_PAWN_INCLUDE=path`, or
+  call `samp::plugin::pawn_include()` / `write_pawn_include(path)`. Works on
+  either server and in either mode. `f32` maps to `Float:`, `bool` to `bool:`,
+  `AmxString` to `const arg[]`, `Ref<T>` to `&arg` keeping the tag, and buffers
+  to `arg[]`; an unrecognized type falls back to a plain cell, and a `raw`
+  native comes back commented out. The include no longer has to be maintained by
+  hand, so it cannot drift from the code.
+
+It also re-exports `samp::omp::vtable`, so the new helpers and the two
+deprecations reach plugin authors through it, and it now requires
 `rust-samp-sdk` 3.5.0 — which is where the `on_tick` fix lives.
 
-### `rust-samp-codegen` (lib `samp_codegen`) — 1.4.0
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.5.0
 
-Unchanged — no macro changes.
+#### Added
+
+- `#[native]` also emits a hidden accessor with the native's Pawn declaration,
+  which `initialize_plugin!` collects for the generated include described under
+  `rust-samp`.
 
 ### Security
 
@@ -237,8 +253,7 @@ piece was already running against live SA-MP and open.mp servers.
   surface and the new `Amx` methods; requires `rust-samp-sdk` 3.4.0).
 - `rust-samp-sdk` (lib `samp_sdk`): 3.3.0 → 3.4.0 (additive public API: the
   `opcode`/`stack` modules, the range readers, `data_only`, `function_address`).
-- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 — unchanged (no macro
-  changes).
+- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 → 1.5.0.
 
 ## [v3.4.0] — 2026/08/05
 

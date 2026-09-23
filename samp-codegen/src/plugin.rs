@@ -21,7 +21,7 @@ use syn::{
     parse_macro_input,
 };
 
-use crate::{EVENT_REG_PREFIX, REG_PREFIX};
+use crate::{EVENT_REG_PREFIX, INC_PREFIX, REG_PREFIX};
 
 // ---------------------------------------------------------------------------
 // Helpers for automatic Open Multiplayer metadata resolution
@@ -277,9 +277,10 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
     let plugin = parse_macro_input!(input as InitPlugin);
 
     let natives = gen_natives_list(&plugin);
+    let native_decls = gen_native_decls_list(&plugin);
     let events = gen_events_list(&plugin);
     let supports_body = gen_samp_constructor(&plugin.constructor);
-    let samp_entry_points = gen_samp_entry_points(&natives, &events, &supports_body);
+    let samp_entry_points = gen_samp_entry_points(&natives, &native_decls, &events, &supports_body);
 
     // Native Open Multiplayer entry point.
     //
@@ -296,7 +297,7 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
     let omp_entry_point = if samp_only {
         quote! {}
     } else {
-        gen_omp_entry_point(&plugin, &cargo_meta, &natives, &events)
+        gen_omp_entry_point(&plugin, &cargo_meta, &natives, &native_decls, &events)
     };
 
     let generated = quote! {
@@ -325,6 +326,24 @@ fn gen_natives_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
             if let Some(last_part) = path.segments.last_mut() {
                 let span = last_part.ident.span();
                 last_part.ident = Ident::new(&format!("{}{}", REG_PREFIX, last_part.ident), span);
+            }
+            quote!(#path(),)
+        })
+        .collect()
+}
+
+/// Converts the same paths into `__samp_inc_*()` calls — each yields the
+/// native's Pawn declaration, used to write the `.inc` for the script side.
+fn gen_native_decls_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
+    plugin
+        .natives_list
+        .iter()
+        .flatten()
+        .map(|path| {
+            let mut path = path.clone();
+            if let Some(last_part) = path.segments.last_mut() {
+                let span = last_part.ident.span();
+                last_part.ident = Ident::new(&format!("{}{}", INC_PREFIX, last_part.ident), span);
             }
             quote!(#path(),)
         })
@@ -367,6 +386,7 @@ fn gen_samp_constructor(constructor: &Constructor) -> proc_macro2::TokenStream {
 /// `Supports`/`ProcessTick` are looked up by the server by fixed name.
 fn gen_samp_entry_points(
     natives: &proc_macro2::TokenStream,
+    native_decls: &proc_macro2::TokenStream,
     events: &proc_macro2::TokenStream,
     supports_body: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -375,6 +395,7 @@ fn gen_samp_entry_points(
         pub extern "system" fn Load(server_data: *const usize) -> i32 {
             samp::interlayer::load(server_data);
             samp::interlayer::register_events(vec![#events]);
+            samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
             return 1;
         }
 
@@ -476,6 +497,7 @@ fn gen_omp_entry_point(
     plugin: &InitPlugin,
     cargo_meta: &SampMetadata,
     natives: &proc_macro2::TokenStream,
+    native_decls: &proc_macro2::TokenStream,
     events: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let uid_expr = resolve_uid_expr(plugin, cargo_meta);
@@ -695,6 +717,7 @@ fn gen_omp_entry_point(
                 #omp_initialize
                 samp::interlayer::omp_store_natives(vec![#natives]);
                 samp::interlayer::register_events(vec![#events]);
+                samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
                 let component = Box::new(OmpComponent::new(&VTABLE, &UID_VTABLE, #uid_expr));
                 Box::into_raw(component)
             }

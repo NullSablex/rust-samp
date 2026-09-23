@@ -245,6 +245,15 @@ where
     crate::plugin::initialize(constructor);
 }
 
+/// Stores the Pawn declaration of each native, as derived by `#[native]`.
+///
+/// Called from both entry points (SA-MP `Load` and `ComponentEntryPoint`), so
+/// [`crate::plugin::pawn_include`] works in either mode.
+pub fn store_native_decls(plugin_name: &'static str, decls: Vec<&'static str>) {
+    Runtime::get().set_native_decls(plugin_name, decls);
+    crate::plugin::write_pawn_include_if_requested();
+}
+
 /// Stores the list of natives for later use in `pawn_on_amx_load` (native Open Multiplayer mode).
 ///
 /// Must be called by the generated `ComponentEntryPoint` immediately after `omp_initialize`,

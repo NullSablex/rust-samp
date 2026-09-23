@@ -56,6 +56,13 @@ struct RuntimeInner {
     /// Pawn event handler registered in the `IEventDispatcher` of `IPawnComponent`.
     #[cfg(not(feature = "samp-only"))]
     pawn_event_handler: Option<NonNull<PawnEventHandler>>,
+    /// Name of the plugin crate (`CARGO_PKG_NAME` of the crate that invoked
+    /// `initialize_plugin!`), used to name the generated Pawn include.
+    plugin_name: &'static str,
+    /// Pawn declaration of every registered native, in the order the plugin
+    /// listed them. Feeds [`crate::plugin::pawn_include`]; empty until the
+    /// entry point stores them.
+    native_decls: Vec<&'static str>,
     /// Natives to register on the AMX in native Open Multiplayer mode (via `pawn_on_amx_load`).
     /// In SA-MP/legacy mode this Vec stays empty — natives are passed via `AmxLoad()`.
     #[cfg(not(feature = "samp-only"))]
@@ -119,6 +126,8 @@ impl Runtime {
             omp_component_list: None,
             #[cfg(not(feature = "samp-only"))]
             pawn_event_handler: None,
+            plugin_name: "plugin",
+            native_decls: Vec::new(),
             #[cfg(not(feature = "samp-only"))]
             omp_natives: Vec::new(),
             #[cfg(not(feature = "samp-only"))]
@@ -520,6 +529,26 @@ impl Runtime {
             .pawn_event_handler
             .take()
             .map(std::ptr::NonNull::as_ptr)
+    }
+
+    /// Stores the plugin crate name and the Pawn declaration of each native,
+    /// for writing the `.inc`.
+    pub fn set_native_decls(&self, plugin_name: &'static str, decls: Vec<&'static str>) {
+        let inner = self.inner();
+        inner.plugin_name = plugin_name;
+        inner.native_decls = decls;
+    }
+
+    /// Name of the plugin crate.
+    #[must_use]
+    pub fn plugin_name(&self) -> &'static str {
+        self.inner().plugin_name
+    }
+
+    /// Pawn declaration of every registered native.
+    #[must_use]
+    pub fn native_decls(&self) -> &[&'static str] {
+        &self.inner().native_decls
     }
 
     /// Stores the list of natives to register on the AMX in native Open Multiplayer mode.

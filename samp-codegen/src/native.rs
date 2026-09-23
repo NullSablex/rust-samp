@@ -21,8 +21,10 @@ use syn::{
     parse_macro_input,
 };
 
+use crate::INC_PREFIX;
 use crate::NATIVE_PREFIX;
 use crate::REG_PREFIX;
+use crate::pawn_decl::native_decl;
 
 /// Args of `#[native(...)]`: `name = "..."` (Pawn name) and optional `raw`.
 struct NativeName {
@@ -79,6 +81,7 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     let origin_name = &origin_fn.sig.ident;
     let native_name = prepend(&origin_fn.sig.ident, NATIVE_PREFIX);
     let reg_name = prepend(&origin_fn.sig.ident, REG_PREFIX);
+    let inc_name = prepend(&origin_fn.sig.ident, INC_PREFIX);
     let amx_name = &native.name;
 
     // `#[native]` accepts both methods (`fn foo(&mut self, _amx: &Amx, ...)`)
@@ -117,10 +120,18 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let reg_native = gen_reg_native(vis, &reg_name, &native_name, amx_name);
+    let decl = native_decl(&origin_fn, amx_name, native.raw, skip_count);
+    let inc_decl = quote! {
+        #[doc(hidden)]
+        #vis fn #inc_name() -> &'static str {
+            #decl
+        }
+    };
 
     let generated = quote! {
         #origin_fn
         #reg_native
+        #inc_decl
         #native_generated
     };
 

@@ -1689,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "rust-samp-codegen"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "proc-macro2",
  "quote",
