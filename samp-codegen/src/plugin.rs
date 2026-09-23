@@ -396,6 +396,7 @@ fn gen_samp_entry_points(
             samp::interlayer::load(server_data);
             samp::interlayer::register_events(vec![#events]);
             samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
+            samp::interlayer::emit_pawn_include_if_requested();
             return 1;
         }
 
@@ -718,6 +719,7 @@ fn gen_omp_entry_point(
                 samp::interlayer::omp_store_natives(vec![#natives]);
                 samp::interlayer::register_events(vec![#events]);
                 samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
+                samp::interlayer::emit_pawn_include_if_requested();
                 let component = Box::new(OmpComponent::new(&VTABLE, &UID_VTABLE, #uid_expr));
                 Box::into_raw(component)
             }
