@@ -91,8 +91,8 @@ asserting `std::mem::offset_of!(OmpComponent, uid_vtable)` and
 | :--: | --------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | 0    | `getExtension(UID)`                                 | `thiscall`                                                                           |
 | 1    | `addExtension(IExtension*, bool)`                   | `thiscall`                                                                           |
-| 2    | `removeExtension(IExtension*)`                      | `thiscall`                                                                           |
-| 3    | `removeExtension(UID)`                              | `thiscall`                                                                           |
+| 2    | `removeExtension(UID)`                              | `thiscall`. MSVC emits an overload set in **reverse** declaration order.              |
+| 3    | `removeExtension(IExtension*)`                      | `thiscall`                                                                           |
 | 4    | `~destructor` (scalar deleting)                     | MSVC i686 with single inheritance emits a single destructor slot.                    |
 | 5    | `supportedVersion() -> i32`                         | `thiscall`, no stack args (signature `fn()` so Rust emits `ret`, not `ret 4`).       |
 | 6    | `componentName() -> StringView`                     | Returned **via hidden pointer** at `[ESP+4]` (naked asm; `ret 4`).                   |
@@ -195,8 +195,8 @@ secondary `IUIDProvider` vtable.
 | Method                                      | Itanium | MSVC |
 | ------------------------------------------- | :-----: | :--: |
 | `getUID()`                                  | 17      | —    |
-| `create(handler, interval, repeating)`      | **18**  | **16** |
-| `create(handler, initial, interval, count)` | 19      | 17   |
+| `create(handler, initial, interval, count)` | 19      | 16   |
+| `create(handler, interval, repeating)`      | **18**  | **17** |
 | `count() const`                             | 20      | 18   |
 
 `ITimer` declares no destructor of its own but inherits the virtual
@@ -215,6 +215,13 @@ secondary `IUIDProvider` vtable.
 Both tables come from vtable dumps of the official binaries of
 open.mp 1.5.8.3079: `Timers.so` (symbols via `nm -C`) and `Timers.dll`
 (vtable located through its RTTI complete object locator).
+
+Note the `create` overloads swapping places. **MSVC emits an overload set in
+reverse declaration order**, Itanium in declaration order. On `Timers.dll` the
+disassembly settles it: slot [16] ends in `ret 0x18` (24 bytes of arguments, the
+four-argument overload) and slot [17] in `ret 0x10` (16 bytes, the one the SDK
+calls). The same rule applies to `IExtensible::removeExtension`, whose two
+overloads swap in the vtable the SDK hands the server.
 
 > A wrong slot here fails silently. The server returns a non-null
 > value from whatever virtual function sits at that index, the SDK

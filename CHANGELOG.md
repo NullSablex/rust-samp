@@ -8,9 +8,11 @@ for the full directory.
 
 Correctness release, in two parts.
 
-**Bug fix:** `SampPlugin::on_tick` never fired for native open.mp components on
-Linux. The timer vtable slots were the MSVC ones, applied to both ABIs. Anyone
-running a Rust component under open.mp on Linux wants this release.
+**Bug fixes:** several vtable layouts were wrong for native open.mp components.
+`SampPlugin::on_tick` never fired on Linux, `getUID()` returned a different value
+on every run, and on Windows the timer call and `removeExtension` corrupted the
+stack. Every index is now verified against the official server binaries. Anyone
+shipping a Rust component under open.mp wants this release.
 
 **Soundness:** the SDK now runs clean under
 [Miri](https://github.com/rust-lang/miri) on `i686-unknown-linux-gnu`, with the
@@ -26,6 +28,25 @@ Additive public API plus two deprecations.
 
 #### Fixed
 
+- **`getUID()` returned garbage on Linux.** The secondary `IUIDProvider` vtable
+  the SDK hands the server carried two destructor thunks before `getUID`. It has
+  none: `IUIDProvider` declares no virtual destructor, so the secondary vtable
+  holds a single slot, on Itanium exactly as on MSVC. The server called slot [0]
+  and got the no-op thunk, so every component reported whatever happened to be
+  in the return registers — a different UID on each run. The primary vtable also
+  gains the `getUID` override at slot [17], where Itanium places it. Verified on
+  a live server: the component now reports the UID from `Cargo.toml` instead of
+  a value that changed every start.
+- **`ITimersComponent::create` used the wrong overload on Windows.** MSVC emits
+  an overload set in **reverse** declaration order, so slot [16] is
+  `create(handler, initial, interval, count)` and the three-argument overload
+  the SDK calls is [17]. Calling the wrong one passed four arguments' worth of
+  cleanup against three arguments pushed, corrupting the stack. Confirmed by
+  disassembly: slot [16] ends in `ret 0x18`, slot [17] in `ret 0x10`.
+- **`IExtensible::removeExtension` overloads were swapped on Windows**, by the
+  same rule. In the vtable the SDK hands the server, slot [2] must be the `UID`
+  overload and [3] the pointer one. Under `thiscall` the callee pops the
+  arguments, so the previous order popped 4 bytes where the server had pushed 8.
 - **`on_tick` never fired for native open.mp components on Linux.** The
   `ITimersComponent` and `ITimer` slot indices were the MSVC ones, used on both
   ABIs. On Itanium every method shifts: the destructor takes two slots (D1 + D0)

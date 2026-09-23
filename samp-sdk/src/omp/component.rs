@@ -61,6 +61,7 @@
 //! [14] provideConfiguration
 //! [15] free
 //! [16] reset
+//! [17] getUID (the `IUIDProvider` override also lands in the primary vtable)
 //! ```
 //!
 //! **MSVC ABI** — single destructor (scalar deleting) between `IExtensible` and `IComponent`:
@@ -68,8 +69,8 @@
 //! ```text
 //! [0]  getExtension
 //! [1]  addExtension
-//! [2]  removeExtension(ext*)
-//! [3]  removeExtension(uid)
+//! [2]  removeExtension(uid)   <- MSVC emits an overload set in REVERSE
+//! [3]  removeExtension(ext*)     declaration order
 //! [4]  ~destructor (single scalar deleting — MSVC does not emit D0)
 //! [5]  supportedVersion
 //! [6]  componentName
@@ -90,12 +91,13 @@
 //!
 //! ## Secondary vtable — `IUIDProvider`
 //!
-//! **Itanium ABI** — two destructor slots before `getUID`:
+//! **Itanium ABI** — a single slot, exactly like MSVC. `IUIDProvider` declares
+//! no virtual destructor, so its secondary vtable holds only the `getUID`
+//! thunk (confirmed in the official `Timers.so` and `Pawn.so`: the secondary
+//! vtable at offset-to-top `-40` has one entry).
 //!
 //! ```text
-//! [0]  destructor D1 thunk
-//! [1]  destructor D0 thunk
-//! [2]  getUID
+//! [0]  getUID
 //! ```
 //!
 //! **MSVC ABI** — only `getUID` (`IUIDProvider` does not declare a virtual destructor):
@@ -186,6 +188,11 @@ pub struct IComponentVTable {
         unsafe extern "C" fn(*mut OmpComponent, *mut ILogger, *mut IEarlyConfig, bool),
     pub free: unsafe extern "C" fn(*mut OmpComponent),
     pub reset: unsafe extern "C" fn(*mut OmpComponent),
+    // --- IUIDProvider override [17] ---
+    /// Itanium places the `getUID()` override in the primary vtable as well as
+    /// in the secondary one (confirmed in the official `Timers.so` / `Pawn.so`,
+    /// where it sits at slot [17]). MSVC keeps it only in the secondary vtable.
+    pub get_uid: unsafe extern "C" fn(*const OmpComponent) -> UID,
 }
 
 // ---------------------------------------------------------------------------
@@ -199,8 +206,9 @@ pub struct IComponentVTable {
 /// MSVC i686 with single inheritance generates **a single** destructor slot (scalar deleting).
 /// The destructor sits at the position where `~IExtensible()` was declared (after the other
 /// IExtensible virtuals):
-///   [0] getExtension, [1] addExtension, [2] removeExtension(ptr),
-///   [3] removeExtension(UID), [4] ~IExtensible (scalar deleting)
+///   [0] getExtension, [1] addExtension, [2] removeExtension(UID),
+///   [3] removeExtension(ptr), [4] ~IExtensible (scalar deleting)
+///   (MSVC reverses overload sets — see the field comments below)
 ///   IComponent adds:
 ///   [5] supportedVersion, [6] componentName, [7] componentType,
 ///   [8] componentVersion, [9] onLoad, [10] onInit, [11] onReady,
@@ -212,8 +220,14 @@ pub struct IComponentVTable {
     pub get_extension: unsafe extern "thiscall" fn(*mut OmpComponent, uid: UID) -> *mut (),
     pub add_extension:
         unsafe extern "thiscall" fn(*mut OmpComponent, ext: *mut (), auto_delete: bool) -> bool,
-    pub remove_extension_ptr: unsafe extern "thiscall" fn(*mut OmpComponent, ext: *mut ()) -> bool,
+    // MSVC emits an overload set in REVERSE declaration order, so
+    // `removeExtension(UID)` comes before `removeExtension(IExtension*)`.
+    // Confirmed by disassembly of the official `Timers.dll`: slot [2] ends in
+    // `ret 8` (the 8-byte UID) and slot [3] in `ret 4` (the pointer). Getting
+    // this backwards corrupts the stack, because under `thiscall` the callee
+    // pops the arguments.
     pub remove_extension_uid: unsafe extern "thiscall" fn(*mut OmpComponent, uid: UID) -> bool,
+    pub remove_extension_ptr: unsafe extern "thiscall" fn(*mut OmpComponent, ext: *mut ()) -> bool,
     // Functions with no stack args besides this: this in ECX, no explicit parameter.
     // This prevents the compiler from emitting `ret 4` which would corrupt the stack.
     pub destructor: unsafe extern "thiscall" fn(),
@@ -249,11 +263,8 @@ pub struct IComponentVTable {
 #[cfg(not(target_env = "msvc"))]
 #[repr(C)]
 pub struct IUIDProviderVTable {
-    /// D1 thunk — never called directly by the Open Multiplayer server.
-    pub destructor_complete: unsafe extern "C" fn(*mut u8),
-    /// D0 thunk — never called directly by the Open Multiplayer server.
-    pub destructor_deleting: unsafe extern "C" fn(*mut u8),
-    /// `getUID()` — `this` points to the `IUIDProvider` subobject (offset 40 on Linux).
+    /// Slot [0]: `getUID()` — `this` points to the `IUIDProvider` subobject
+    /// (offset 40 on Linux).
     pub get_uid: unsafe extern "C" fn(*const u8) -> UID,
 }
 
@@ -573,12 +584,18 @@ pub unsafe extern "thiscall" fn comp_provide_configuration(
 // Default implementations of the secondary vtable (IUIDProvider) — Itanium ABI
 // ---------------------------------------------------------------------------
 
-/// D1/D0 thunk no-op for the secondary `IUIDProvider` vtable (Itanium ABI).
+/// `getUID()` via the primary vtable (Itanium ABI, slot [17]).
+///
+/// Here `this` already points to the start of the object — no thunk
+/// adjustment, unlike [`uid_get_uid`].
 ///
 /// # Safety
-/// `_this` points to the `IUIDProvider` subobject (offset 48 of `OmpComponent` on MSVC).
+/// `this` must be a valid pointer to an `OmpComponent`.
 #[cfg(not(target_env = "msvc"))]
-pub unsafe extern "C" fn uid_destructor_noop(_this: *mut u8) {}
+#[must_use]
+pub unsafe extern "C" fn comp_get_uid(this: *const OmpComponent) -> UID {
+    unsafe { (*this).uid }
+}
 
 /// `getUID()` via the secondary `IUIDProvider` vtable (Itanium ABI).
 ///
@@ -707,6 +724,7 @@ mod tests {
             provide_configuration: test_provide_cfg,
             free: test_free,
             reset: test_reset,
+            get_uid: comp_get_uid,
         }
     }
 
@@ -735,8 +753,6 @@ mod tests {
     #[cfg(not(target_env = "msvc"))]
     fn make_uid_vtable() -> IUIDProviderVTable {
         IUIDProviderVTable {
-            destructor_complete: uid_destructor_noop,
-            destructor_deleting: uid_destructor_noop,
             get_uid: uid_get_uid,
         }
     }

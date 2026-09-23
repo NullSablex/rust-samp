@@ -625,7 +625,9 @@ fn gen_omp_entry_point(
             #[cfg(target_env = "msvc")]
             pub unsafe extern "thiscall" fn comp_reset() {}
 
-            // VTABLE — Itanium ABI (Linux): destructor at slot [4], D0 at [5]
+            // VTABLE — Itanium ABI (Linux): destructor at slot [4], D0 at [5],
+            // getUID at [17] (Itanium places the IUIDProvider override in the
+            // primary vtable too — MSVC keeps it only in the secondary one).
             #[cfg(not(target_env = "msvc"))]
             static VTABLE: IComponentVTable = IComponentVTable {
                 get_extension:         samp::omp::component::ext_get_extension,
@@ -645,6 +647,7 @@ fn gen_omp_entry_point(
                 provide_configuration: samp::omp::component::comp_provide_configuration,
                 free:                  comp_free,
                 reset:                 comp_reset,
+                get_uid:               samp::omp::component::comp_get_uid,
             };
 
             // VTABLE — MSVC ABI (Windows): 16 slots.
@@ -673,11 +676,11 @@ fn gen_omp_entry_point(
                 reset:                 comp_reset,
             };
 
-            // UID_VTABLE — Itanium ABI: two destructor thunk slots
+            // UID_VTABLE — Itanium ABI: a single slot, like MSVC. IUIDProvider
+            // declares no virtual destructor, so its secondary vtable holds
+            // only the getUID thunk.
             #[cfg(not(target_env = "msvc"))]
             static UID_VTABLE: IUIDProviderVTable = IUIDProviderVTable {
-                destructor_complete: samp::omp::component::uid_destructor_noop,
-                destructor_deleting: samp::omp::component::uid_destructor_noop,
                 get_uid:             samp::omp::component::uid_get_uid,
             };
 

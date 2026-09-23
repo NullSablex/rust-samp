@@ -25,8 +25,14 @@
 //!
 //! **MSVC ABI** — confirmed by RTTI + vtable dump of the official `Timers.dll`:
 //! `[0..3]` `IExtensible`, `[4]` destructor, `[5..15]` `IComponent`,
-//! **[16]** `create(handler, interval, repeating)`,
-//! `[17]` `create(handler, initial, interval, count)`, `[18]` `count()`.
+//! `[16]` `create(handler, initial, interval, count)`,
+//! **[17]** `create(handler, interval, repeating)`, `[18]` `count()`.
+//!
+//! Note the reversal: MSVC emits an overload set in **reverse declaration
+//! order**, so the two `create` overloads swap places against Itanium. Verified
+//! by disassembly — slot [16] ends in `ret 0x18` (24 bytes of arguments, the
+//! four-argument overload) and slot [17] in `ret 0x10` (16 bytes, the one the
+//! SDK calls).
 //!
 //! ## `ITimer` vtable (slots starting from `IExtensible`)
 //!
@@ -67,7 +73,7 @@ pub const TIMERS_COMPONENT_UID: UID = 0x2ad8_124c_5ea2_57a3;
 const SLOT_CREATE_INTERVAL: usize = 18;
 
 #[cfg(target_env = "msvc")]
-const SLOT_CREATE_INTERVAL: usize = 16;
+const SLOT_CREATE_INTERVAL: usize = 17;
 
 /// Slot of `kill()` in the `ITimer` vtable (shifted by the extra Itanium
 /// destructor slot inherited from `IExtensible`).
@@ -287,7 +293,11 @@ mod tests {
         }
         #[cfg(target_env = "msvc")]
         {
-            assert_eq!(SLOT_CREATE_INTERVAL, 16, "Timers.dll vtable [16] = create");
+            assert_eq!(
+                SLOT_CREATE_INTERVAL, 17,
+                "Timers.dll vtable [17] = create(handler, interval, repeating); \
+                 MSVC reverses the overload set, [16] is the four-argument one"
+            );
             assert_eq!(SLOT_TIMER_KILL, 10, "Timer vtable [10] = kill");
         }
     }
