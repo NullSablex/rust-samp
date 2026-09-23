@@ -77,6 +77,13 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **Encoding losses are reportable.** `encode_checked` returns the encoded bytes
+  plus whether the encoding had to substitute characters it cannot represent,
+  and `unmappable_chars` names them for the log. `Buffer::write_str_checked` and
+  `UnsizedBuffer::write_str_checked` do the same for the write path. Until now a
+  Cyrillic name on a Windows-1252 server became `?????` with nothing said
+  anywhere — the conversion is lossy by nature, but staying quiet about it was a
+  choice the SDK made for the plugin.
 - **Encodings beyond the two obvious ones.** `set_default_encoding` always
   accepted any `encoding_rs` encoding, but the module re-exported only
   `WINDOWS_1251` and `WINDOWS_1252`, so the rest were invisible. It now
@@ -198,7 +205,8 @@ deprecations reach plugin authors through it, and it now requires
 
 ### Docs
 
-- `docs/encoding.md` gains the encoding table, the runtime selection by label
+- `docs/encoding.md` gains the encoding table, the runtime selection by label,
+  the checked-encoding section
   and a section on multi-byte encodings — Pawn counts cells, so `strlen` and
   indexing mean something different there.
 - `docs/omp-native.md` gains a section on the extended AMX function table: what

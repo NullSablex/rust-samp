@@ -88,6 +88,56 @@ pub fn set_default_encoding_by_label(label: &str) -> Option<&'static Encoding> {
     Some(encoding)
 }
 
+/// Encodes `text` with the configured encoding, reporting whether anything was
+/// lost on the way.
+///
+/// Encoding is not always possible: Windows-1252 has no Cyrillic, Windows-1251
+/// has no `ç`, and no 8-bit code page has an emoji. `encoding_rs` substitutes
+/// what it cannot represent — a `?`, or an HTML numeric reference — and says
+/// nothing, so a player named `Ковальски` becomes `?????` on a Western server
+/// with the plugin none the wiser.
+///
+/// The returned flag is that warning. Pair it with [`unmappable_chars`] when it
+/// is `true` to say in the log which characters were lost.
+///
+/// ```rust
+/// # use samp_sdk::encoding::{encode_checked, set_default_encoding, WINDOWS_1252};
+/// set_default_encoding(WINDOWS_1252);
+/// let (bytes, lost) = encode_checked("cafe");
+/// assert!(!lost);
+/// assert_eq!(bytes.as_ref(), b"cafe");
+///
+/// let (_, lost) = encode_checked("Привет");
+/// assert!(lost, "Cyrillic does not fit in Windows-1252");
+/// ```
+#[must_use]
+pub fn encode_checked(text: &str) -> (std::borrow::Cow<'_, [u8]>, bool) {
+    let (bytes, _, had_unmappable) = get().encode(text);
+    (bytes, had_unmappable)
+}
+
+/// The characters of `text` the configured encoding cannot represent, in order
+/// of first appearance and without repeats.
+///
+/// Meant for the diagnostic that follows an [`encode_checked`] flag, so a log
+/// line can name the characters instead of only reporting that something was
+/// lost. It encodes character by character, so call it on the failure path
+/// rather than on every string.
+#[must_use]
+pub fn unmappable_chars(text: &str) -> Vec<char> {
+    let encoding = get();
+    let mut lost = Vec::new();
+    let mut buffer = [0u8; 4];
+
+    for ch in text.chars() {
+        let (_, _, had_unmappable) = encoding.encode(ch.encode_utf8(&mut buffer));
+        if had_unmappable && !lost.contains(&ch) {
+            lost.push(ch);
+        }
+    }
+    lost
+}
+
 pub(crate) fn get() -> &'static Encoding {
     unsafe { &*DEFAULT_ENCODING.load(Ordering::Acquire) }
 }
@@ -153,6 +203,38 @@ mod tests {
         set_default_encoding(WINDOWS_1251);
         assert!(set_default_encoding_by_label("not-an-encoding").is_none());
         assert_eq!(get().name(), WINDOWS_1251.name(), "the encoding must stay");
+        set_default_encoding(WINDOWS_1252);
+    }
+
+    #[test]
+    fn encode_checked_flags_what_the_encoding_cannot_represent() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        set_default_encoding(WINDOWS_1252);
+
+        let (bytes, lost) = encode_checked("cafe");
+        assert!(!lost);
+        assert_eq!(bytes.as_ref(), b"cafe");
+
+        let (_, lost) = encode_checked("Привет");
+        assert!(lost, "Cyrillic does not fit in Windows-1252");
+
+        // The same text under an encoding that does have it.
+        set_default_encoding(WINDOWS_1251);
+        let (_, lost) = encode_checked("Привет");
+        assert!(!lost);
+
+        set_default_encoding(WINDOWS_1252);
+    }
+
+    #[test]
+    fn unmappable_chars_names_them_once_and_in_order() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        set_default_encoding(WINDOWS_1252);
+
+        assert_eq!(unmappable_chars("ok, tudo cabe: áéç"), Vec::<char>::new());
+        // `ж` twice, but reported once; the emoji keeps its position after it.
+        assert_eq!(unmappable_chars("aжbжc😀"), vec!['ж', '😀']);
+
         set_default_encoding(WINDOWS_1252);
     }
 

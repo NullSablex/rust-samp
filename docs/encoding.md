@@ -59,6 +59,33 @@ Windows-1251.
 
 [labels]: https://encoding.spec.whatwg.org/#names-and-labels
 
+## Knowing when a character was lost
+
+Not every string fits every encoding: Windows-1252 has no Cyrillic,
+Windows-1251 has no `ç`, and no 8-bit code page has an emoji. `encoding_rs`
+substitutes what it cannot represent — usually `?` — and reports nothing, so a
+player named `Ковальски` reaches a Western server as `?????` and the plugin
+never knows.
+
+The checked variants return that flag:
+
+```rust
+use samp::encoding::unmappable_chars;
+
+let lost = buffer.write_str_checked(&player_name)?;
+if lost {
+    warn!("name has characters this encoding cannot represent: {:?}",
+          unmappable_chars(&player_name));
+}
+```
+
+`Buffer::write_str_checked`, `UnsizedBuffer::write_str_checked` and
+`samp::encoding::encode_checked` behave exactly like their plain counterparts
+and additionally answer "did anything get replaced?". `unmappable_chars` then
+names the offending characters, each one once, in order of appearance — it
+encodes character by character, so call it on the failure path, not on every
+string.
+
 ## Multi-byte encodings
 
 Pawn assumes one cell holds one character. That is true for every 8-bit encoding

@@ -108,6 +108,23 @@ impl<'amx> Buffer<'amx> {
     pub fn write_str(&mut self, s: &str) -> AmxResult<()> {
         string::put_in_buffer(self, s)
     }
+
+    /// Writes `s` like [`write_str`], reporting whether the configured encoding
+    /// had to substitute characters it cannot represent.
+    ///
+    /// `true` means the Pawn side received a `?` (or a numeric reference) where
+    /// the Rust string had a character — a Cyrillic name on a Windows-1252
+    /// server, say. The write still happened; what the flag buys is the chance
+    /// to log it instead of shipping corrupted text silently.
+    /// [`crate::encoding::unmappable_chars`] then names the characters.
+    ///
+    /// # Errors
+    /// `AmxError::General` if the encoded string does not fit in the buffer.
+    ///
+    /// [`write_str`]: Buffer::write_str
+    pub fn write_str_checked(&mut self, s: &str) -> AmxResult<bool> {
+        string::put_in_buffer_checked(self, s)
+    }
 }
 
 // `Buffer` cannot be parsed directly from a cell — use `UnsizedBuffer`
@@ -211,6 +228,19 @@ impl<'amx> UnsizedBuffer<'amx> {
     pub fn write_str(self, max_len: usize, s: &str) -> AmxResult<()> {
         let mut buf = self.into_sized_buffer(max_len);
         string::put_in_buffer(&mut buf, s)
+    }
+
+    /// Writes `s` like [`write_str`], reporting whether the configured encoding
+    /// had to substitute characters it cannot represent — see
+    /// [`Buffer::write_str_checked`].
+    ///
+    /// # Errors
+    /// `AmxError::General` if the encoded string does not fit in `max_len`.
+    ///
+    /// [`write_str`]: UnsizedBuffer::write_str
+    pub fn write_str_checked(self, max_len: usize, s: &str) -> AmxResult<bool> {
+        let mut buf = self.into_sized_buffer(max_len);
+        string::put_in_buffer_checked(&mut buf, s)
     }
 }
 

@@ -237,11 +237,19 @@ impl PartialEq<String> for AmxString<'_> {
 /// # Errors
 /// `AmxError::General` if `string` (after encoding) is >= the buffer size.
 pub(crate) fn put_in_buffer(buffer: &mut Buffer, string: &str) -> AmxResult<()> {
-    #[cfg(feature = "encoding")]
-    let bytes = encoding::get().encode(string).0;
+    put_in_buffer_checked(buffer, string).map(|_| ())
+}
 
+/// Same as [`put_in_buffer`], reporting whether the encoding had to substitute
+/// characters it could not represent.
+pub(crate) fn put_in_buffer_checked(buffer: &mut Buffer, string: &str) -> AmxResult<bool> {
+    #[cfg(feature = "encoding")]
+    let (bytes, had_unmappable) = encoding::encode_checked(string);
+
+    // Without the feature the bytes are the string's own UTF-8: nothing to map,
+    // so nothing can be lost.
     #[cfg(not(feature = "encoding"))]
-    let bytes = std::borrow::Cow::from(string.as_bytes());
+    let (bytes, had_unmappable) = (std::borrow::Cow::from(string.as_bytes()), false);
 
     let bytes = bytes.as_ref();
 
@@ -256,7 +264,7 @@ pub(crate) fn put_in_buffer(buffer: &mut Buffer, string: &str) -> AmxResult<()> 
 
     buffer[bytes.len()] = 0;
 
-    Ok(())
+    Ok(had_unmappable)
 }
 
 #[cfg(test)]
