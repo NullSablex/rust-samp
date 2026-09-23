@@ -15,12 +15,13 @@
 //! native Counter_Get(&out);
 //! native Counter_SetMax(max);
 //! native bool:Counter_IsAtMax();
+//! native bool:Counter_WorkAsync(delay_ms);   // replies via OnCounterWorkDone(delay_ms)
 //! ```
 
 use log::info;
 use samp::plugin::TickContext;
 use samp::prelude::*;
-use samp::{event, initialize_plugin, native};
+use samp::{event, exec_public, initialize_plugin, native};
 
 struct Counter {
     count: i32,
@@ -50,6 +51,33 @@ impl SampPlugin for Counter {
 }
 
 impl Counter {
+    /// Starts slow work on another thread and reports the result to Pawn.
+    ///
+    /// Returns immediately — the server is not blocked. The worker sleeps to
+    /// stand in for real I/O (HTTP, a database, SMTP), then hands the result
+    /// back through [`samp::mainthread::post`], which runs it on the main
+    /// thread at the next tick. Only there is it safe to touch the VM, so that
+    /// is where the Pawn callback is fired.
+    #[native(name = "Counter_WorkAsync")]
+    fn work_async(&mut self, amx: &Amx, delay_ms: i32) -> AmxResult<bool> {
+        let ident = amx.ident();
+        let delay = u64::try_from(delay_ms.max(0)).unwrap_or(0);
+
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(delay));
+
+            samp::mainthread::post(move || {
+                let Some(amx) = samp::amx::get(ident) else {
+                    // The script was unloaded while the work was running.
+                    return;
+                };
+                let _ = exec_public!(amx, "OnCounterWorkDone", delay_ms);
+            });
+        });
+
+        Ok(true)
+    }
+
     /// Increments the counter. Returns the new value, or -1 if already at the maximum.
     #[native(name = "Counter_Increment")]
     fn increment(&mut self, _amx: &Amx) -> i32 {
@@ -153,6 +181,7 @@ initialize_plugin!(
         Counter::get,
         Counter::set_max,
         Counter::is_at_max,
+        Counter::work_async,
     ],
     events: [
         Counter::on_player_connect,

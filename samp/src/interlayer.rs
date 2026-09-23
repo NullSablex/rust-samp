@@ -227,6 +227,10 @@ pub fn amx_unload(amx: *mut AMX) {
 /// [`TickSource`]: crate::plugin::TickSource
 #[inline]
 pub fn tick(source: crate::plugin::TickSource) {
+    // Work handed back by other threads runs first, so `on_tick` observes the
+    // results of whatever finished since the previous tick.
+    crate::mainthread::run_pending();
+
     let rt = Runtime::get();
     let elapsed = rt.record_tick();
     let ctx = crate::plugin::TickContext { elapsed, source };

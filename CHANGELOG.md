@@ -106,6 +106,16 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **`samp::mainthread` — handing work back to the main thread.** A worker
+  thread calls `post(closure)`; the closure runs on the main thread at the next
+  tick, which is the only place the AMX VM may be touched. Jobs run in order, a
+  job posted during a drain waits for the next tick (so self-posting work cannot
+  spin), and a panic inside a job is caught and logged instead of unwinding into
+  the server. `pending()` reports the backlog and `run_pending()` drives the
+  queue by hand for plugins that do not enable the tick; without a tick and
+  without that call, the SDK warns once the backlog passes 10,000. Until now
+  every plugin doing HTTP, SMTP or database work had to hand-roll this hop, and
+  getting it wrong means touching the VM off-thread.
 - **Generated Pawn include.** `#[native]` now derives each native's Pawn
   declaration from its Rust signature, and the plugin can write the `.inc` the
   script side includes: start the server once with `SAMP_PAWN_INCLUDE=path`, or
@@ -158,6 +168,8 @@ deprecations reach plugin authors through it, and it now requires
 
 ### Docs
 
+- New page **Background Work and the Main Thread** (`docs/threads.md`) with the
+  worker-thread pattern, the draining rules and the guarantees.
 - `docs/internals/omp-abi.md` gains the per-ABI slot tables for
   `ITimersComponent` and `ITimer`, and states that a wrong slot fails silently.
   The `vtable` helper table now lists the `_ptr` variants.

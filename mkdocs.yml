@@ -86,6 +86,7 @@ nav:
       - Events (Callbacks): events.md
       - The Amx Type: amx-types.md
       - Calling Pawn from Rust: exec-public.md
+      - Background Work and the Main Thread: threads.md
   - Working with Data:
       - Cells and Memory: cells-and-memory.md
       - String Encoding: encoding.md
