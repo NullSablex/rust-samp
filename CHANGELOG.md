@@ -20,7 +20,9 @@ default (strict) provenance and Stacked Borrows checks. That part changes no
 behavior on a real server — it removes undefined behavior the compiler was free
 to exploit, not crashes observed in the field.
 
-Every change below is in `rust-samp-sdk`; the other crates only follow it.
+The per-crate sections come first, then the ones that belong to the repository
+rather than to any published crate. Every code change below is in
+`rust-samp-sdk`; the other crates only follow it.
 
 ### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0
 
@@ -106,16 +108,37 @@ No changes of its own. It re-exports `samp::omp::vtable`, so the new helpers and
 the two deprecations reach plugin authors through it, and it now requires
 `rust-samp-sdk` 3.5.0 — which is where the `on_tick` fix lives.
 
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.4.0
+
+Unchanged — no macro changes.
+
+### Security
+
+- **`rustls` 0.23.44 → 0.23.45** ([RUSTSEC-2026-0285], via #66). Reaches the
+  lockfile through the `sink-demo` example only — `sentry` → `reqwest` →
+  `hyper-rustls`. No shipped crate depends on it.
+
+[RUSTSEC-2026-0285]: https://rustsec.org/advisories/RUSTSEC-2026-0285
+
+### Dependencies
+
+- Weekly lockfile refresh across **70 packages** (#64), plus `flate2`
+  1.1.9 → 1.1.10 (#57). All transitive or build-time; no manifest requirement
+  and no public API changed.
+- Docs toolchain: `pymdown-extensions` 11.0.2 → 12.0.1 (#62).
+- GitHub Actions: bumps to the `codeql`, `scorecard`, `docs` and `release`
+  workflows (#58, #60).
+
 ### CI
 
+- **Dependabot now watches transitive Cargo dependencies** (#63), with
+  `dependency-type: all` and security updates grouped into a single weekly pull
+  request. Before this, a patched version of a crate nobody declares would only
+  surface when `cargo audit` failed an unrelated pull request.
 - New advisory `miri (i686)` job running `cargo miri test` over the library
   crates on `i686-unknown-linux-gnu`. It reports undefined behaviour — the class
   of bug the FFI layer is exposed to and the regular test run cannot see. Being
   nightly-only, it does not gate the merge.
-
-### `rust-samp-codegen` (lib `samp_codegen`) — 1.4.0
-
-Unchanged — no macro changes.
 
 ### Docs
 
