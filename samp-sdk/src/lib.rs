@@ -16,6 +16,7 @@
 
 pub mod amx;
 pub mod args;
+pub mod call;
 pub mod cell;
 pub mod consts;
 #[cfg(feature = "debug")]

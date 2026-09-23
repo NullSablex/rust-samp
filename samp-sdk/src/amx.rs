@@ -191,6 +191,49 @@ impl Amx {
         body(&allocator, index)
     }
 
+    /// Calls a Pawn public with typed arguments.
+    ///
+    /// The typed counterpart of [`exec_public!`]: a plain method, so it can be
+    /// called from generic code or stored behind an abstraction, and the
+    /// argument types say by themselves what needs memory inside the VM — a
+    /// `&str` is copied into the AMX heap, an `i32` goes straight into a cell.
+    /// Arguments are listed in the same order as the Pawn signature.
+    ///
+    /// ```rust,no_run
+    /// # use samp_sdk::amx::Amx;
+    /// # fn example(amx: &Amx) -> samp_sdk::error::AmxResult<()> {
+    /// // forward OnPlayerScored(playerid, const reason[], Float:multiplier);
+    /// amx.call_public("OnPlayerScored", (7, "headshot", 1.5))?;
+    /// amx.call_public("OnRoundEnd", ())?;
+    /// # Ok(()) }
+    /// ```
+    ///
+    /// Returns what the public returned. Memory allocated for the arguments is
+    /// released when the call finishes, so the public must not keep the
+    /// addresses it received.
+    ///
+    /// See [`crate::call`] for the accepted argument types; anything outside
+    /// that list keeps using [`exec_public!`].
+    ///
+    /// # Errors
+    /// [`AmxError::NotFound`] if the script declares no such public, or the
+    /// VM's error if pushing an argument, allocating for it, or executing
+    /// fails.
+    ///
+    /// [`exec_public!`]: crate::exec_public
+    pub fn call_public<'a, A: crate::call::PublicArgs<'a>>(
+        &'a self,
+        name: &str,
+        args: A,
+    ) -> AmxResult<i32> {
+        let index = self.find_public(name)?;
+        // The allocator lives until the call returns: it owns whatever the
+        // arguments needed on the AMX heap, and releases it on drop.
+        let allocator = self.allocator();
+        args.push_all(self, &allocator)?;
+        self.exec(index)
+    }
+
     /// Index of a native by name (resolved via `amx_FindNative`).
     ///
     /// # Errors

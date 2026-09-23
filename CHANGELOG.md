@@ -77,6 +77,14 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **`Amx::call_public` — typed calls into Pawn publics.** `amx.call_public("OnPlayerScored", (7, "headshot", 1.5))`,
+  with the arguments in a tuple in the same order as the Pawn signature. The
+  types carry what `exec_public!` makes the caller mark by hand: `&str` and
+  `String` are copied into the AMX heap and arrive as `const arg[]`, `&[i32]` as
+  `arg[]`, cell-sized values go straight in. Being a method rather than a macro,
+  it works in generic code and behind abstractions. The new `samp_sdk::call`
+  module holds the `PublicArg` / `PublicArgs` traits; `exec_public!` stays for
+  argument types outside that list.
 - **`omp::vtable::vtable_slot_ptr` and `secondary_call_target_ptr`.** Same
   contract as `vtable_slot` / `secondary_call_target`, but the slot is read and
   returned as `*const ()` instead of `usize`, so the function pointer keeps its

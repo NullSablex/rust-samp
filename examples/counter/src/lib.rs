@@ -16,6 +16,7 @@
 //! native Counter_SetMax(max);
 //! native bool:Counter_IsAtMax();
 //! native bool:Counter_WorkAsync(delay_ms);   // replies via OnCounterWorkDone(delay_ms)
+//! native Counter_NotifyScore(playerid);      // fires OnCounterScored(playerid, reason[], Float:mult)
 //! ```
 
 use log::info;
@@ -51,6 +52,17 @@ impl SampPlugin for Counter {
 }
 
 impl Counter {
+    /// Fires a Pawn callback with typed arguments, through `Amx::call_public`.
+    ///
+    /// Shows the argument types carrying the decision: `i32` and `f32` go
+    /// straight into cells, while the `&str` is copied into the AMX heap and
+    /// arrives as `const reason[]`. No `=> string` marker at the call site.
+    #[native(name = "Counter_NotifyScore")]
+    fn notify_score(&mut self, amx: &Amx, playerid: i32) -> AmxResult<i32> {
+        // forward OnCounterScored(playerid, const reason[], Float:multiplier);
+        amx.call_public("OnCounterScored", (playerid, "headshot", 1.5))
+    }
+
     /// Starts slow work on another thread and reports the result to Pawn.
     ///
     /// Returns immediately — the server is not blocked. The worker sleeps to
@@ -182,6 +194,7 @@ initialize_plugin!(
         Counter::set_max,
         Counter::is_at_max,
         Counter::work_async,
+        Counter::notify_score,
     ],
     events: [
         Counter::on_player_connect,

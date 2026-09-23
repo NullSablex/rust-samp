@@ -1,4 +1,37 @@
-# Calling Pawn from Rust — `exec_public!`
+# Calling Pawn from Rust
+
+Two ways in: `Amx::call_public`, a typed method, and the `exec_public!` macro.
+Start with the method; reach for the macro when an argument type falls outside
+what the method accepts.
+
+## `Amx::call_public` — the typed call
+
+```rust
+// forward OnPlayerScored(playerid, const reason[], Float:multiplier);
+amx.call_public("OnPlayerScored", (playerid, "headshot", 1.5))?;
+
+// No arguments:
+amx.call_public("OnRoundEnd", ())?;
+```
+
+Arguments go in a tuple, in the same order as the Pawn signature, and the types
+carry the decisions the macro makes you spell out: a `&str` or `String` is
+copied into the AMX heap and arrives as `const arg[]`, an `&[i32]` as `arg[]`,
+and everything cell-sized goes straight in. The heap memory is released when the
+call returns, so the public must not keep the addresses it received.
+
+Accepted: the integer primitives, `f32` (`Float:`), `bool`, `&str`, `String`,
+`&[i32]`, `&Vec<i32>`, and the cell types a native already receives —
+`AmxString`, `Buffer`, `Ref<T>`. Up to twelve arguments.
+
+Being a method and not a macro, it can be called from generic code, stored
+behind a trait, or wrapped in a helper — which a macro cannot.
+
+It returns what the public returned, or `AmxError::NotFound` when the script
+declares no such public. That error is worth handling rather than discarding:
+it usually means the script and the plugin disagree about the callback name.
+
+## `exec_public!` — the macro
 
 Pawn `public` functions can be called from the plugin. The
 `exec_public!` macro (defined in `samp-sdk/src/macros.rs`, re-exported
