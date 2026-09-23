@@ -75,6 +75,27 @@ feature flags, conventions).
 - For non-trivial refactors, plan first: list the cases
   (refactor / keep / unsure) with rationale before writing code.
 
+## Fuzzing
+
+`samp_sdk::debug::AmxDbg::parse` reads bytes the plugin did not produce — the
+debug block of a `.amx` file on the server's disk. Its contract is that no input
+panics or hangs it: a malformed block must come back as `DbgError`.
+
+```sh
+cargo install cargo-fuzz                                    # once
+mkdir -p fuzz/corpus/parse_debug
+cp fuzz/seeds/parse_debug/* fuzz/corpus/parse_debug/        # once
+cd fuzz && cargo +nightly fuzz run parse_debug -- -max_total_time=120
+```
+
+`fuzz/seeds/` holds real debug blocks taken from compiled `.amx` files and is
+versioned; the corpus a run grows from them is not, since it is machine-local
+and large. `cargo fuzz cmin parse_debug` shrinks it after a long session. A
+crash lands in `fuzz/artifacts/` — attach that file to the issue.
+
+Touching a parser that reads external bytes? Run this before opening the pull
+request.
+
 ## Opening a pull request
 
 1. Branch off `master`: `git checkout -b feat/my-feature`

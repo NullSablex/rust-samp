@@ -1,0 +1,28 @@
+# Fuzzing harness for the parsers that read bytes from outside the plugin.
+#
+# Kept out of the workspace: it needs nightly and links libFuzzer, neither of
+# which should reach a normal `cargo build`.
+[package]
+name = "rust-samp-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.rust-samp-sdk]
+path = "../samp-sdk"
+features = ["debug"]
+
+[[bin]]
+name = "parse_debug"
+path = "fuzz_targets/parse_debug.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -34,3 +34,10 @@ rust-samp-*-src.tar.gz
 *.swo
 .DS_Store
 Thumbs.db
+
+# Fuzzing: only the seeds are versioned (`fuzz/seeds/`). The corpus a run grows
+# from them is local, and so are build output and crash artifacts.
+fuzz/target/
+fuzz/artifacts/
+fuzz/coverage/
+fuzz/corpus/

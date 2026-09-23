@@ -192,6 +192,16 @@ deprecations reach plugin authors through it, and it now requires
 - GitHub Actions: bumps to the `codeql`, `scorecard`, `docs` and `release`
   workflows (#58, #60).
 
+### Tests
+
+- **Fuzzing harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The
+  debug block comes from a `.amx` file on the server's disk, which the plugin
+  did not produce, so the parser's contract is that no input panics or hangs it.
+  A first run of 6.3 million cases over two minutes found nothing — the
+  allocation caps already in the parser hold. Seed inputs are versioned;
+  `CONTRIBUTING.md` documents the workflow. Out of the workspace: it needs
+  nightly and links libFuzzer.
+
 ### CI
 
 - **Dependabot now watches transitive Cargo dependencies** (#63), with
