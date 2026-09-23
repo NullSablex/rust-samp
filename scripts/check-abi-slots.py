@@ -280,6 +280,12 @@ def check_itanium(server: pathlib.Path, report: Report) -> None:
         ("IPlayerPool::getPlayerConnectDispatcher", "SLOT_CONNECT_DISPATCHER", "getPlayerConnectDispatcher"),
         ("IPlayerPool::getPlayerTextDispatcher", "SLOT_TEXT_DISPATCHER", "getPlayerTextDispatcher"),
         ("IPlayerPool::getPlayerDamageDispatcher", "SLOT_DAMAGE_DISPATCHER", "getPlayerDamageDispatcher"),
+        ("IPlayerPool::getPlayerStreamDispatcher", "SLOT_STREAM_DISPATCHER", "getPlayerStreamDispatcher"),
+        ("IPlayerPool::getPlayerShotDispatcher", "SLOT_SHOT_DISPATCHER", "getPlayerShotDispatcher"),
+        ("IPlayerPool::getPlayerChangeDispatcher", "SLOT_CHANGE_DISPATCHER", "getPlayerChangeDispatcher"),
+        ("IPlayerPool::getPlayerClickDispatcher", "SLOT_CLICK_DISPATCHER", "getPlayerClickDispatcher"),
+        ("IPlayerPool::getPlayerCheckDispatcher", "SLOT_CHECK_DISPATCHER", "getPlayerCheckDispatcher"),
+        ("IPlayerPool::getPlayerUpdateDispatcher", "SLOT_UPDATE_DISPATCHER", "getPlayerUpdateDispatcher"),
     ):
         report.check(
             label,

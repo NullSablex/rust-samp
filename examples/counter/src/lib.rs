@@ -79,6 +79,15 @@ impl SampPlugin for Counter {
             info!("[omp] spawn handler registered: {ok}");
         }
 
+        let update = unsafe { samp::omp::player_update_dispatcher(pool) };
+        if !update.is_null() {
+            let handler = Box::leak(Box::new(samp::omp::PlayerUpdateHandler::new(
+                &raw const PLAYER_UPDATE_VTABLE,
+            )));
+            let ok = unsafe { samp::omp::add_player_update_handler(update, handler) };
+            info!("[omp] update handler registered: {ok}");
+        }
+
         let text = unsafe { samp::omp::player_text_dispatcher(pool) };
         if !text.is_null() {
             let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(
@@ -272,7 +281,9 @@ mod omp_players {
     use samp::omp::{
         DisconnectReason, IPlayer, PlayerConnectHandler, PlayerConnectHandlerVTable,
         PlayerSpawnHandler, PlayerSpawnHandlerVTable, PlayerTextHandler, PlayerTextHandlerVTable,
+        PlayerUpdateHandler, PlayerUpdateHandlerVTable,
     };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// The server calls these through a vtable, so the calling convention is
     /// the platform's: `extern "C"` under the Itanium ABI, `thiscall` under
@@ -349,6 +360,21 @@ mod omp_players {
         }
     );
 
+    handler!(
+        fn on_update(_this: *mut PlayerUpdateHandler, _player: *mut IPlayer, _now: i64) -> bool {
+            // Fires for every player on every tick, so it only reports once.
+            static REPORTED: AtomicBool = AtomicBool::new(false);
+            if !REPORTED.swap(true, Ordering::Relaxed) {
+                info!("[omp-event] onPlayerUpdate straight from the server (logged once)");
+            }
+            true
+        }
+    );
+
+    pub static UPDATE_VTABLE: PlayerUpdateHandlerVTable = PlayerUpdateHandlerVTable {
+        on_player_update: on_update,
+    };
+
     pub static SPAWN_VTABLE: PlayerSpawnHandlerVTable = PlayerSpawnHandlerVTable {
         on_player_request_spawn: on_request_spawn,
         on_player_spawn: on_spawn,
@@ -369,7 +395,7 @@ mod omp_players {
 
 use omp_players::{
     SPAWN_VTABLE as PLAYER_SPAWN_VTABLE, TEXT_VTABLE as PLAYER_TEXT_VTABLE,
-    VTABLE as PLAYER_CONNECT_VTABLE,
+    UPDATE_VTABLE as PLAYER_UPDATE_VTABLE, VTABLE as PLAYER_CONNECT_VTABLE,
 };
 
 initialize_plugin!(

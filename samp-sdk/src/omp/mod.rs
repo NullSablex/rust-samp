@@ -40,6 +40,18 @@ pub use players::{
     add_player_text_handler, player_connect_dispatcher, player_damage_dispatcher, player_pool,
     player_spawn_dispatcher, player_text_dispatcher,
 };
+pub use players::{
+    IObject, IPlayerChangeDispatcher, IPlayerCheckDispatcher, IPlayerClickDispatcher,
+    IPlayerObject, IPlayerShotDispatcher, IPlayerStreamDispatcher, IPlayerUpdateDispatcher,
+    IVehicle, PlayerBulletData, PlayerChangeHandler, PlayerChangeHandlerVTable, PlayerCheckHandler,
+    PlayerCheckHandlerVTable, PlayerClickHandler, PlayerClickHandlerVTable, PlayerShotHandler,
+    PlayerShotHandlerVTable, PlayerStreamHandler, PlayerStreamHandlerVTable, PlayerUpdateHandler,
+    PlayerUpdateHandlerVTable, add_player_change_handler, add_player_check_handler,
+    add_player_click_handler, add_player_shot_handler, add_player_stream_handler,
+    add_player_update_handler, player_change_dispatcher, player_check_dispatcher,
+    player_click_dispatcher, player_shot_dispatcher, player_stream_dispatcher,
+    player_update_dispatcher,
+};
 pub use server::{
     AmxFunctionTable, IEventDispatcherPawn, IPawnScript, PAWN_COMPONENT_UID, PawnComponent,
     ServerComponentList, ServerPawnComponent, add_pawn_event_handler, get_amx_from_script,

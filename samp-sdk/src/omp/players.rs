@@ -36,7 +36,7 @@
 //! ```
 
 use super::component::ICore;
-use super::types::StringView;
+use super::types::{StringView, Vector3};
 
 /// Slot of `ICore::getPlayers()`.
 #[cfg(not(target_env = "msvc"))]
@@ -79,6 +79,42 @@ const SLOT_TEXT_DISPATCHER: usize = 11;
 const SLOT_DAMAGE_DISPATCHER: usize = 15;
 #[cfg(target_env = "msvc")]
 const SLOT_DAMAGE_DISPATCHER: usize = 14;
+
+/// Slot of `IPlayerPool::getPlayerStreamDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_STREAM_DISPATCHER: usize = 11;
+#[cfg(target_env = "msvc")]
+const SLOT_STREAM_DISPATCHER: usize = 10;
+
+/// Slot of `IPlayerPool::getPlayerShotDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_SHOT_DISPATCHER: usize = 13;
+#[cfg(target_env = "msvc")]
+const SLOT_SHOT_DISPATCHER: usize = 12;
+
+/// Slot of `IPlayerPool::getPlayerChangeDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CHANGE_DISPATCHER: usize = 14;
+#[cfg(target_env = "msvc")]
+const SLOT_CHANGE_DISPATCHER: usize = 13;
+
+/// Slot of `IPlayerPool::getPlayerClickDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CLICK_DISPATCHER: usize = 16;
+#[cfg(target_env = "msvc")]
+const SLOT_CLICK_DISPATCHER: usize = 15;
+
+/// Slot of `IPlayerPool::getPlayerCheckDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CHECK_DISPATCHER: usize = 17;
+#[cfg(target_env = "msvc")]
+const SLOT_CHECK_DISPATCHER: usize = 16;
+
+/// Slot of `IPlayerPool::getPlayerUpdateDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_UPDATE_DISPATCHER: usize = 18;
+#[cfg(target_env = "msvc")]
+const SLOT_UPDATE_DISPATCHER: usize = 17;
 
 /// Opaque handle for `IEventDispatcher<PlayerConnectEventHandler>*`.
 #[repr(C)]
@@ -158,6 +194,31 @@ impl PlayerConnectHandler {
     }
 }
 
+/// Opaque handles for the objects a shot can hit.
+#[repr(C)]
+pub struct IVehicle {
+    _opaque: [u8; 0],
+}
+
+/// See [`IVehicle`].
+#[repr(C)]
+pub struct IObject {
+    _opaque: [u8; 0],
+}
+
+/// See [`IVehicle`].
+#[repr(C)]
+pub struct IPlayerObject {
+    _opaque: [u8; 0],
+}
+
+/// `PlayerBulletData`, passed by const reference — opaque here, since reading
+/// it means pinning another layout.
+#[repr(C)]
+pub struct PlayerBulletData {
+    _opaque: [u8; 0],
+}
+
 /// Opaque handle for `IEventDispatcher<PlayerSpawnEventHandler>*`.
 #[repr(C)]
 pub struct IPlayerSpawnDispatcher {
@@ -173,6 +234,42 @@ pub struct IPlayerTextDispatcher {
 /// Opaque handle for `IEventDispatcher<PlayerDamageEventHandler>*`.
 #[repr(C)]
 pub struct IPlayerDamageDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerStreamEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerStreamDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerShotEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerShotDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerChangeEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerChangeDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerClickEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerClickDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerCheckEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerCheckDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerUpdateEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerUpdateDispatcher {
     _opaque: [u8; 0],
 }
 
@@ -321,6 +418,67 @@ pub unsafe fn add_player_connect_handler(
     unsafe { add(this, handler, 0) }
 }
 
+handler_vtable! {
+    /// `PlayerStreamEventHandler` — a player entering or leaving another's
+    /// stream radius.
+    PlayerStreamHandlerVTable for PlayerStreamHandler {
+        on_player_stream_in: fn(*mut IPlayer, *mut IPlayer),
+        on_player_stream_out: fn(*mut IPlayer, *mut IPlayer),
+    }
+}
+
+handler_vtable! {
+    /// `PlayerShotEventHandler` — returning `false` rejects the shot.
+    /// `bullet_data` points at a `PlayerBulletData` the server owns.
+    PlayerShotHandlerVTable for PlayerShotHandler {
+        on_player_shot_missed: fn(*mut IPlayer, *const PlayerBulletData) -> bool,
+        on_player_shot_player: fn(*mut IPlayer, *mut IPlayer, *const PlayerBulletData) -> bool,
+        on_player_shot_vehicle: fn(*mut IPlayer, *mut IVehicle, *const PlayerBulletData) -> bool,
+        on_player_shot_object: fn(*mut IPlayer, *mut IObject, *const PlayerBulletData) -> bool,
+        on_player_shot_player_object:
+            fn(*mut IPlayer, *mut IPlayerObject, *const PlayerBulletData) -> bool,
+    }
+}
+
+handler_vtable! {
+    /// `PlayerChangeEventHandler`. `PlayerState` and the key masks arrive as
+    /// plain integers.
+    PlayerChangeHandlerVTable for PlayerChangeHandler {
+        on_player_score_change: fn(*mut IPlayer, i32),
+        on_player_name_change: fn(*mut IPlayer, StringView),
+        on_player_interior_change: fn(*mut IPlayer, u32, u32),
+        on_player_state_change: fn(*mut IPlayer, i32, i32),
+        on_player_key_state_change: fn(*mut IPlayer, u32, u32),
+    }
+}
+
+handler_vtable! {
+    /// `PlayerClickEventHandler`. `Vector3` is passed by value, as the header
+    /// declares it.
+    PlayerClickHandlerVTable for PlayerClickHandler {
+        on_player_click_map: fn(*mut IPlayer, Vector3),
+        on_player_click_player: fn(*mut IPlayer, *mut IPlayer, i32),
+    }
+}
+
+handler_vtable! {
+    /// `PlayerCheckEventHandler` — the reply to a client check request.
+    PlayerCheckHandlerVTable for PlayerCheckHandler {
+        on_client_check_response: fn(*mut IPlayer, i32, i32, i32),
+    }
+}
+
+handler_vtable! {
+    /// `PlayerUpdateEventHandler` — fires for every player on every server
+    /// tick, so keep the body short. Returning `false` drops the update.
+    ///
+    /// `now` is a `TimePoint` (`steady_clock`, nanoseconds): one 64-bit value
+    /// passed by value, which on i686 lands on the stack either way.
+    PlayerUpdateHandlerVTable for PlayerUpdateHandler {
+        on_player_update: fn(*mut IPlayer, i64) -> bool,
+    }
+}
+
 /// Writes the `get<X>Dispatcher` + `add_<x>_handler` pair for one event group.
 macro_rules! dispatcher_pair {
     ($getter:ident -> $dispatcher:ident @ $slot:ident, $adder:ident($handler:ident)) => {
@@ -376,6 +534,19 @@ dispatcher_pair!(player_text_dispatcher -> IPlayerTextDispatcher @ SLOT_TEXT_DIS
 dispatcher_pair!(player_damage_dispatcher -> IPlayerDamageDispatcher @ SLOT_DAMAGE_DISPATCHER,
                  add_player_damage_handler(PlayerDamageHandler));
 
+dispatcher_pair!(player_stream_dispatcher -> IPlayerStreamDispatcher @ SLOT_STREAM_DISPATCHER,
+                 add_player_stream_handler(PlayerStreamHandler));
+dispatcher_pair!(player_shot_dispatcher -> IPlayerShotDispatcher @ SLOT_SHOT_DISPATCHER,
+                 add_player_shot_handler(PlayerShotHandler));
+dispatcher_pair!(player_change_dispatcher -> IPlayerChangeDispatcher @ SLOT_CHANGE_DISPATCHER,
+                 add_player_change_handler(PlayerChangeHandler));
+dispatcher_pair!(player_click_dispatcher -> IPlayerClickDispatcher @ SLOT_CLICK_DISPATCHER,
+                 add_player_click_handler(PlayerClickHandler));
+dispatcher_pair!(player_check_dispatcher -> IPlayerCheckDispatcher @ SLOT_CHECK_DISPATCHER,
+                 add_player_check_handler(PlayerCheckHandler));
+dispatcher_pair!(player_update_dispatcher -> IPlayerUpdateDispatcher @ SLOT_UPDATE_DISPATCHER,
+                 add_player_update_handler(PlayerUpdateHandler));
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +597,38 @@ mod tests {
         assert_eq!(std::mem::offset_of!(PlayerSpawnHandler, vtable), 0);
         assert_eq!(std::mem::offset_of!(PlayerTextHandler, vtable), 0);
         assert_eq!(std::mem::offset_of!(PlayerDamageHandler, vtable), 0);
+    }
+
+    #[test]
+    fn the_remaining_dispatcher_slots_match_the_dump() {
+        // PlayerPool vtable of the official `omp-server`: [11] stream,
+        // [13] shot, [14] change, [16] click, [17] check, [18] update.
+        #[cfg(not(target_env = "msvc"))]
+        let expected = [11, 13, 14, 16, 17, 18];
+        #[cfg(target_env = "msvc")]
+        let expected = [10, 12, 13, 15, 16, 17];
+        assert_eq!(
+            [
+                SLOT_STREAM_DISPATCHER,
+                SLOT_SHOT_DISPATCHER,
+                SLOT_CHANGE_DISPATCHER,
+                SLOT_CLICK_DISPATCHER,
+                SLOT_CHECK_DISPATCHER,
+                SLOT_UPDATE_DISPATCHER,
+            ],
+            expected
+        );
+    }
+
+    #[test]
+    fn the_remaining_vtables_have_the_slots_their_headers_declare() {
+        let p = std::mem::size_of::<*const ()>();
+        assert_eq!(std::mem::size_of::<PlayerStreamHandlerVTable>(), 2 * p);
+        assert_eq!(std::mem::size_of::<PlayerShotHandlerVTable>(), 5 * p);
+        assert_eq!(std::mem::size_of::<PlayerChangeHandlerVTable>(), 5 * p);
+        assert_eq!(std::mem::size_of::<PlayerClickHandlerVTable>(), 2 * p);
+        assert_eq!(std::mem::size_of::<PlayerCheckHandlerVTable>(), p);
+        assert_eq!(std::mem::size_of::<PlayerUpdateHandlerVTable>(), p);
     }
 
     #[test]

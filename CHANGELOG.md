@@ -161,6 +161,12 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **The remaining player dispatchers**: stream, shot, change, click, check and
+  update, closing the eleven `IPlayerPool` exposes. `onPlayerUpdate` fires for
+  every player on every tick and was validated on both platforms;
+  `onPlayerShot*` and `onPlayerClickMap` carry types the server passes by value
+  or by const reference (`Vector3`, `PlayerBulletData`), declared accordingly.
+  Every slot is re-derived by `scripts/check-abi-slots.py`, now at 22 checks.
 - **`samp::omp_amx::AmxOmpExt` — the AMX functions open.mp adds.**
   `native_by_index`, `make_addr`, `str_size` and the byte-swap helpers, as
   methods on `Amx`. Each one first checks that the SDK read the function table
