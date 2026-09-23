@@ -68,6 +68,25 @@ impl SampPlugin for Counter {
         )));
         let added = unsafe { add_player_connect_handler(dispatcher, handler) };
         info!("[omp] native player handler registered: {added}");
+
+        // The same shape for the other event groups.
+        let spawn = unsafe { samp::omp::player_spawn_dispatcher(pool) };
+        if !spawn.is_null() {
+            let handler = Box::leak(Box::new(samp::omp::PlayerSpawnHandler::new(
+                &raw const PLAYER_SPAWN_VTABLE,
+            )));
+            let ok = unsafe { samp::omp::add_player_spawn_handler(spawn, handler) };
+            info!("[omp] spawn handler registered: {ok}");
+        }
+
+        let text = unsafe { samp::omp::player_text_dispatcher(pool) };
+        if !text.is_null() {
+            let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(
+                &raw const PLAYER_TEXT_VTABLE,
+            )));
+            let ok = unsafe { samp::omp::add_player_text_handler(text, handler) };
+            info!("[omp] text handler registered: {ok}");
+        }
     }
 
     fn on_tick(&mut self, _ctx: TickContext) {
@@ -250,18 +269,21 @@ impl Counter {
 mod omp_players {
     use log::info;
     use samp::omp::types::StringView;
-    use samp::omp::{DisconnectReason, IPlayer, PlayerConnectHandler, PlayerConnectHandlerVTable};
+    use samp::omp::{
+        DisconnectReason, IPlayer, PlayerConnectHandler, PlayerConnectHandlerVTable,
+        PlayerSpawnHandler, PlayerSpawnHandlerVTable, PlayerTextHandler, PlayerTextHandlerVTable,
+    };
 
     /// The server calls these through a vtable, so the calling convention is
     /// the platform's: `extern "C"` under the Itanium ABI, `thiscall` under
     /// MSVC. The macro writes each handler once for both.
     macro_rules! handler {
-        (fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $body:block) => {
+        (fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? $body:block) => {
             #[cfg(not(target_env = "msvc"))]
-            pub unsafe extern "C" fn $name($($arg: $ty),*) $body
+            pub unsafe extern "C" fn $name($($arg: $ty),*) $(-> $ret)? $body
 
             #[cfg(target_env = "msvc")]
-            pub unsafe extern "thiscall" fn $name($($arg: $ty),*) $body
+            pub unsafe extern "thiscall" fn $name($($arg: $ty),*) $(-> $ret)? $body
         };
     }
 
@@ -294,6 +316,49 @@ mod omp_players {
         fn on_client_init(_this: *mut PlayerConnectHandler, _player: *mut IPlayer) {}
     );
 
+    handler!(
+        fn on_request_spawn(_this: *mut PlayerSpawnHandler, _player: *mut IPlayer) -> bool {
+            true // allow
+        }
+    );
+
+    handler!(
+        fn on_spawn(_this: *mut PlayerSpawnHandler, _player: *mut IPlayer) {
+            info!("[omp-event] onPlayerSpawn straight from the server");
+        }
+    );
+
+    handler!(
+        fn on_text(
+            _this: *mut PlayerTextHandler,
+            _player: *mut IPlayer,
+            message: StringView,
+        ) -> bool {
+            info!("[omp-event] onPlayerText ({} bytes)", message.len);
+            true // let it through
+        }
+    );
+
+    handler!(
+        fn on_command_text(
+            _this: *mut PlayerTextHandler,
+            _player: *mut IPlayer,
+            _message: StringView,
+        ) -> bool {
+            false // not handled here
+        }
+    );
+
+    pub static SPAWN_VTABLE: PlayerSpawnHandlerVTable = PlayerSpawnHandlerVTable {
+        on_player_request_spawn: on_request_spawn,
+        on_player_spawn: on_spawn,
+    };
+
+    pub static TEXT_VTABLE: PlayerTextHandlerVTable = PlayerTextHandlerVTable {
+        on_player_text: on_text,
+        on_player_command_text: on_command_text,
+    };
+
     pub static VTABLE: PlayerConnectHandlerVTable = PlayerConnectHandlerVTable {
         on_incoming_connection: on_incoming,
         on_player_connect: on_connect,
@@ -302,7 +367,10 @@ mod omp_players {
     };
 }
 
-use omp_players::VTABLE as PLAYER_CONNECT_VTABLE;
+use omp_players::{
+    SPAWN_VTABLE as PLAYER_SPAWN_VTABLE, TEXT_VTABLE as PLAYER_TEXT_VTABLE,
+    VTABLE as PLAYER_CONNECT_VTABLE,
+};
 
 initialize_plugin!(
     natives: [

@@ -62,6 +62,24 @@ pub struct IPlayer {
     _opaque: [u8; 0],
 }
 
+/// Slot of `IPlayerPool::getPlayerSpawnDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_SPAWN_DISPATCHER: usize = 9;
+#[cfg(target_env = "msvc")]
+const SLOT_SPAWN_DISPATCHER: usize = 8;
+
+/// Slot of `IPlayerPool::getPlayerTextDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_TEXT_DISPATCHER: usize = 12;
+#[cfg(target_env = "msvc")]
+const SLOT_TEXT_DISPATCHER: usize = 11;
+
+/// Slot of `IPlayerPool::getPlayerDamageDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_DAMAGE_DISPATCHER: usize = 15;
+#[cfg(target_env = "msvc")]
+const SLOT_DAMAGE_DISPATCHER: usize = 14;
+
 /// Opaque handle for `IEventDispatcher<PlayerConnectEventHandler>*`.
 #[repr(C)]
 pub struct IPlayerConnectDispatcher {
@@ -140,6 +158,102 @@ impl PlayerConnectHandler {
     }
 }
 
+/// Opaque handle for `IEventDispatcher<PlayerSpawnEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerSpawnDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerTextEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerTextDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<PlayerDamageEventHandler>*`.
+#[repr(C)]
+pub struct IPlayerDamageDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// Writes a handler vtable struct for both ABIs — the server calls through it,
+/// so the convention is the platform's: `extern "C"` on Itanium, `thiscall`
+/// on MSVC. None of these handlers declares a virtual destructor, so the slot
+/// numbering is the declaration order on both.
+macro_rules! handler_vtable {
+    (
+        $(#[$meta:meta])*
+        $name:ident for $handler:ident {
+            $($field:ident: fn($($arg:ty),* $(,)?) $(-> $ret:ty)?),* $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[cfg(not(target_env = "msvc"))]
+        #[repr(C)]
+        pub struct $name {
+            $(pub $field: unsafe extern "C" fn(*mut $handler, $($arg),*) $(-> $ret)?),*
+        }
+
+        $(#[$meta])*
+        #[cfg(target_env = "msvc")]
+        #[repr(C)]
+        pub struct $name {
+            $(pub $field: unsafe extern "thiscall" fn(*mut $handler, $($arg),*) $(-> $ret)?),*
+        }
+
+        /// Object the server calls through [`
+        #[doc = stringify!($name)]
+        /// `]. Layout: vtable pointer at offset 0, like any C++ object with
+        /// virtuals. The server keeps the pointer, so it must outlive the
+        /// registration.
+        #[repr(C)]
+        pub struct $handler {
+            vtable: *const $name,
+        }
+
+        // SAFETY: handlers are only ever touched on the server's main thread.
+        unsafe impl Send for $handler {}
+        unsafe impl Sync for $handler {}
+
+        impl $handler {
+            /// Builds a handler backed by `vtable`.
+            #[must_use]
+            pub fn new(vtable: *const $name) -> Self {
+                Self { vtable }
+            }
+        }
+    };
+}
+
+handler_vtable! {
+    /// `PlayerSpawnEventHandler` — `onPlayerRequestSpawn` returning `false`
+    /// denies the spawn.
+    PlayerSpawnHandlerVTable for PlayerSpawnHandler {
+        on_player_request_spawn: fn(*mut IPlayer) -> bool,
+        on_player_spawn: fn(*mut IPlayer),
+    }
+}
+
+handler_vtable! {
+    /// `PlayerTextEventHandler` — `onPlayerText` returning `false` blocks the
+    /// message; `onPlayerCommandText` returning `true` marks the command as
+    /// handled.
+    PlayerTextHandlerVTable for PlayerTextHandler {
+        on_player_text: fn(*mut IPlayer, StringView) -> bool,
+        on_player_command_text: fn(*mut IPlayer, StringView) -> bool,
+    }
+}
+
+handler_vtable! {
+    /// `PlayerDamageEventHandler`. `killer` is null when nobody killed the
+    /// player, and `part` is a `BodyPart` value.
+    PlayerDamageHandlerVTable for PlayerDamageHandler {
+        on_player_death: fn(*mut IPlayer, *mut IPlayer, i32),
+        on_player_take_damage: fn(*mut IPlayer, *mut IPlayer, f32, u32, i32),
+        on_player_give_damage: fn(*mut IPlayer, *mut IPlayer, f32, u32, i32),
+    }
+}
+
 /// `ICore::getPlayers()` — the server's player pool.
 ///
 /// # Safety
@@ -207,6 +321,61 @@ pub unsafe fn add_player_connect_handler(
     unsafe { add(this, handler, 0) }
 }
 
+/// Writes the `get<X>Dispatcher` + `add_<x>_handler` pair for one event group.
+macro_rules! dispatcher_pair {
+    ($getter:ident -> $dispatcher:ident @ $slot:ident, $adder:ident($handler:ident)) => {
+        /// The pool's dispatcher for this event group.
+        ///
+        /// # Safety
+        /// `pool` must come from [`player_pool`].
+        #[must_use]
+        pub unsafe fn $getter(pool: *mut IPlayerPool) -> *mut $dispatcher {
+            #[cfg(not(target_env = "msvc"))]
+            type GetFn = unsafe extern "C" fn(*mut u8) -> *mut $dispatcher;
+            #[cfg(target_env = "msvc")]
+            type GetFn = unsafe extern "thiscall" fn(*mut u8) -> *mut $dispatcher;
+
+            let Some((this, f_ptr)) =
+                (unsafe { super::vtable::secondary_call_target_ptr(pool.cast::<u8>(), 0, $slot) })
+            else {
+                return std::ptr::null_mut();
+            };
+            let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
+            unsafe { get(this) }
+        }
+
+        /// Registers `handler` on the dispatcher (`addEventHandler`, slot [0]).
+        ///
+        /// Returns what the server returned: `false` means it was already
+        /// registered.
+        ///
+        /// # Safety
+        /// Both pointers must be valid, and `handler` must outlive the
+        /// registration.
+        pub unsafe fn $adder(dispatcher: *mut $dispatcher, handler: *mut $handler) -> bool {
+            #[cfg(not(target_env = "msvc"))]
+            type AddFn = unsafe extern "C" fn(*mut u8, *mut $handler, i8) -> bool;
+            #[cfg(target_env = "msvc")]
+            type AddFn = unsafe extern "thiscall" fn(*mut u8, *mut $handler, i8) -> bool;
+
+            let Some((this, f_ptr)) = (unsafe {
+                super::vtable::secondary_call_target_ptr(dispatcher.cast::<u8>(), 0, 0)
+            }) else {
+                return false;
+            };
+            let add: AddFn = unsafe { std::mem::transmute(f_ptr) };
+            unsafe { add(this, handler, 0) }
+        }
+    };
+}
+
+dispatcher_pair!(player_spawn_dispatcher -> IPlayerSpawnDispatcher @ SLOT_SPAWN_DISPATCHER,
+                 add_player_spawn_handler(PlayerSpawnHandler));
+dispatcher_pair!(player_text_dispatcher -> IPlayerTextDispatcher @ SLOT_TEXT_DISPATCHER,
+                 add_player_text_handler(PlayerTextHandler));
+dispatcher_pair!(player_damage_dispatcher -> IPlayerDamageDispatcher @ SLOT_DAMAGE_DISPATCHER,
+                 add_player_damage_handler(PlayerDamageHandler));
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +394,38 @@ mod tests {
             assert_eq!(SLOT_GET_PLAYERS, 7);
             assert_eq!(SLOT_CONNECT_DISPATCHER, 9);
         }
+    }
+
+    #[test]
+    fn the_other_dispatcher_slots_match_the_dump() {
+        // From the `PlayerPool` vtable of the official `omp-server`:
+        // [9] spawn, [10] connect, [12] text, [15] damage.
+        #[cfg(not(target_env = "msvc"))]
+        {
+            assert_eq!(SLOT_SPAWN_DISPATCHER, 9);
+            assert_eq!(SLOT_TEXT_DISPATCHER, 12);
+            assert_eq!(SLOT_DAMAGE_DISPATCHER, 15);
+        }
+        #[cfg(target_env = "msvc")]
+        {
+            assert_eq!(SLOT_SPAWN_DISPATCHER, 8);
+            assert_eq!(SLOT_TEXT_DISPATCHER, 11);
+            assert_eq!(SLOT_DAMAGE_DISPATCHER, 14);
+        }
+    }
+
+    #[test]
+    fn every_handler_vtable_has_the_slots_its_header_declares() {
+        let pointer = std::mem::size_of::<*const ()>();
+        assert_eq!(std::mem::size_of::<PlayerSpawnHandlerVTable>(), 2 * pointer);
+        assert_eq!(std::mem::size_of::<PlayerTextHandlerVTable>(), 2 * pointer);
+        assert_eq!(
+            std::mem::size_of::<PlayerDamageHandlerVTable>(),
+            3 * pointer
+        );
+        assert_eq!(std::mem::offset_of!(PlayerSpawnHandler, vtable), 0);
+        assert_eq!(std::mem::offset_of!(PlayerTextHandler, vtable), 0);
+        assert_eq!(std::mem::offset_of!(PlayerDamageHandler, vtable), 0);
     }
 
     #[test]

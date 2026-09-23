@@ -154,6 +154,13 @@ Additive public API plus two deprecations.
   10/9) and the whole path exercised with an NPC on Linux and on Windows.
   `DisconnectReason::from_raw` maps an unknown value to `Custom` rather than
   transmuting it into a variant that does not exist.
+- **Spawn, text and damage events**, through the same mechanism:
+  `player_spawn_dispatcher`, `player_text_dispatcher` and
+  `player_damage_dispatcher` with their handler vtables. `onPlayerRequestSpawn`
+  returning `false` denies a spawn and `onPlayerText` returning `false` blocks a
+  message, as the server defines. Spawn was exercised with an NPC on both
+  platforms; text and damage have their registration verified, and their slots
+  pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
 - **`samp::omp_amx::AmxOmpExt` — the AMX functions open.mp adds.**
   `native_by_index`, `make_addr`, `str_size` and the byte-swap helpers, as
   methods on `Amx`. Each one first checks that the SDK read the function table

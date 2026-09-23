@@ -32,8 +32,13 @@ pub use component_api::{OmpComponentHandle, component_name, component_version};
 pub use core::{LogLevel, core_log_ln, core_log_ln_u8, core_print_ln, core_print_ln_u8};
 pub use events::{PawnEventHandler, PawnEventHandlerVTable};
 pub use players::{
-    DisconnectReason, IPlayer, IPlayerConnectDispatcher, IPlayerPool, PlayerConnectHandler,
-    PlayerConnectHandlerVTable, add_player_connect_handler, player_connect_dispatcher, player_pool,
+    DisconnectReason, IPlayer, IPlayerConnectDispatcher, IPlayerDamageDispatcher, IPlayerPool,
+    IPlayerSpawnDispatcher, IPlayerTextDispatcher, PlayerConnectHandler,
+    PlayerConnectHandlerVTable, PlayerDamageHandler, PlayerDamageHandlerVTable, PlayerSpawnHandler,
+    PlayerSpawnHandlerVTable, PlayerTextHandler, PlayerTextHandlerVTable,
+    add_player_connect_handler, add_player_damage_handler, add_player_spawn_handler,
+    add_player_text_handler, player_connect_dispatcher, player_damage_dispatcher, player_pool,
+    player_spawn_dispatcher, player_text_dispatcher,
 };
 pub use server::{
     AmxFunctionTable, IEventDispatcherPawn, IPawnScript, PAWN_COMPONENT_UID, PawnComponent,

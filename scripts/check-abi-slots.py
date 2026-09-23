@@ -274,6 +274,26 @@ def check_itanium(server: pathlib.Path, report: Report) -> None:
         slot_of(script, "PawnScript::GetAMX"),
     )
 
+    pool = elf_vtable(server / "omp-server", "PlayerPool")
+    for label, const, needle in (
+        ("IPlayerPool::getPlayerSpawnDispatcher", "SLOT_SPAWN_DISPATCHER", "getPlayerSpawnDispatcher"),
+        ("IPlayerPool::getPlayerConnectDispatcher", "SLOT_CONNECT_DISPATCHER", "getPlayerConnectDispatcher"),
+        ("IPlayerPool::getPlayerTextDispatcher", "SLOT_TEXT_DISPATCHER", "getPlayerTextDispatcher"),
+        ("IPlayerPool::getPlayerDamageDispatcher", "SLOT_DAMAGE_DISPATCHER", "getPlayerDamageDispatcher"),
+    ):
+        report.check(
+            label,
+            rust_const("samp-sdk/src/omp/players.rs", const, msvc=False),
+            slot_of(pool, needle),
+        )
+
+    core_class = elf_vtable(server / "omp-server", "Core")
+    report.check(
+        "ICore::getPlayers",
+        rust_const("samp-sdk/src/omp/players.rs", "SLOT_GET_PLAYERS", msvc=False),
+        slot_of(core_class, "Core::getPlayers"),
+    )
+
     core = elf_vtable(server / "omp-server", "ComponentList")
     report.check(
         "IComponentList::queryComponent",
