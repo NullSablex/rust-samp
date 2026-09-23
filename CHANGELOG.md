@@ -77,6 +77,15 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **Encodings beyond the two obvious ones.** `set_default_encoding` always
+  accepted any `encoding_rs` encoding, but the module re-exported only
+  `WINDOWS_1251` and `WINDOWS_1252`, so the rest were invisible. It now
+  re-exports the ones servers actually run — 1250, 1253, 1254, 1256, 1257,
+  `ISO_8859_2` and `UTF_8` — with a table naming the communities behind each.
+- **`set_default_encoding_by_label("windows-1254")`.** Resolves an encoding from
+  the name a configuration file carries, following the WHATWG label rules, so a
+  multi-region plugin can read it from the server config instead of compiling it
+  in. An unknown label returns `None` and leaves the current encoding alone.
 - **`samp_sdk::exports` covers the open.mp-only slots `[44..=51]`**:
   `PushStringLen`, `SetStringLen`, `Swap16/32/64`, `GetNativeByIndex`,
   `MakeAddr` and `StrSize`, with their raw signatures in `samp_sdk::raw`. The
@@ -189,6 +198,9 @@ deprecations reach plugin authors through it, and it now requires
 
 ### Docs
 
+- `docs/encoding.md` gains the encoding table, the runtime selection by label
+  and a section on multi-byte encodings — Pawn counts cells, so `strlen` and
+  indexing mean something different there.
 - `docs/omp-native.md` gains a section on the extended AMX function table: what
   the eight extra entries are and why the wrapper refuses them outside a native
   component.

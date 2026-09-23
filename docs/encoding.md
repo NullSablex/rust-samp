@@ -14,6 +14,62 @@ A Pawn string is a sequence of bytes in a specific code page:
 Rust strings are always UTF-8. Without an explicit conversion, accented
 or Cyrillic characters end up corrupted.
 
+## Which encodings are available
+
+`set_default_encoding` takes any `&'static Encoding`, so **every encoding
+`encoding_rs` implements** — the whole WHATWG set — can be used. These are
+re-exported from `samp::encoding`, so a plugin does not have to depend on
+`encoding_rs` to name one:
+
+| Encoding | Where it is used |
+| -------- | ---------------- |
+| `WINDOWS_1250` | Polish, Czech, Slovak, Hungarian, Romanian, Croatian |
+| `WINDOWS_1251` | Russian and other Cyrillic scripts |
+| `WINDOWS_1252` | Western Europe, Latin America (the default) |
+| `WINDOWS_1253` | Greek |
+| `WINDOWS_1254` | Turkish |
+| `WINDOWS_1256` | Arabic |
+| `WINDOWS_1257` | Baltic — Lithuanian, Latvian, Estonian |
+| `ISO_8859_2` | Central Europe, for scripts predating CP1250 |
+| `UTF_8` | Open Multiplayer scripts written in UTF-8 |
+
+Anything else still works through `encoding_rs` directly, or by label below.
+
+## Choosing the encoding at runtime
+
+A plugin whose users span several regions should not compile the encoding in.
+`set_default_encoding_by_label` resolves the name a configuration file would
+carry:
+
+```rust
+match samp::encoding::set_default_encoding_by_label(&configured) {
+    Some(enc) => info!("encoding: {}", enc.name()),
+    None => warn!("unknown encoding {configured:?}; keeping the current one"),
+}
+```
+
+Label matching follows the [WHATWG Encoding Standard][labels]: case and
+surrounding whitespace are ignored, and the documented aliases work, so
+`windows-1251`, `WINDOWS-1251` and `x-cp1251` all name the same encoding. An
+unknown label returns `None` and leaves the current encoding untouched — worth
+reporting, since the alternative is running in the wrong encoding silently.
+
+Aliases do not always say what they look like: `cyrillic` is ISO-8859-5, **not**
+Windows-1251.
+
+[labels]: https://encoding.spec.whatwg.org/#names-and-labels
+
+## Multi-byte encodings
+
+Pawn assumes one cell holds one character. That is true for every 8-bit encoding
+in the table, and false for UTF-8, GBK, Big5, Shift_JIS and EUC-KR, where a
+character may take several bytes.
+
+Converting in and out of Rust stays correct. What changes is the Pawn side:
+`strlen` counts bytes rather than characters, and `text[3]` is the fourth byte,
+not the fourth character. Pick a multi-byte encoding only when the script was
+written for it.
+
 ## Enabling the feature
 
 From crates.io:
