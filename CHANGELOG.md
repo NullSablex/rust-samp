@@ -195,6 +195,16 @@ deprecations reach plugin authors through it, and it now requires
 - GitHub Actions: bumps to the `codeql`, `scorecard`, `docs` and `release`
   workflows (#58, #60).
 
+### Tooling
+
+- **`scripts/check-abi-slots.py`** re-derives every vtable slot index from the
+  official server binaries and fails when the source disagrees. On Linux the
+  `.so` files keep their symbols, so each slot is identified by name; on Windows
+  it locates vtables through RTTI and identifies methods by the `ret N` of each
+  slot — which is exactly what pins the `create` overload pair MSVC emits in
+  reverse. It would have caught all four defects above on its own. Not part of
+  CI, since it needs servers that cannot be redistributed.
+
 ### Fuzzing
 
 - **Harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The

@@ -75,6 +75,23 @@ feature flags, conventions).
 - For non-trivial refactors, plan first: list the cases
   (refactor / keep / unsure) with rationale before writing code.
 
+## Checking the ABI constants
+
+The SDK hardcodes vtable slot indices — each one a claim about a binary someone
+else built. A wrong index fails quietly: the server returns a plausible value
+from the wrong virtual function, and on Windows the stack is corrupted on top of
+that. Four such defects shipped in v3.5.0.
+
+```sh
+scripts/check-abi-slots.py                        # default install paths
+scripts/check-abi-slots.py --linux DIR --win DIR  # servers elsewhere
+```
+
+It re-derives every index from the official `Timers.so`, `Pawn.so`, `Timers.dll`
+and `omp-server`, and fails when the source disagrees. Run it after touching
+anything under `samp-sdk/src/omp/`, and before a release. Not part of CI: it
+needs the official servers, which cannot be redistributed.
+
 ## Fuzzing
 
 `samp_sdk::debug::AmxDbg::parse` reads bytes the plugin did not produce — the
