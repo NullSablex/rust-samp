@@ -20,9 +20,12 @@ default (strict) provenance and Stacked Borrows checks. That part changes no
 behavior on a real server — it removes undefined behavior the compiler was free
 to exploit, not crashes observed in the field.
 
-The per-crate sections come first, then the ones that belong to the repository
-rather than to any published crate. Every code change below is in
-`rust-samp-sdk`; the other crates only follow it.
+Beyond the fixes, the release adds what plugin authors had to hand-roll: the
+generated Pawn include, a queue back to the main thread, typed calls into Pawn
+publics, and encodings that stop losing characters quietly.
+
+The per-crate sections come first, then the ones belonging to the repository
+rather than to any published crate.
 
 ### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0
 
@@ -192,9 +195,9 @@ deprecations reach plugin authors through it, and it now requires
 - GitHub Actions: bumps to the `codeql`, `scorecard`, `docs` and `release`
   workflows (#58, #60).
 
-### Tests
+### Fuzzing
 
-- **Fuzzing harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The
+- **Harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The
   debug block comes from a `.amx` file on the server's disk, which the plugin
   did not produce, so the parser's contract is that no input panics or hangs it.
   A first run of 6.3 million cases over two minutes found nothing — the
@@ -215,10 +218,13 @@ deprecations reach plugin authors through it, and it now requires
 
 ### Docs
 
-- `docs/encoding.md` gains the encoding table, the runtime selection by label,
-  the checked-encoding section
-  and a section on multi-byte encodings — Pawn counts cells, so `strlen` and
-  indexing mean something different there.
+- `docs/encoding.md` gains the encoding table, selecting one by label at
+  runtime, reporting a lossy conversion, and a section on multi-byte encodings —
+  Pawn counts cells, so `strlen` and indexing mean something different there.
+- `docs/natives.md` gains the generated-include workflow and the Rust-to-Pawn
+  type table.
+- `docs/exec-public.md` is reorganized around `Amx::call_public`, with
+  `exec_public!` kept for the argument types the method does not take.
 - `docs/omp-native.md` gains a section on the extended AMX function table: what
   the eight extra entries are and why the wrapper refuses them outside a native
   component.
