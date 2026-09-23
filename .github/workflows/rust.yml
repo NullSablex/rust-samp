@@ -102,6 +102,44 @@ jobs:
         retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Undefined behaviour (Miri)
+  # ---------------------------------------------------------------------------
+  # The SDK is mostly FFI: raw pointers into the AMX VM and into C++ objects the
+  # server owns. The regular test run exercises that code but cannot see an
+  # aliasing or provenance violation, which is exactly the class of bug the
+  # compiler is free to miscompile later. Miri does, on the same i686 target the
+  # plugins ship for.
+  #
+  # Nightly-only, so it is a separate job: a nightly regression here must not
+  # gate `ci-status` (see `continue-on-error` and the gate below).
+  miri:
+    name: miri (i686)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: write   # rust-cache (cache write)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust (nightly + miri)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # nightly
+        with:
+          toolchain: nightly
+          components: miri, rust-src
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          cache-all-crates: true
+          prefix-key: "miri-v1"
+
+      # Library crates only: the examples pull in C build scripts that Miri
+      # cannot run, and proc-macro crates are not supported by Miri at all.
+      - name: Run Miri
+        run: cargo miri test -p rust-samp-sdk -p rust-samp --target i686-unknown-linux-gnu
+
+  # ---------------------------------------------------------------------------
   # Formatting
   # ---------------------------------------------------------------------------
   # Kept out of the build matrix: rustfmt is target-independent, so running it
@@ -135,7 +173,7 @@ jobs:
   ci-status:
     name: ci-status
     if: always()
-    needs: [build, rustfmt]
+    needs: [build, rustfmt, miri]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -144,8 +182,10 @@ jobs:
         env:
           BUILD_RESULT: ${{ needs.build.result }}
           RUSTFMT_RESULT: ${{ needs.rustfmt.result }}
+          MIRI_RESULT: ${{ needs.miri.result }}
         run: |
           echo "build:   $BUILD_RESULT"
           echo "rustfmt: $RUSTFMT_RESULT"
+          echo "miri:    $MIRI_RESULT (advisory — does not gate the merge)"
           [ "$BUILD_RESULT" = "success" ] || exit 1
           [ "$RUSTFMT_RESULT" = "success" ] || exit 1

@@ -106,6 +106,13 @@ No changes of its own. It re-exports `samp::omp::vtable`, so the new helpers and
 the two deprecations reach plugin authors through it, and it now requires
 `rust-samp-sdk` 3.5.0 — which is where the `on_tick` fix lives.
 
+### CI
+
+- New advisory `miri (i686)` job running `cargo miri test` over the library
+  crates on `i686-unknown-linux-gnu`. It reports undefined behaviour — the class
+  of bug the FFI layer is exposed to and the regular test run cannot see. Being
+  nightly-only, it does not gate the merge.
+
 ### `rust-samp-codegen` (lib `samp_codegen`) — 1.4.0
 
 Unchanged — no macro changes.
