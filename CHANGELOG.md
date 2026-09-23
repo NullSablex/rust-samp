@@ -73,6 +73,12 @@ Additive public API plus two deprecations.
   variants, `component_name`, `component_version`, the repeating timer helpers)
   rebuilt the function pointer from a `usize`, which carries no provenance.
   They now use the `_ptr` helpers below.
+- **A `data_only` view panicked instead of failing.** `Amx::data_only` builds a
+  view for reading VM memory with no function table, and its documentation says
+  that calls needing one "will fail" — they asserted instead, which on an FFI
+  boundary means aborting the server. Every such call now returns
+  `AmxError::NotFound`. The scenario is a debugger or a paused VM, where a
+  plugin holds the `AMX*` without a call context.
 - **`Amx::call_native`** rebuilt the native's function pointer by
   `transmute`-ing the `u32` address read from the AMX header. It now goes
   through `std::ptr::with_exposed_provenance`, the sanctioned int-to-pointer
@@ -194,6 +200,13 @@ deprecations reach plugin authors through it, and it now requires
 - Docs toolchain: `pymdown-extensions` 11.0.2 → 12.0.1 (#62).
 - GitHub Actions: bumps to the `codeql`, `scorecard`, `docs` and `release`
   workflows (#58, #60).
+
+### Internal
+
+- `Runtime::logger()`, which asserted when the server passed no `logprintf` —
+  every native Open Multiplayer run — is replaced by `try_logger()`, returning
+  `Option`. Internal to the crate (`Runtime` is `pub(crate)`), so no plugin sees
+  the change.
 
 ### Tooling
 

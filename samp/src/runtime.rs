@@ -185,20 +185,26 @@ impl Runtime {
         }
     }
 
+    /// The server's `logprintf`, when there is one.
+    ///
+    /// `None` under native Open Multiplayer: that server never passes the
+    /// SA-MP `ppData` table, so there is no `logprintf` to hand out — output
+    /// goes through `ICore`'s logger instead. Use [`Runtime::log`], which picks
+    /// the right one for the running mode.
     #[inline]
-    pub fn logger(&self) -> Logprintf {
+    #[must_use]
+    pub fn try_logger(&self) -> Option<Logprintf> {
         let inner = self.inner();
-        assert!(
-            !inner.server_exports.is_null(),
-            "server_exports not initialized"
-        );
-        unsafe {
+        if inner.server_exports.is_null() {
+            return None;
+        }
+        Some(unsafe {
             inner
                 .server_exports
                 .offset(ServerData::Logprintf.into())
                 .cast::<Logprintf>()
                 .read()
-        }
+        })
     }
 
     pub fn disable_default_logger(&self) {
@@ -221,8 +227,7 @@ impl Runtime {
     /// the `log` crate level is mapped to Open Multiplayer's `LogLevel` automatically.
     pub fn log<T: std::fmt::Display>(&self, message: T) {
         // SA-MP mode: routes via the server's logprintf.
-        if !self.inner().server_exports.is_null() {
-            let log_fn = self.logger();
+        if let Some(log_fn) = self.try_logger() {
             let msg = format!("{message}");
             if let Ok(cstr) = CString::new(msg) {
                 log_fn(cstr.as_ptr());

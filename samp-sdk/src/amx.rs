@@ -77,6 +77,22 @@ impl Amx {
         Amx { ptr, fn_table: 0 }
     }
 
+    /// The exported function table, or [`AmxError::NotFound`] when this `Amx`
+    /// has none.
+    ///
+    /// [`Amx::data_only`] builds exactly that: a view for reading VM memory,
+    /// with no table behind it. Every method that calls into the VM goes
+    /// through here first, so such a call reports an error instead of taking
+    /// the process down — the panic that used to happen here would unwind into
+    /// the server's C++ frames.
+    #[inline]
+    fn table(&self) -> AmxResult<usize> {
+        if self.fn_table == 0 {
+            return Err(AmxError::NotFound);
+        }
+        Ok(self.fn_table)
+    }
+
     /// Registers plugin natives in the VM via `amx_Register`.
     ///
     /// Generally called in `AmxLoad` — the `#[native]` macro + `initialize_plugin!`
@@ -87,7 +103,7 @@ impl Amx {
     /// `AmxError::NotFound` if a listed native is not declared in the script,
     /// or VM state errors if called outside the load cycle.
     pub fn register(&self, natives: &[AMX_NATIVE_INFO]) -> AmxResult<()> {
-        let register = Register::from_table(self.fn_table);
+        let register = Register::from_table(self.table()?);
         // `usize` -> `i32`: the `amx_Register` ABI takes the count as `int`.
         // Practical truncation would require >2 billion natives — impossible.
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
@@ -104,7 +120,7 @@ impl Amx {
             return Err(AmxError::Memory);
         }
 
-        let allot = Allot::from_table(self.fn_table);
+        let allot = Allot::from_table(self.table()?);
 
         let mut amx_addr = 0;
         let mut phys_addr = 0;
@@ -140,7 +156,7 @@ impl Amx {
     /// (stack or heap overflow), `Divide`, `Native` (a called native
     /// returned an error) or `Index` if `index` does not match a valid function.
     pub fn exec(&self, index: AmxExecIdx) -> AmxResult<i32> {
-        let exec = Exec::from_table(self.fn_table);
+        let exec = Exec::from_table(self.table()?);
         let mut retval = 0;
 
         amx_try!(exec(self.ptr, &raw mut retval, index.into()));
@@ -240,7 +256,7 @@ impl Amx {
     /// `AmxError::NotFound` if `name` contains an interior NUL byte or if the
     /// native is not registered in the VM.
     pub fn find_native(&self, name: &str) -> AmxResult<i32> {
-        let find_native = FindNative::from_table(self.fn_table);
+        let find_native = FindNative::from_table(self.table()?);
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut index = -1;
 
@@ -388,7 +404,7 @@ impl Amx {
     /// `AmxError::NotFound` if `name` contains an interior NUL byte or if the
     /// public function is not declared in the Pawn script.
     pub fn find_public(&self, name: &str) -> AmxResult<AmxExecIdx> {
-        let find_public = FindPublic::from_table(self.fn_table);
+        let find_public = FindPublic::from_table(self.table()?);
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut index = -1;
 
@@ -414,7 +430,7 @@ impl Amx {
     /// pubvar is not declared. `AmxError::MemoryAccess` if the address returned
     /// by the VM is invalid.
     pub fn find_pubvar<T: Sized + AmxPrimitive>(&self, name: &str) -> AmxResult<Ref<'_, T>> {
-        let find_pubvar = FindPubVar::from_table(self.fn_table);
+        let find_pubvar = FindPubVar::from_table(self.table()?);
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut cell_ptr = 0;
 
@@ -429,7 +445,7 @@ impl Amx {
     /// Propagates any [`AmxError`] returned by `amx_Flags` — in practice, it
     /// only fails if the internal `AMX*` is corrupted or null.
     pub fn flags(&self) -> AmxResult<AmxFlags> {
-        let flags = Flags::from_table(self.fn_table);
+        let flags = Flags::from_table(self.table()?);
         let mut value: u16 = 0;
 
         amx_try!(flags(self.ptr, &raw mut value));
@@ -470,7 +486,7 @@ impl Amx {
             std::ptr::addr_of_mut!((*amx).flags)
                 .write_unaligned(saved | i32::from(AmxFlags::BROWSE.bits()));
         }
-        let exec = Exec::from_table(self.fn_table);
+        let exec = Exec::from_table(self.table().ok()?);
         // `retval` receives `(cell)amx_opcodelist` — a pointer to the table. On the
         // 32-bit SA-MP/open.mp VMs `cell` and `void*` are both 32-bit (the VM
         // asserts `sizeof(cell)==sizeof(void*)`), so it round-trips through i32.
@@ -498,7 +514,7 @@ impl Amx {
     /// `AmxError::MemoryAccess` if `address` does not correspond to a valid
     /// cell in the Pawn script address space.
     pub fn get_ref<T: Sized + AmxPrimitive>(&self, address: i32) -> AmxResult<Ref<'_, T>> {
-        let get_addr = GetAddr::from_table(self.fn_table);
+        let get_addr = GetAddr::from_table(self.table()?);
         let mut dest = 0;
         let mut dest_addr = std::ptr::addr_of_mut!(dest);
 
@@ -543,7 +559,7 @@ impl Amx {
     /// Propagates any [`AmxError`] from `amx_Push` — typically
     /// `AmxError::StackError`/`StackLow` if the stack is full.
     pub fn push<'a, T: AmxCell<'a>>(&'a self, value: T) -> AmxResult<()> {
-        let push = Push::from_table(self.fn_table);
+        let push = Push::from_table(self.table()?);
 
         amx_try!(push(self.ptr, value.as_cell()));
 
@@ -556,7 +572,7 @@ impl Amx {
     /// `AmxError::MemoryAccess` if `value` does not point to valid memory in
     /// the script space. Other [`AmxError`] are propagated from `amx_StrLen`.
     pub fn strlen(&self, value: *const i32) -> AmxResult<usize> {
-        let strlen = StrLen::from_table(self.fn_table);
+        let strlen = StrLen::from_table(self.table()?);
         let mut len = 0;
         amx_try!(strlen(value, &raw mut len));
         // `len` returned by `amx_StrLen` is always >= 0 (a negative value
@@ -944,6 +960,8 @@ impl Drop for Allocator<'_> {
 #[cfg(test)]
 mod vm_tests {
     use super::Amx;
+    use crate::consts::AmxExecIdx;
+    use crate::error::AmxError;
     use crate::raw::types::{AMX, AMX_HEADER};
     use std::mem::MaybeUninit;
 
@@ -1078,6 +1096,31 @@ mod vm_tests {
             assert_eq!(near_gap.len(), 8);
             // Unreadable start.
             assert_eq!(amx.read_bytes(100, 4), None);
+        });
+    }
+
+    #[test]
+    fn data_only_reports_an_error_instead_of_panicking() {
+        // The doc promises that calls needing the function table "fail" on a
+        // `data_only` view. They used to panic, which on an FFI boundary means
+        // aborting the server.
+        let mut data = vec![0u8; 256];
+        with_amx(&mut data, 40, 100, 64, 192, |amx| {
+            let ptr = amx.amx().expect("non-null").as_ptr();
+            let view = Amx::data_only(ptr);
+
+            assert!(matches!(
+                view.exec(AmxExecIdx::Main),
+                Err(AmxError::NotFound)
+            ));
+            assert!(matches!(view.find_public("OnFoo"), Err(AmxError::NotFound)));
+            assert!(matches!(view.find_native("Foo"), Err(AmxError::NotFound)));
+            assert!(matches!(view.flags(), Err(AmxError::NotFound)));
+            assert!(matches!(view.get_ref::<i32>(0), Err(AmxError::NotFound)));
+            assert!(matches!(view.push(1i32), Err(AmxError::NotFound)));
+            assert!(matches!(view.register(&[]), Err(AmxError::NotFound)));
+            // The `Option`-returning path reports the same absence as `None`.
+            assert!(view.opcode_table(4).is_none());
         });
     }
 
