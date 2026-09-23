@@ -330,3 +330,42 @@ support native Open Multiplayer — use it only for SA-MP-only builds.
 > `samp-only` does **not** prevent the plugin from running on
 > Open Multiplayer — it forces legacy mode. Use it when you want to
 > guarantee no Open Multiplayer code is compiled into the binary.
+
+## The extended AMX function table
+
+SA-MP hands a plugin a table of 44 `amx_*` pointers. Open Multiplayer's
+`IPawnComponent::getAmxFunctions()` returns 52: the same 44, plus eight the
+SA-MP ABI never had.
+
+| Index | Function | What it is for |
+| :---: | -------- | -------------- |
+| 44 | `amx_PushStringLen` | Push a string of a known length (no NUL scan). |
+| 45 | `amx_SetStringLen` | Write a string of a known length into a cell array. |
+| 46–48 | `amx_Swap16/32/64` | Reverse byte order in place. |
+| 49 | `amx_GetNativeByIndex` | Name and address of a registered native. |
+| 50 | `amx_MakeAddr` | Physical pointer back to an AMX address. |
+| 51 | `amx_StrSize` | Size in bytes of an AMX string, terminator included. |
+
+`samp::omp_amx::AmxOmpExt` wraps them as methods on `Amx`:
+
+```rust
+use samp::omp_amx::{extended_table_available, AmxOmpExt};
+
+if extended_table_available() {
+    let native = amx.native_by_index(0)?;
+}
+```
+
+**Every method checks first.** Reading entry 44 of a 44-entry table walks past
+its end and calls whatever follows it in memory, so the methods return
+`AmxError::NotFound` unless the SDK itself read the table from
+`getAmxFunctions()` — that is, unless the plugin is running as a native Open
+Multiplayer component, after `on_ready`.
+
+A legacy plugin under Open Multiplayer gets `NotFound` too. It receives its
+table through SA-MP's `Load()`, and nothing in that path states how many entries
+it has; claiming 52 because the server happens to be Open Multiplayer would be a
+guess, and a wrong guess here calls an arbitrary address.
+
+`extended_table_available()` reports the same thing up front, for a plugin that
+wants to choose a strategy once instead of handling the error at each call.

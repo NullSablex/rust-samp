@@ -63,6 +63,7 @@ pub mod logger;
 #[cfg(not(feature = "samp-only"))]
 pub(crate) mod macros;
 pub mod mainthread;
+pub mod omp_amx;
 pub mod plugin;
 pub(crate) mod runtime;
 

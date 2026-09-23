@@ -255,6 +255,14 @@ where
 /// [`crate::plugin::pawn_include`] works in either mode.
 pub fn store_native_decls(plugin_name: &'static str, decls: Vec<&'static str>) {
     Runtime::get().set_native_decls(plugin_name, decls);
+}
+
+/// Writes the generated Pawn include when `SAMP_PAWN_INCLUDE` names a path.
+///
+/// Emitted by the entry points right after [`store_native_decls`], as a step of
+/// its own: storing the declarations and writing a file are different things,
+/// and the caller should be able to see both in the generated code.
+pub fn emit_pawn_include_if_requested() {
     crate::plugin::write_pawn_include_if_requested();
 }
 

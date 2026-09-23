@@ -17,6 +17,7 @@
 //! native bool:Counter_IsAtMax();
 //! native bool:Counter_WorkAsync(delay_ms);   // replies via OnCounterWorkDone(delay_ms)
 //! native Counter_NotifyScore(playerid);      // fires OnCounterScored(playerid, reason[], Float:mult)
+//! native Counter_ListNatives(limit);         // open.mp component only; -1 elsewhere
 //! ```
 
 use log::info;
@@ -52,6 +53,33 @@ impl SampPlugin for Counter {
 }
 
 impl Counter {
+    /// Lists the natives the script registered, via the Open Multiplayer-only
+    /// `amx_GetNativeByIndex`.
+    ///
+    /// Returns the count, or `-1` when the extended AMX table is not available
+    /// — which is every SA-MP server and every legacy plugin, since only a
+    /// native Open Multiplayer component gets the 52-entry table.
+    #[native(name = "Counter_ListNatives")]
+    fn list_natives(&mut self, amx: &Amx, limit: i32) -> AmxResult<i32> {
+        use samp::omp_amx::AmxOmpExt;
+
+        if !samp::omp_amx::extended_table_available() {
+            info!("extended AMX table unavailable (not an open.mp component)");
+            return Ok(-1);
+        }
+
+        let mut listed = 0;
+        for index in 0..limit.max(0) {
+            let Ok(native) = amx.native_by_index(index) else {
+                break;
+            };
+            let name = unsafe { std::ffi::CStr::from_ptr(native.name) };
+            info!("native[{index}] = {}", name.to_string_lossy());
+            listed += 1;
+        }
+        Ok(listed)
+    }
+
     /// Fires a Pawn callback with typed arguments, through `Amx::call_public`.
     ///
     /// Shows the argument types carrying the decision: `i32` and `f32` go
@@ -195,6 +223,7 @@ initialize_plugin!(
         Counter::is_at_max,
         Counter::work_async,
         Counter::notify_score,
+        Counter::list_natives,
     ],
     events: [
         Counter::on_player_connect,

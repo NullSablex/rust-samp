@@ -67,4 +67,23 @@ pub type UTF8Get = extern "C" fn(*const c_char, *mut *const c_char, *mut i32) ->
 pub type UTF8Len = extern "C" fn(*const i32, *mut i32) -> i32;
 pub type UTF8Put = extern "C" fn(*mut c_char, *mut *mut c_char, i32, i32) -> i32;
 
+// ---------------------------------------------------------------------------
+// Open Multiplayer only — slots [44..51] of `getAmxFunctions()`.
+//
+// The SA-MP export table stops at [43]; these entries exist solely in the
+// 52-slot table the open.mp Pawn component hands out. Reading them from a
+// SA-MP table walks past its end, which is why the `samp` crate gates them
+// behind the running mode.
+// ---------------------------------------------------------------------------
+
+pub type PushStringLen =
+    extern "C" fn(*mut AMX, *mut i32, *mut *mut i32, *const c_char, i32, i32, i32) -> i32;
+pub type SetStringLen = extern "C" fn(*mut i32, *const c_char, i32, i32, i32, usize) -> i32;
+pub type Swap16 = extern "C" fn(*mut u16) -> i32;
+pub type Swap32 = extern "C" fn(*mut u32) -> i32;
+pub type Swap64 = extern "C" fn(*mut u64) -> i32;
+pub type GetNativeByIndex = extern "C" fn(*const AMX, i32, *mut AMX_NATIVE_INFO) -> i32;
+pub type MakeAddr = extern "C" fn(*mut AMX, *mut i32, *mut i32) -> i32;
+pub type StrSize = extern "C" fn(*const i32, *mut i32) -> i32;
+
 pub type Logprintf = extern "C" fn(*const c_char);

@@ -77,6 +77,11 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **`samp_sdk::exports` covers the open.mp-only slots `[44..=51]`**:
+  `PushStringLen`, `SetStringLen`, `Swap16/32/64`, `GetNativeByIndex`,
+  `MakeAddr` and `StrSize`, with their raw signatures in `samp_sdk::raw`. The
+  table SA-MP provides stops at `[43]`, so these are documented as open.mp only
+  and are meant to be reached through the gated wrapper in `rust-samp`.
 - **`Amx::call_public` — typed calls into Pawn publics.** `amx.call_public("OnPlayerScored", (7, "headshot", 1.5))`,
   with the arguments in a tuple in the same order as the Pawn signature. The
   types carry what `exec_public!` makes the caller mark by hand: `&str` and
@@ -114,6 +119,14 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **`samp::omp_amx::AmxOmpExt` — the AMX functions open.mp adds.**
+  `native_by_index`, `make_addr`, `str_size` and the byte-swap helpers, as
+  methods on `Amx`. Each one first checks that the SDK read the function table
+  from `getAmxFunctions()`, and returns `AmxError::NotFound` otherwise:
+  resolving entry 44 of SA-MP's 44-entry table would read past its end and call
+  an arbitrary address. A legacy plugin under open.mp is refused for the same
+  reason — its table arrives through SA-MP's `Load()` with no stated size.
+  `extended_table_available()` reports availability up front.
 - **`samp::mainthread` — handing work back to the main thread.** A worker
   thread calls `post(closure)`; the closure runs on the main thread at the next
   tick, which is the only place the AMX VM may be touched. Jobs run in order, a
@@ -176,6 +189,9 @@ deprecations reach plugin authors through it, and it now requires
 
 ### Docs
 
+- `docs/omp-native.md` gains a section on the extended AMX function table: what
+  the eight extra entries are and why the wrapper refuses them outside a native
+  component.
 - New page **Background Work and the Main Thread** (`docs/threads.md`) with the
   worker-thread pattern, the draining rules and the guarantees.
 - `docs/internals/omp-abi.md` gains the per-ABI slot tables for

@@ -97,9 +97,25 @@ impl_export!(UTF8Get);
 impl_export!(UTF8Len);
 impl_export!(UTF8Put);
 
+// Open Multiplayer only — see the note on [`Exports`].
+impl_export!(PushStringLen);
+impl_export!(SetStringLen);
+impl_export!(Swap16);
+impl_export!(Swap32);
+impl_export!(Swap64);
+impl_export!(GetNativeByIndex);
+impl_export!(MakeAddr);
+impl_export!(StrSize);
+
 /// Indices of the `amx_*` functions in the server's `amx_Exports` table.
 ///
 /// The order is fixed by the SA-MP ABI — do not reorder.
+///
+/// Entries `[0..=43]` exist on both servers. Entries `[44..=51]` exist **only**
+/// in the 52-slot table open.mp's Pawn component returns from
+/// `getAmxFunctions()`; the SA-MP table ends at `[43]`, so resolving one of
+/// them against a SA-MP table reads past its end. The `samp` crate exposes
+/// them through `AmxOmpExt`, which checks the running mode first.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Exports {
     Align16 = 0,
@@ -146,6 +162,15 @@ pub enum Exports {
     UTF8Get = 41,
     UTF8Len = 42,
     UTF8Put = 43,
+    // --- Open Multiplayer only ---
+    PushStringLen = 44,
+    SetStringLen = 45,
+    Swap16 = 46,
+    Swap32 = 47,
+    Swap64 = 48,
+    GetNativeByIndex = 49,
+    MakeAddr = 50,
+    StrSize = 51,
 }
 
 impl From<Exports> for isize {
