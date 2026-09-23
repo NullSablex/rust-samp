@@ -40,6 +40,36 @@ impl SampPlugin for Counter {
         info!("Counter plugin unloaded. Final value={}", self.count);
     }
 
+    /// Registers a native Open Multiplayer player handler — no Pawn involved.
+    ///
+    /// `on_omp_ready` is the first point where every component is up, so the
+    /// player pool is reachable. On SA-MP this never runs, and the plugin keeps
+    /// seeing connections through the `#[event]` detour instead.
+    fn on_omp_ready(&mut self) {
+        use samp::omp::{add_player_connect_handler, player_connect_dispatcher, player_pool};
+
+        let Some(core) = samp::plugin::omp_core() else {
+            return;
+        };
+        let pool = unsafe { player_pool(core) };
+        if pool.is_null() {
+            info!("[omp] player pool unavailable");
+            return;
+        }
+        let dispatcher = unsafe { player_connect_dispatcher(pool) };
+        if dispatcher.is_null() {
+            info!("[omp] player connect dispatcher unavailable");
+            return;
+        }
+
+        // The server keeps the pointer, so the handler must outlive this call.
+        let handler = Box::leak(Box::new(samp::omp::PlayerConnectHandler::new(
+            &raw const PLAYER_CONNECT_VTABLE,
+        )));
+        let added = unsafe { add_player_connect_handler(dispatcher, handler) };
+        info!("[omp] native player handler registered: {added}");
+    }
+
     fn on_tick(&mut self, _ctx: TickContext) {
         self.ticks += 1;
         // Logs the state every ~5 seconds (1000 ticks x ~5ms)
@@ -212,6 +242,67 @@ impl Counter {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Native Open Multiplayer player events (no Pawn, no detour)
+// ---------------------------------------------------------------------------
+
+mod omp_players {
+    use log::info;
+    use samp::omp::types::StringView;
+    use samp::omp::{DisconnectReason, IPlayer, PlayerConnectHandler, PlayerConnectHandlerVTable};
+
+    /// The server calls these through a vtable, so the calling convention is
+    /// the platform's: `extern "C"` under the Itanium ABI, `thiscall` under
+    /// MSVC. The macro writes each handler once for both.
+    macro_rules! handler {
+        (fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $body:block) => {
+            #[cfg(not(target_env = "msvc"))]
+            pub unsafe extern "C" fn $name($($arg: $ty),*) $body
+
+            #[cfg(target_env = "msvc")]
+            pub unsafe extern "thiscall" fn $name($($arg: $ty),*) $body
+        };
+    }
+
+    handler!(
+        fn on_incoming(
+            _this: *mut PlayerConnectHandler,
+            _player: *mut IPlayer,
+            _ip: StringView,
+            _port: u16,
+        ) {
+        }
+    );
+
+    handler!(
+        fn on_connect(_this: *mut PlayerConnectHandler, player: *mut IPlayer) {
+            info!("[omp-event] onPlayerConnect straight from the server ({player:p})");
+        }
+    );
+
+    handler!(
+        fn on_disconnect(_this: *mut PlayerConnectHandler, _player: *mut IPlayer, reason: i32) {
+            info!(
+                "[omp-event] onPlayerDisconnect: {:?}",
+                DisconnectReason::from_raw(reason)
+            );
+        }
+    );
+
+    handler!(
+        fn on_client_init(_this: *mut PlayerConnectHandler, _player: *mut IPlayer) {}
+    );
+
+    pub static VTABLE: PlayerConnectHandlerVTable = PlayerConnectHandlerVTable {
+        on_incoming_connection: on_incoming,
+        on_player_connect: on_connect,
+        on_player_disconnect: on_disconnect,
+        on_player_client_init: on_client_init,
+    };
+}
+
+use omp_players::VTABLE as PLAYER_CONNECT_VTABLE;
 
 initialize_plugin!(
     natives: [

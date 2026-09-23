@@ -18,6 +18,7 @@ pub mod component;
 pub mod component_api;
 pub mod core;
 pub mod events;
+pub mod players;
 pub mod server;
 pub mod timers;
 pub mod types;
@@ -30,6 +31,10 @@ pub use component::{
 pub use component_api::{OmpComponentHandle, component_name, component_version};
 pub use core::{LogLevel, core_log_ln, core_log_ln_u8, core_print_ln, core_print_ln_u8};
 pub use events::{PawnEventHandler, PawnEventHandlerVTable};
+pub use players::{
+    DisconnectReason, IPlayer, IPlayerConnectDispatcher, IPlayerPool, PlayerConnectHandler,
+    PlayerConnectHandlerVTable, add_player_connect_handler, player_connect_dispatcher, player_pool,
+};
 pub use server::{
     AmxFunctionTable, IEventDispatcherPawn, IPawnScript, PAWN_COMPONENT_UID, PawnComponent,
     ServerComponentList, ServerPawnComponent, add_pawn_event_handler, get_amx_from_script,

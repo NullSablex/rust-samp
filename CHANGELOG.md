@@ -144,6 +144,16 @@ Additive public API plus two deprecations.
 
 #### Added
 
+- **Native player events, no Pawn in the middle.** `samp::omp::players` reaches
+  `ICore::getPlayers()`, then the pool's `IEventDispatcher<PlayerConnectEventHandler>`,
+  and registers a handler on it: the server calls the plugin directly for
+  connect, disconnect, incoming connection and client init. Until now the only
+  way to see a player connect was the `#[event]` detour over `amx_Exec`, which
+  sees what the gamemode is told and costs a hook. Slots verified against
+  `omp-server` (`ICore::getPlayers` at 8/7, `getPlayerConnectDispatcher` at
+  10/9) and the whole path exercised with an NPC on Linux and on Windows.
+  `DisconnectReason::from_raw` maps an unknown value to `Custom` rather than
+  transmuting it into a variant that does not exist.
 - **`samp::omp_amx::AmxOmpExt` — the AMX functions open.mp adds.**
   `native_by_index`, `make_addr`, `str_size` and the byte-swap helpers, as
   methods on `Amx`. Each one first checks that the SDK read the function table
