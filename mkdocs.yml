@@ -82,6 +82,7 @@ nav:
   - Concepts:
       - Anatomy of a Plugin: plugin-anatomy.md
       - Open Multiplayer Support: omp-native.md
+      - Talking to the Server Directly: omp-interfaces.md
       - Native Functions: natives.md
       - Events (Callbacks): events.md
       - The Amx Type: amx-types.md

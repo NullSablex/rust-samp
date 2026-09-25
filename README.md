@@ -14,6 +14,11 @@ Rust toolkit for writing SA-MP server plugins and native Open Multiplayer
 components. A single compiled binary works as a SA-MP plugin **and** as a
 first-class Open Multiplayer component, with no extra configuration.
 
+As a component it can also talk to the Open Multiplayer server directly —
+player and vehicle events delivered by the server itself, entities created and
+read, players found by id — instead of going through Pawn. See
+[Talking to the Server Directly](docs/omp-interfaces.md).
+
 > Fork of [samp-rs](https://github.com/Pycckue-Bnepeg/samp-rs) by
 > [ZOTTCE](https://github.com/ZOTTCE). Modernized for Rust edition 2024 and
 > extended with a pure-Rust implementation of the Open Multiplayer component
@@ -106,7 +111,8 @@ are 32-bit.
 - *(default)* — SA-MP exports + Open Multiplayer `ComponentEntryPoint`.
 - `samp-only` — opt out of the Open Multiplayer code path; plugin still
   loads on Open Multiplayer in legacy mode.
-- `encoding` — Windows-1251 / Windows-1252 string conversion via
+- `encoding` — string conversion for the code pages servers run (Windows-1250
+  through 1257, ISO-8859-2, UTF-8 and the rest of the WHATWG set) via
   `encoding_rs`.
 - `debug` — `samp::debug`: the AMX_DBG debug-info parser plus the opcode
   helpers (numbering, instruction sizes, the computed-goto `OpcodeMap`) and
@@ -120,7 +126,7 @@ are 32-bit.
 | Path                                      | Highlights                                                                |
 | ----------------------------------------- | ------------------------------------------------------------------------- |
 | [`examples/hello`](examples/hello/)       | Minimal plugin (`#[derive(SampPlugin)]`, `&AmxString`, `write_str`).      |
-| [`examples/counter`](examples/counter/)   | Stateful plugin with `on_tick`, `Ref<i32>`, full constructor block.|
+| [`examples/counter`](examples/counter/)   | Stateful plugin: `on_tick`, `Ref<i32>`, background work, native open.mp events and entities. |
 | [`examples/advanced`](examples/advanced/) | Memcache plugin: custom `AmxCell`, `encoding` feature, layered `fern`.    |
 | [`examples/sink-demo`](examples/sink-demo/) | External log sink: end-to-end Sentry integration via the `Sink` trait.  |
 
