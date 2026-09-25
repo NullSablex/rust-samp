@@ -326,6 +326,18 @@ deprecations reach plugin authors through it, and it now requires
   server carries RTTI for three classes only. Run against `IPlayerPool`, it
   reproduces every index this release ships.
 
+### Validation
+
+- **The `#[event]` detour was exercised end to end for the first time.** It
+  rewrites `amx_Exec` at runtime through `retour`, which is pinned to an alpha,
+  and no test had ever seen a callback actually fire through it. An NPC
+  connecting now proves it on all four combinations — SA-MP and open.mp, Linux
+  and Windows — with the handler running before the gamemode's public, and
+  `EventReturn::Suppress` skipping the public as documented.
+- The open.mp interface layer was exercised the same way: player and vehicle
+  events firing, entities created and read back, lookups by id returning the
+  pointers the server handed over, on both platforms.
+
 ### Fuzzing
 
 - **Harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The
