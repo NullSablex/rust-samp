@@ -255,6 +255,12 @@ deprecations reach plugin authors through it, and it now requires
   reverse. It would have caught all four defects above on its own. Not part of
   CI, since it needs servers that cannot be redistributed.
 
+- **`scripts/omp-vtable.py`** asks clang where an interface's methods land, in
+  both ABIs at once, by generating a stub and dumping the vtable layout. Until
+  now MSVC indices were derived by hand from the ABI rules, because the Windows
+  server carries RTTI for three classes only. Run against `IPlayerPool`, it
+  reproduces every index this release ships.
+
 ### Fuzzing
 
 - **Harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The

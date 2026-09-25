@@ -75,6 +75,36 @@ feature flags, conventions).
 - For non-trivial refactors, plan first: list the cases
   (refactor / keep / unsure) with rationale before writing code.
 
+## Mapping a new open.mp interface
+
+Before writing a wrapper for an interface, ask the compiler where its methods
+land. `scripts/omp-vtable.py` generates a stub deriving from the interface,
+compiles it for both ABIs with `-fdump-vtable-layouts`, and prints the slot each
+method occupies:
+
+```sh
+scripts/omp-vtable.py IPlayerPool
+scripts/omp-vtable.py IPlayer --header player.hpp
+```
+
+```text
+IPlayerPool  (Itanium / MSVC)
+    6 /   5   const FlatPtrHashSet<IPlayer> &IPlayerPool::entries()
+   10 /   9   IEventDispatcher<PlayerConnectEventHandler> &IPlayerPool::getPlayerConnectDispatcher()
+```
+
+This is what made the MSVC side tractable: the Windows server carries RTTI for
+three classes and nothing else, so those indices used to be derived by hand from
+the ABI rules. Now the compiler answers both.
+
+It needs clang, the open.mp SDK sources (path in the script) and, for the MSVC
+column, the Windows headers `cargo xwin` downloads on its first build.
+
+**It is the map, not the proof.** The server may have been built from a
+different revision of the headers, and a layout that compiles is not a layout
+the running server agrees with. Still validate against a server — see the
+testing notes in `CLAUDE.md`.
+
 ## Checking the ABI constants
 
 The SDK hardcodes vtable slot indices — each one a claim about a binary someone
