@@ -169,6 +169,12 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **Objects and pickups** (`samp::omp::world`): query the component, create
+  one, read its id. Both `create` calls sit at indices the two ABIs disagree
+  about (21/19 and 19/17), which is the rule rather than the exception once a
+  component overloads anything. `entity_id` reads the id of any entity carrying
+  the `IEntity` subobject — object, pickup, vehicle or player. Created and read
+  back on both platforms.
 - **Entities by id, without touching the pools' hash sets.** `player_by_id` and
   `vehicle_by_id` go through `IReadOnlyPool<T>::get`, a secondary base of each
   pool (offset 40/56 for players, 44/64 for vehicles — the vehicle component
@@ -287,6 +293,9 @@ deprecations reach plugin authors through it, and it now requires
   reverse. It would have caught all four defects above on its own. Not part of
   CI, since it needs servers that cannot be redistributed.
 
+- **`scripts/omp-vtable.py --rust`** emits the cfg-gated slot constants ready to
+  paste, with `--filter` to pick methods. Wrapping the next interface is then
+  mechanical: generate the constants, write the call, run a server.
 - **`scripts/omp-vtable.py`** asks clang where an interface's methods land, in
   both ABIs at once, by generating a stub and dumping the vtable layout. Until
   now MSVC indices were derived by hand from the ABI rules, because the Windows

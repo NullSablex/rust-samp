@@ -24,6 +24,7 @@ pub mod timers;
 pub mod types;
 pub mod vehicles;
 pub mod vtable;
+pub mod world;
 
 pub use component::{
     IComponentList, IComponentVTable, ICore, IEarlyConfig, ILogger, IUIDProviderVTable,
@@ -73,4 +74,9 @@ pub use vehicles::{
     VehicleHandlerVTable, add_vehicle_handler, as_vehicles_component, create_vehicle,
     vehicle_by_id, vehicle_event_dispatcher, vehicle_health, vehicle_id, vehicle_model,
     vehicle_position, vehicle_set_colour, vehicle_set_health,
+};
+pub use world::{
+    IObjectsComponent, IPickup, IPickupsComponent, OBJECTS_COMPONENT_UID, PICKUPS_COMPONENT_UID,
+    PickupType, as_objects_component, as_pickups_component, create_object, create_pickup,
+    entity_id,
 };

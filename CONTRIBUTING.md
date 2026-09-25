@@ -100,7 +100,15 @@ the ABI rules. Now the compiler answers both.
 It needs clang, the open.mp SDK sources (path in the script) and, for the MSVC
 column, the Windows headers `cargo xwin` downloads on its first build.
 
-**It is the map, not the proof.** The server may have been built from a
+**`--rust` emits the constants themselves, so adding an interface is mostly
+mechanical:
+
+```sh
+scripts/omp-vtable.py IPickupsComponent \
+    --header Server/Components/Pickups/pickups.hpp --rust --filter "create(int"
+```
+
+**It is the map, not the proof.**** The server may have been built from a
 different revision of the headers, and a layout that compiles is not a layout
 the running server agrees with. Still validate against a server — see the
 testing notes in `CLAUDE.md`.

@@ -149,6 +149,55 @@ impl SampPlugin for Counter {
             }
         }
 
+        // Objects and pickups, the same query-create-read shape.
+        if let Some(component) = samp::plugin::omp_query_component(samp::omp::OBJECTS_COMPONENT_UID)
+        {
+            let objects = unsafe { samp::omp::as_objects_component(component) };
+            let zero = samp::omp::types::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            let object = unsafe {
+                samp::omp::create_object(
+                    objects,
+                    1337,
+                    samp::omp::types::Vector3 {
+                        x: 5.0,
+                        y: 6.0,
+                        z: 7.0,
+                    },
+                    zero,
+                    0.0,
+                )
+            };
+            info!("[omp] object id={}", unsafe {
+                samp::omp::entity_id(object.cast::<u8>())
+            });
+        }
+
+        if let Some(component) = samp::plugin::omp_query_component(samp::omp::PICKUPS_COMPONENT_UID)
+        {
+            let pickups = unsafe { samp::omp::as_pickups_component(component) };
+            let pickup = unsafe {
+                samp::omp::create_pickup(
+                    pickups,
+                    1274, // money bag
+                    1,    // type: pick up and respawn
+                    samp::omp::types::Vector3 {
+                        x: 1.0,
+                        y: 2.0,
+                        z: 3.0,
+                    },
+                    0,
+                    true,
+                )
+            };
+            info!("[omp] pickup id={}", unsafe {
+                samp::omp::entity_id(pickup.cast::<u8>())
+            });
+        }
+
         let text = unsafe { samp::omp::player_text_dispatcher(pool) };
         if !text.is_null() {
             let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(

@@ -198,10 +198,47 @@ def layout(source: pathlib.Path, flags: list[str], target: str, class_name: str)
     return slots
 
 
+def emit_rust(class_name: str, itanium: list[str], msvc_index: dict[str, int], key) -> None:
+    """Prints the slot constants as the SDK writes them, ready to paste.
+
+    Every index is a pair, because the two ABIs rarely agree; a constant that
+    is not cfg-gated is a bug waiting for a Windows user to find.
+    """
+    print(f"// Slots of `{class_name}`, from `scripts/omp-vtable.py --rust`.")
+    print("// Itanium first, MSVC second; verify against a running server.")
+    for index, name in enumerate(itanium):
+        if not name or "~" in name:
+            continue
+        method = re.search(r"::(\w+)\(", name)
+        if not method:
+            continue
+        other = msvc_index.get(key(name))
+        if other is None:
+            print(f"// {name}: not in the MSVC primary vtable (secondary base?)")
+            continue
+        # Rust wants SCREAMING_SNAKE_CASE; the headers use camelCase.
+        const = "SLOT_" + re.sub(r"(?<!^)(?=[A-Z])", "_", method.group(1)).upper()
+        print(f"\n/// `{name}`.")
+        print('#[cfg(not(target_env = "msvc"))]')
+        print(f"const {const}: usize = {index};")
+        print('#[cfg(target_env = "msvc")]')
+        print(f"const {const}: usize = {other};")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("class_name")
     parser.add_argument("--header", default="player.hpp", help="header declaring it")
+    parser.add_argument(
+        "--rust",
+        action="store_true",
+        help="emit cfg-gated Rust slot constants instead of the table",
+    )
+    parser.add_argument(
+        "--filter",
+        default="",
+        help="only methods whose signature contains this text",
+    )
     parser.add_argument("--sdk", type=pathlib.Path, default=SDK)
     parser.add_argument("--xwin", type=pathlib.Path, default=XWIN)
     args = parser.parse_args()
@@ -228,19 +265,26 @@ def main() -> int:
     if not itanium:
         sys.exit(f"clang emitted no vtable for {args.class_name}")
 
+    if args.filter:
+        keep = args.filter.lower()
+        itanium = [name if keep in name.lower() else "" for name in itanium]
+
     # Match by signature with the declaring class stripped: the two dumps may
     # attribute the same method to the interface or to the stub.
     def key(entry: str) -> str:
         return re.sub(r"\b[A-Za-z_][\w:]*::", "", entry)
 
     msvc_index = {key(name): i for i, name in enumerate(msvc) if name}
-    print(f"{args.class_name}  (Itanium / MSVC)")
-    for index, name in enumerate(itanium):
-        if not name:
-            continue
-        other = msvc_index.get(key(name))
-        shown = str(other) if other is not None else "-"
-        print(f"  {index:3} / {shown:>3}   {name}")
+    if args.rust:
+        emit_rust(args.class_name, itanium, msvc_index, key)
+    else:
+        print(f"{args.class_name}  (Itanium / MSVC)")
+        for index, name in enumerate(itanium):
+            if not name:
+                continue
+            other = msvc_index.get(key(name))
+            shown = str(other) if other is not None else "-"
+            print(f"  {index:3} / {shown:>3}   {name}")
     if not msvc_available:
         print("\n(no MSVC headers under", args.xwin, "— run `cargo xwin build` once)")
     return 0
