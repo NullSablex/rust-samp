@@ -160,7 +160,9 @@ jobs:
           body_path: release_body.md
           files: ${{ env.ARCHIVE }}
           draft: false
-          prerelease: false
+          # A tag carrying a pre-release suffix (`v3.6.0-rc.1`) is marked as
+          # such on GitHub, so it does not show up as the latest release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       # Each publish step is a thin wrapper around `cargo publish`:
       # - If the version is new, publish it and wait for the index to update.

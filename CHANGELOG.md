@@ -4,7 +4,25 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [v3.6.0] — Unreleased
+## [v3.6.0-rc.1] — Unreleased
+
+**Release candidate.** Everything here is implemented, tested and exercised
+against real servers on Linux and Windows, but none of it has run on a public
+server with players. The release is large — it fixes four ABI defects and adds
+the whole open.mp interface layer — so it goes out as a candidate first, to be
+validated in the field before it becomes v3.6.0.
+
+Cargo does not resolve a pre-release from an ordinary requirement, so
+`rust-samp = "3"` keeps pointing at 3.4.0. Trying the candidate is explicit:
+
+```toml
+samp = { package = "rust-samp", version = "3.5.0-rc.1" }
+```
+
+What would make it final: the open.mp interface wrappers used by a plugin that
+ships, and no ABI correction needed in the process. Report anything that
+misbehaves — a wrong vtable slot shows up as a value that makes no sense on
+Linux and as a crash on Windows.
 
 Correctness release, in two parts.
 
@@ -27,7 +45,7 @@ publics, and encodings that stop losing characters quietly.
 The per-crate sections come first, then the ones belonging to the repository
 rather than to any published crate.
 
-### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0-rc.1
 
 Additive public API plus two deprecations.
 
@@ -148,7 +166,7 @@ Additive public API plus two deprecations.
 - The `AmxString` test helper leaked its backing buffer on purpose; it now hands
   the buffer to the caller, which keeps it alive for the test.
 
-### `rust-samp` (lib `samp`) — 3.5.0
+### `rust-samp` (lib `samp`) — 3.5.0-rc.1
 
 #### Added
 
@@ -249,9 +267,9 @@ Additive public API plus two deprecations.
 
 It also re-exports `samp::omp::vtable`, so the new helpers and the two
 deprecations reach plugin authors through it, and it now requires
-`rust-samp-sdk` 3.5.0 — which is where the `on_tick` fix lives.
+`rust-samp-sdk` 3.5.0-rc.1 — which is where the `on_tick` fix lives.
 
-### `rust-samp-codegen` (lib `samp_codegen`) — 1.5.0
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.5.0-rc.1
 
 #### Added
 
@@ -438,7 +456,8 @@ piece was already running against live SA-MP and open.mp servers.
   surface and the new `Amx` methods; requires `rust-samp-sdk` 3.4.0).
 - `rust-samp-sdk` (lib `samp_sdk`): 3.3.0 → 3.4.0 (additive public API: the
   `opcode`/`stack` modules, the range readers, `data_only`, `function_address`).
-- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 → 1.5.0.
+- `rust-samp-codegen` (lib `samp_codegen`): 1.4.0 — unchanged (no macro
+  changes).
 
 ## [v3.4.0] — 2026/08/05
 
