@@ -293,6 +293,12 @@ deprecations reach plugin authors through it, and it now requires
   reverse. It would have caught all four defects above on its own. Not part of
   CI, since it needs servers that cannot be redistributed.
 
+- **Both scripts find their inputs instead of hardcoding them.** The SDK
+  checkout comes from `--sdk`, `$OPENMP_SDK` or the usual locations, and the
+  servers from `--linux`/`--win`, `$OPENMP_LINUX_SERVER`/`$OPENMP_WIN_SERVER` or
+  likewise; a checkout missing its submodules is reported as such rather than
+  failing three steps later. The fuzzing seed was regenerated: the previous one
+  was compiled from an absolute path, which the AMX debug block stores verbatim.
 - **`scripts/omp-vtable.py --rust`** emits the cfg-gated slot constants ready to
   paste, with `--filter` to pick methods. Wrapping the next interface is then
   mechanical: generate the constants, write the call, run a server.

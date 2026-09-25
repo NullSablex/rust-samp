@@ -10,8 +10,9 @@ This script re-derives each index from the binaries and compares it with what
 the source declares. Run it before a release, and after touching anything under
 `samp-sdk/src/omp/`.
 
-    scripts/check-abi-slots.py                        # default install paths
+    scripts/check-abi-slots.py                        # servers in the usual spots
     scripts/check-abi-slots.py --linux DIR --win DIR  # elsewhere
+    OPENMP_LINUX_SERVER=DIR scripts/check-abi-slots.py
 
 It is not part of CI: it needs the official servers, which cannot be
 redistributed.
@@ -27,6 +28,7 @@ rather than silently assumed.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
 import struct
@@ -34,8 +36,32 @@ import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_LINUX = pathlib.Path.home() / "Downloads/open.mp-linux-x86/Server"
-DEFAULT_WIN = pathlib.Path.home() / "Downloads/open.mp-win-x86/Server"
+
+# Server directories, in order: the flags, then `$OPENMP_LINUX_SERVER` /
+# `$OPENMP_WIN_SERVER`, then where the official archives land when unpacked.
+LINUX_CANDIDATES = (
+    pathlib.Path("open.mp-linux-x86/Server"),
+    pathlib.Path.home() / "Downloads/open.mp-linux-x86/Server",
+    pathlib.Path.home() / "open.mp-linux-x86/Server",
+)
+WIN_CANDIDATES = (
+    pathlib.Path("open.mp-win-x86/Server"),
+    pathlib.Path.home() / "Downloads/open.mp-win-x86/Server",
+    pathlib.Path.home() / "open.mp-win-x86/Server",
+)
+
+
+def find_server(explicit, env_var: str, candidates) -> pathlib.Path | None:
+    """Where a server lives, or `None` — the checks for it are then skipped."""
+    if explicit is not None:
+        return explicit
+    env = os.environ.get(env_var)
+    if env:
+        return pathlib.Path(env).expanduser()
+    for candidate in candidates:
+        if (candidate / "components").is_dir():
+            return candidate
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -352,17 +378,26 @@ def check_msvc(server: pathlib.Path, report: Report) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--linux", type=pathlib.Path, default=DEFAULT_LINUX)
-    parser.add_argument("--win", type=pathlib.Path, default=DEFAULT_WIN)
+    parser.add_argument(
+        "--linux",
+        type=pathlib.Path,
+        help="unpacked Linux server (default: $OPENMP_LINUX_SERVER, then the usual spots)",
+    )
+    parser.add_argument(
+        "--win",
+        type=pathlib.Path,
+        help="unpacked Windows server (default: $OPENMP_WIN_SERVER, then the usual spots)",
+    )
     args = parser.parse_args()
 
     report = Report()
     for label, directory, check in (
-        ("Linux", args.linux, check_itanium),
-        ("Windows", args.win, check_msvc),
+        ("Linux", find_server(args.linux, "OPENMP_LINUX_SERVER", LINUX_CANDIDATES), check_itanium),
+        ("Windows", find_server(args.win, "OPENMP_WIN_SERVER", WIN_CANDIDATES), check_msvc),
     ):
-        if not directory.is_dir():
-            print(f"\n{label} server not found at {directory} — skipping")
+        if directory is None or not directory.is_dir():
+            where = directory if directory is not None else "any of the usual paths"
+            print(f"\n{label} server not found at {where} — skipping")
             report.skipped += 1
             continue
         check(directory, report)

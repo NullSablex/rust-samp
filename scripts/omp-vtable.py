@@ -19,14 +19,16 @@ with. It still does not replace running a server: the server may have been
 built from a different revision of the headers. Treat this as the map and the
 server as the proof.
 
-Requires clang, the open.mp SDK sources, and (for the MSVC side) the Windows
-headers cargo-xwin already downloads.
+Needs clang and an open.mp SDK checkout, found through `--sdk`, `$OPENMP_SDK`
+or the usual locations. The MSVC column additionally needs the Windows headers
+cargo-xwin downloads; without them the Itanium column still prints.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -34,8 +36,90 @@ import sys
 import tempfile
 
 HOME = pathlib.Path.home()
-SDK = HOME / "Documentos/Projetos/Github/NullSablex/open-sa/reference/openmultiplayer/open.mp-sdk"
-XWIN = HOME / ".cache/cargo-xwin/xwin"
+
+# Where an open.mp SDK checkout tends to live. `$OPENMP_SDK` wins over all of
+# them, and `--sdk` over that; the list is only so the common case needs no
+# configuration. A checkout is `git clone --recursive
+# https://github.com/openmultiplayer/open.mp-sdk`.
+SDK_CANDIDATES = (
+    pathlib.Path("open.mp-sdk"),
+    pathlib.Path("../open.mp-sdk"),
+    HOME / "open.mp-sdk",
+    HOME / "src/open.mp-sdk",
+    HOME / "Downloads/sdks/open.mp-sdk",
+)
+
+# cargo-xwin caches the Windows headers here; `$XWIN_CACHE` overrides it, as
+# cargo-xwin itself documents.
+XWIN_CANDIDATES = (
+    pathlib.Path(os.environ["XDG_CACHE_HOME"]) / "cargo-xwin/xwin"
+    if os.environ.get("XDG_CACHE_HOME")
+    else HOME / ".cache/cargo-xwin/xwin",
+    HOME / ".cache/cargo-xwin/xwin",
+)
+
+
+def looks_like_sdk(path: pathlib.Path) -> bool:
+    """A usable checkout: the headers, and the libraries they include.
+
+    The vendored libraries are git submodules. A checkout without them has the
+    headers and compiles nothing, which surfaces as clang finding no vtable —
+    an error far from its cause, so it is ruled out here instead."""
+    return (path / "include/player.hpp").is_file() and (
+        path / "lib/glm/glm/vec2.hpp"
+    ).is_file()
+
+
+def sdk_complaint(path: pathlib.Path) -> str:
+    """Why `path` was rejected, in the terms of what to do about it."""
+    if not (path / "include/player.hpp").is_file():
+        return f"{path} has no include/player.hpp — is it an open.mp SDK checkout?"
+    return (
+        f"{path} is missing its vendored libraries (lib/glm and friends).\n"
+        "  git -C "
+        f"{path} submodule update --init --recursive"
+    )
+
+
+def find_sdk(explicit: pathlib.Path | None) -> pathlib.Path:
+    """The SDK to read, or an error saying how to point at one."""
+    if explicit is not None:
+        if not looks_like_sdk(explicit):
+            sys.exit(sdk_complaint(explicit))
+        return explicit
+
+    env = os.environ.get("OPENMP_SDK")
+    if env:
+        path = pathlib.Path(env).expanduser()
+        if not looks_like_sdk(path):
+            sys.exit(f"$OPENMP_SDK: {sdk_complaint(path)}")
+        return path
+
+    for candidate in SDK_CANDIDATES:
+        path = candidate.expanduser()
+        if looks_like_sdk(path):
+            return path
+
+    sys.exit(
+        "no open.mp SDK found. Pass --sdk, set $OPENMP_SDK, or clone one:\n"
+        "  git clone --recursive https://github.com/openmultiplayer/open.mp-sdk"
+    )
+
+
+def find_xwin(explicit: pathlib.Path | None) -> pathlib.Path | None:
+    """The Windows headers for the MSVC column, or `None` if absent."""
+    if explicit is not None:
+        return explicit if (explicit / "crt/include").is_dir() else None
+
+    env = os.environ.get("XWIN_CACHE")
+    if env:
+        path = pathlib.Path(env).expanduser()
+        return path if (path / "crt/include").is_dir() else None
+
+    for candidate in XWIN_CANDIDATES:
+        if (candidate / "crt/include").is_dir():
+            return candidate
+    return None
 
 
 def include_flags(sdk: pathlib.Path) -> list[str]:
@@ -239,11 +323,21 @@ def main() -> int:
         default="",
         help="only methods whose signature contains this text",
     )
-    parser.add_argument("--sdk", type=pathlib.Path, default=SDK)
-    parser.add_argument("--xwin", type=pathlib.Path, default=XWIN)
+    parser.add_argument(
+        "--sdk",
+        type=pathlib.Path,
+        help="open.mp SDK checkout (default: $OPENMP_SDK, then the usual spots)",
+    )
+    parser.add_argument(
+        "--xwin",
+        type=pathlib.Path,
+        help="cargo-xwin cache holding the Windows headers (default: $XWIN_CACHE)",
+    )
     args = parser.parse_args()
 
-    includes = include_flags(args.sdk)
+    sdk = find_sdk(args.sdk)
+    xwin = find_xwin(args.xwin)
+    includes = include_flags(sdk)
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
         probe = work / "probe.cpp"
@@ -254,11 +348,14 @@ def main() -> int:
         stub.write_text(stub_source(args.header, args.class_name, methods))
 
         itanium = layout(stub, includes, "i686-pc-linux-gnu", args.class_name)
-        msvc_available = (args.xwin / "crt/include").is_dir()
         msvc = (
-            layout(stub, includes + msvc_flags(args.xwin, work / "casefix"),
-                   "i686-pc-windows-msvc", args.class_name)
-            if msvc_available
+            layout(
+                stub,
+                includes + msvc_flags(xwin, work / "casefix"),
+                "i686-pc-windows-msvc",
+                args.class_name,
+            )
+            if xwin is not None
             else []
         )
 
@@ -285,8 +382,11 @@ def main() -> int:
             other = msvc_index.get(key(name))
             shown = str(other) if other is not None else "-"
             print(f"  {index:3} / {shown:>3}   {name}")
-    if not msvc_available:
-        print("\n(no MSVC headers under", args.xwin, "— run `cargo xwin build` once)")
+    if xwin is None:
+        print(
+            "\n(no Windows headers found — set $XWIN_CACHE, or run a"
+            " `cargo xwin build` once to download them)"
+        )
     return 0
 
 

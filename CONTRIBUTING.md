@@ -97,8 +97,19 @@ This is what made the MSVC side tractable: the Windows server carries RTTI for
 three classes and nothing else, so those indices used to be derived by hand from
 the ABI rules. Now the compiler answers both.
 
-It needs clang, the open.mp SDK sources (path in the script) and, for the MSVC
-column, the Windows headers `cargo xwin` downloads on its first build.
+It needs clang and an open.mp SDK checkout. The script looks for one in the
+usual places; point it elsewhere with `--sdk` or `$OPENMP_SDK`:
+
+```sh
+git clone --recursive https://github.com/openmultiplayer/open.mp-sdk
+OPENMP_SDK=$PWD/open.mp-sdk scripts/omp-vtable.py IPlayer
+```
+
+The submodules matter — without them the headers include libraries that are not
+there, and the script says so instead of failing further along. The MSVC column
+additionally needs the Windows headers `cargo xwin` downloads on its first
+build (`$XWIN_CACHE` to point elsewhere); without them the Itanium column still
+prints.
 
 **`--rust` emits the constants themselves, so adding an interface is mostly
 mechanical:
@@ -121,8 +132,9 @@ from the wrong virtual function, and on Windows the stack is corrupted on top of
 that. Four such defects shipped in v3.5.0.
 
 ```sh
-scripts/check-abi-slots.py                        # default install paths
-scripts/check-abi-slots.py --linux DIR --win DIR  # servers elsewhere
+scripts/check-abi-slots.py                          # servers in the usual spots
+scripts/check-abi-slots.py --linux DIR --win DIR    # elsewhere
+OPENMP_LINUX_SERVER=DIR scripts/check-abi-slots.py  # or by environment
 ```
 
 It re-derives every index from the official `Timers.so`, `Pawn.so`, `Timers.dll`
