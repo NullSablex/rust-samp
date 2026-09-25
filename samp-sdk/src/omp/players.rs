@@ -38,6 +38,7 @@
 use super::component::ICore;
 use super::types::{Colour, StringView, UID, Vector3};
 use super::vehicles::IVehicle;
+use super::vtable::call_vtable;
 
 /// Slot of `ICore::getPlayers()`.
 #[cfg(not(target_env = "msvc"))]
@@ -532,18 +533,14 @@ handler_vtable! {
 /// `core` must be the `ICore*` the server passed to `on_load`.
 #[must_use]
 pub unsafe fn player_pool(core: *mut ICore) -> *mut IPlayerPool {
-    #[cfg(not(target_env = "msvc"))]
-    type GetPlayersFn = unsafe extern "C" fn(*mut u8) -> *mut IPlayerPool;
-    #[cfg(target_env = "msvc")]
-    type GetPlayersFn = unsafe extern "thiscall" fn(*mut u8) -> *mut IPlayerPool;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(core.cast::<u8>(), 0, SLOT_GET_PLAYERS)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let get_players: GetPlayersFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_players(this) }
+    call_vtable!(
+        core.cast::<u8>(),
+        0,
+        SLOT_GET_PLAYERS,
+        () -> *mut IPlayerPool,
+        (),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IPlayerPool::getPlayerConnectDispatcher()`.
@@ -660,18 +657,7 @@ handler_vtable! {
 /// `player` must be an `IPlayer*` the server handed to a handler, and still
 /// connected.
 pub unsafe fn player_kick(player: *mut IPlayer) {
-    #[cfg(not(target_env = "msvc"))]
-    type KickFn = unsafe extern "C" fn(*mut u8);
-    #[cfg(target_env = "msvc")]
-    type KickFn = unsafe extern "thiscall" fn(*mut u8);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_KICK)
-    }) else {
-        return;
-    };
-    let kick: KickFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { kick(this) };
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_KICK, () -> (), (), ())
 }
 
 /// `IPlayer::isBot()` — whether this "player" is an NPC.
@@ -680,18 +666,7 @@ pub unsafe fn player_kick(player: *mut IPlayer) {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_is_bot(player: *mut IPlayer) -> bool {
-    #[cfg(not(target_env = "msvc"))]
-    type IsBotFn = unsafe extern "C" fn(*mut u8) -> bool;
-    #[cfg(target_env = "msvc")]
-    type IsBotFn = unsafe extern "thiscall" fn(*mut u8) -> bool;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_IS_BOT)
-    }) else {
-        return false;
-    };
-    let is_bot: IsBotFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { is_bot(this) }
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_IS_BOT, () -> bool, (), false)
 }
 
 /// `IPlayer::getName()` — the player's name, copied into a `String`.
@@ -745,18 +720,7 @@ pub unsafe fn player_name(player: *mut IPlayer) -> Option<String> {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_health(player: *mut IPlayer) -> f32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetHealthFn = unsafe extern "C" fn(*mut u8) -> f32;
-    #[cfg(target_env = "msvc")]
-    type GetHealthFn = unsafe extern "thiscall" fn(*mut u8) -> f32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_GET_HEALTH)
-    }) else {
-        return 0.0;
-    };
-    let get_health: GetHealthFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_health(this) }
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_GET_HEALTH, () -> f32, (), 0.0)
 }
 
 /// `IPlayer::setHealth(float)`.
@@ -764,18 +728,7 @@ pub unsafe fn player_health(player: *mut IPlayer) -> f32 {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_set_health(player: *mut IPlayer, health: f32) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetHealthFn = unsafe extern "C" fn(*mut u8, f32);
-    #[cfg(target_env = "msvc")]
-    type SetHealthFn = unsafe extern "thiscall" fn(*mut u8, f32);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_HEALTH)
-    }) else {
-        return;
-    };
-    let set_health: SetHealthFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set_health(this, health) };
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_SET_HEALTH, (f32) -> (), (health), ())
 }
 
 /// `IPlayer::getScore()`.
@@ -835,27 +788,19 @@ pub unsafe fn player_set_score(player: *mut IPlayer, score: i32) {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_position(player: *mut IPlayer) -> Vector3 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetPositionFn = unsafe extern "C" fn(*mut u8) -> Vector3;
-    #[cfg(target_env = "msvc")]
-    type GetPositionFn = unsafe extern "thiscall" fn(*mut u8) -> Vector3;
-
     let zero = Vector3 {
         x: 0.0,
         y: 0.0,
         z: 0.0,
     };
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            player.cast::<u8>(),
-            ENTITY_OFFSET,
-            SLOT_ENTITY_GET_POSITION,
-        )
-    }) else {
-        return zero;
-    };
-    let get_position: GetPositionFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_position(this) }
+    call_vtable!(
+        player.cast::<u8>(),
+        ENTITY_OFFSET,
+        SLOT_ENTITY_GET_POSITION,
+        () -> Vector3,
+        (),
+        zero
+    )
 }
 
 /// `IEntity::setPosition(Vector3)` — teleports the player.
@@ -863,22 +808,14 @@ pub unsafe fn player_position(player: *mut IPlayer) -> Vector3 {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_set_position(player: *mut IPlayer, position: Vector3) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetPositionFn = unsafe extern "C" fn(*mut u8, Vector3);
-    #[cfg(target_env = "msvc")]
-    type SetPositionFn = unsafe extern "thiscall" fn(*mut u8, Vector3);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            player.cast::<u8>(),
-            ENTITY_OFFSET,
-            SLOT_ENTITY_SET_POSITION,
-        )
-    }) else {
-        return;
-    };
-    let set_position: SetPositionFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set_position(this, position) };
+    call_vtable!(
+        player.cast::<u8>(),
+        ENTITY_OFFSET,
+        SLOT_ENTITY_SET_POSITION,
+        (Vector3) -> (),
+        (position),
+        ()
+    )
 }
 
 /// `IEntity::getVirtualWorld()`.
@@ -887,22 +824,14 @@ pub unsafe fn player_set_position(player: *mut IPlayer, position: Vector3) {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_virtual_world(player: *mut IPlayer) -> i32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetWorldFn = unsafe extern "C" fn(*mut u8) -> i32;
-    #[cfg(target_env = "msvc")]
-    type GetWorldFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            player.cast::<u8>(),
-            ENTITY_OFFSET,
-            SLOT_ENTITY_GET_VIRTUAL_WORLD,
-        )
-    }) else {
-        return 0;
-    };
-    let get_world: GetWorldFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_world(this) }
+    call_vtable!(
+        player.cast::<u8>(),
+        ENTITY_OFFSET,
+        SLOT_ENTITY_GET_VIRTUAL_WORLD,
+        () -> i32,
+        (),
+        0
+    )
 }
 
 /// `IEntity::setVirtualWorld(int)`.
@@ -910,54 +839,24 @@ pub unsafe fn player_virtual_world(player: *mut IPlayer) -> i32 {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_set_virtual_world(player: *mut IPlayer, world: i32) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetWorldFn = unsafe extern "C" fn(*mut u8, i32);
-    #[cfg(target_env = "msvc")]
-    type SetWorldFn = unsafe extern "thiscall" fn(*mut u8, i32);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            player.cast::<u8>(),
-            ENTITY_OFFSET,
-            SLOT_ENTITY_SET_VIRTUAL_WORLD,
-        )
-    }) else {
-        return;
-    };
-    let set_world: SetWorldFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set_world(this, world) };
+    call_vtable!(
+        player.cast::<u8>(),
+        ENTITY_OFFSET,
+        SLOT_ENTITY_SET_VIRTUAL_WORLD,
+        (i32) -> (),
+        (world),
+        ()
+    )
 }
 
 /// Calls a `void(int)` setter on the player's primary vtable.
 unsafe fn player_set_i32(player: *mut IPlayer, slot: usize, value: i32) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetFn = unsafe extern "C" fn(*mut u8, i32);
-    #[cfg(target_env = "msvc")]
-    type SetFn = unsafe extern "thiscall" fn(*mut u8, i32);
-
-    let Some((this, f_ptr)) =
-        (unsafe { super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, slot) })
-    else {
-        return;
-    };
-    let set: SetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set(this, value) };
+    call_vtable!(player.cast::<u8>(), 0, slot, (i32) -> (), (value), ())
 }
 
 /// Calls an `int()` getter on the player's primary vtable.
 unsafe fn player_get_i32(player: *mut IPlayer, slot: usize) -> i32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetFn = unsafe extern "C" fn(*mut u8) -> i32;
-    #[cfg(target_env = "msvc")]
-    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
-
-    let Some((this, f_ptr)) =
-        (unsafe { super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, slot) })
-    else {
-        return 0;
-    };
-    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get(this) }
+    call_vtable!(player.cast::<u8>(), 0, slot, () -> i32, (), 0)
 }
 
 /// `IPlayer::setMoney(int)`.
@@ -998,18 +897,7 @@ pub unsafe fn player_team(player: *mut IPlayer) -> i32 {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_set_armour(player: *mut IPlayer, armour: f32) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetFn = unsafe extern "C" fn(*mut u8, f32);
-    #[cfg(target_env = "msvc")]
-    type SetFn = unsafe extern "thiscall" fn(*mut u8, f32);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_ARMOUR)
-    }) else {
-        return;
-    };
-    let set: SetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set(this, armour) };
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_SET_ARMOUR, (f32) -> (), (armour), ())
 }
 
 /// `IPlayer::getArmour()`.
@@ -1018,18 +906,7 @@ pub unsafe fn player_set_armour(player: *mut IPlayer, armour: f32) {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_armour(player: *mut IPlayer) -> f32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetFn = unsafe extern "C" fn(*mut u8) -> f32;
-    #[cfg(target_env = "msvc")]
-    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> f32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_GET_ARMOUR)
-    }) else {
-        return 0.0;
-    };
-    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get(this) }
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_GET_ARMOUR, () -> f32, (), 0.0)
 }
 
 /// `IPlayer::setSkin(int, bool)` — `send` asks the server to tell the other
@@ -1038,18 +915,7 @@ pub unsafe fn player_armour(player: *mut IPlayer) -> f32 {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_set_skin(player: *mut IPlayer, skin: i32, send: bool) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetSkinFn = unsafe extern "C" fn(*mut u8, i32, bool);
-    #[cfg(target_env = "msvc")]
-    type SetSkinFn = unsafe extern "thiscall" fn(*mut u8, i32, bool);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_SKIN)
-    }) else {
-        return;
-    };
-    let set_skin: SetSkinFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set_skin(this, skin, send) };
+    call_vtable!(player.cast::<u8>(), 0, SLOT_PLAYER_SET_SKIN, (i32, bool) -> (), (skin, send), ())
 }
 
 /// `IEntity::getID()` — the id Pawn scripts know this player by.
@@ -1058,22 +924,7 @@ pub unsafe fn player_set_skin(player: *mut IPlayer, skin: i32, send: bool) {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_id(player: *mut IPlayer) -> i32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetIdFn = unsafe extern "C" fn(*mut u8) -> i32;
-    #[cfg(target_env = "msvc")]
-    type GetIdFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            player.cast::<u8>(),
-            ENTITY_OFFSET,
-            SLOT_ENTITY_GET_ID,
-        )
-    }) else {
-        return -1;
-    };
-    let get_id: GetIdFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_id(this) }
+    call_vtable!(player.cast::<u8>(), ENTITY_OFFSET, SLOT_ENTITY_GET_ID, () -> i32, (), -1)
 }
 
 /// `IReadOnlyPool<IPlayer>::get(int)` — the player with that id, or null.
@@ -1085,22 +936,14 @@ pub unsafe fn player_id(player: *mut IPlayer) -> i32 {
 /// `pool` must come from [`player_pool`].
 #[must_use]
 pub unsafe fn player_by_id(pool: *mut IPlayerPool, id: i32) -> *mut IPlayer {
-    #[cfg(not(target_env = "msvc"))]
-    type GetFn = unsafe extern "C" fn(*mut u8, i32) -> *mut IPlayer;
-    #[cfg(target_env = "msvc")]
-    type GetFn = unsafe extern "thiscall" fn(*mut u8, i32) -> *mut IPlayer;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            pool.cast::<u8>(),
-            PLAYER_POOL_OFFSET,
-            SLOT_POOL_GET,
-        )
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get(this, id) }
+    call_vtable!(
+        pool.cast::<u8>(),
+        PLAYER_POOL_OFFSET,
+        SLOT_POOL_GET,
+        (i32) -> *mut IPlayer,
+        (id),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IPlayer::getMoney()`.
@@ -1176,22 +1019,14 @@ pub unsafe fn player_set_drunk_level(player: *mut IPlayer, level: i32) {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_set_controllable(player: *mut IPlayer, controllable: bool) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetFn = unsafe extern "C" fn(*mut u8, bool);
-    #[cfg(target_env = "msvc")]
-    type SetFn = unsafe extern "thiscall" fn(*mut u8, bool);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            player.cast::<u8>(),
-            0,
-            SLOT_PLAYER_SET_CONTROLLABLE,
-        )
-    }) else {
-        return;
-    };
-    let set: SetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set(this, controllable) };
+    call_vtable!(
+        player.cast::<u8>(),
+        0,
+        SLOT_PLAYER_SET_CONTROLLABLE,
+        (bool) -> (),
+        (controllable),
+        ()
+    )
 }
 
 /// The range of ids a pool can hand out, as `IReadOnlyPool<T>::bounds()`
@@ -1293,18 +1128,14 @@ pub unsafe fn all_players(pool: *mut IPlayerPool) -> Vec<*mut IPlayer> {
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_extension(player: *mut IPlayer, uid: UID) -> *mut u8 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetExtFn = unsafe extern "C" fn(*mut u8, UID) -> *mut u8;
-    #[cfg(target_env = "msvc")]
-    type GetExtFn = unsafe extern "thiscall" fn(*mut u8, UID) -> *mut u8;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_GET_EXTENSION)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let get_extension: GetExtFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_extension(this, uid) }
+    call_vtable!(
+        player.cast::<u8>(),
+        0,
+        SLOT_GET_EXTENSION,
+        (UID) -> *mut u8,
+        (uid),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IPlayer::sendClientMessage(const Colour&, StringView)` — a chat line for
@@ -1317,23 +1148,18 @@ pub unsafe fn player_extension(player: *mut IPlayer, uid: UID) -> *mut u8 {
 /// # Safety
 /// See [`player_kick`].
 pub unsafe fn player_send_message(player: *mut IPlayer, colour: Colour, text: &str) {
-    #[cfg(not(target_env = "msvc"))]
-    type SendMessageFn = unsafe extern "C" fn(*mut u8, *const Colour, StringView);
-    #[cfg(target_env = "msvc")]
-    type SendMessageFn = unsafe extern "thiscall" fn(*mut u8, *const Colour, StringView);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SEND_MESSAGE)
-    }) else {
-        return;
-    };
-    let send: SendMessageFn = unsafe { std::mem::transmute(f_ptr) };
-
-    let view = StringView {
+    let text = StringView {
         data: text.as_ptr(),
         len: text.len(),
     };
-    unsafe { send(this, &raw const colour, view) };
+    call_vtable!(
+        player.cast::<u8>(),
+        0,
+        SLOT_PLAYER_SEND_MESSAGE,
+        (*const Colour, StringView) -> (),
+        (&raw const colour, text),
+        ()
+    )
 }
 
 /// Writes the `get<X>Dispatcher` + `add_<x>_handler` pair for one event group.

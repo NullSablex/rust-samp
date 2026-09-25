@@ -145,6 +145,49 @@ pub unsafe fn secondary_call_target(
     unsafe { secondary_call_target_ptr(obj, offset, slot) }.map(|(this, f)| (this, f.addr()))
 }
 
+/// Calls a virtual method through a server object's vtable.
+///
+/// Every wrapper in this module family repeats the same four steps: name the
+/// function type for the target's calling convention, adjust `this` to the
+/// right subobject, read the slot, and give up gracefully when either pointer
+/// is missing. The macro is that sequence written once.
+///
+/// ```ignore
+/// // bool IPlayer::isBot() const, slot 8, primary vtable
+/// call_vtable!(player.cast::<u8>(), 0, SLOT_IS_BOT, () -> bool, (), false)
+///
+/// // void IPlayer::setHealth(float)
+/// call_vtable!(player.cast::<u8>(), 0, SLOT_SET_HEALTH, (f32) -> (), (health), ())
+/// ```
+///
+/// The last argument is what to return when the object, its vtable or the slot
+/// is null — the "fails closed" behaviour the null-safety tests check. Methods
+/// whose return type crosses the ABI differently (a struct through a hidden
+/// pointer, say) are written out by hand instead.
+macro_rules! call_vtable {
+    (
+        $ptr:expr, $offset:expr, $slot:expr,
+        ($($arg_ty:ty),* $(,)?) -> $ret:ty,
+        ($($arg:expr),* $(,)?),
+        $absent:expr
+    ) => {{
+        #[cfg(not(target_env = "msvc"))]
+        type VirtualFn = unsafe extern "C" fn(*mut u8 $(, $arg_ty)*) -> $ret;
+        #[cfg(target_env = "msvc")]
+        type VirtualFn = unsafe extern "thiscall" fn(*mut u8 $(, $arg_ty)*) -> $ret;
+
+        match unsafe { $crate::omp::vtable::secondary_call_target_ptr($ptr, $offset, $slot) } {
+            Some((this, f_ptr)) => {
+                let call: VirtualFn = unsafe { std::mem::transmute(f_ptr) };
+                unsafe { call(this $(, $arg)*) }
+            }
+            None => $absent,
+        }
+    }};
+}
+
+pub(crate) use call_vtable;
+
 /// Function-pointer table for unit-test mocks. Raw pointers are not `Sync`,
 /// so the wrapper lets a mock vtable live in a `static`.
 #[cfg(test)]

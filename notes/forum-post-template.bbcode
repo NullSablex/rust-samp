@@ -1,0 +1,56 @@
+[align=center][size=30][b][color=#E67E22]🦀 rust-samp v3.2.0[/color][/b][/size]
+
+[size=15][i]SDK em Rust pra plugins SA-MP e componentes nativos open.mp[/i]
+[i]Rust SDK for SA-MP plugins and native open.mp components[/i][/size]
+
+[url=https://github.com/NullSablex/rust-samp][b]github.com/NullSablex/rust-samp[/b][/url][/align]
+
+[quote]
+🇧🇷 Nova release no ar! 🎉 E dessa vez ela vem com umas coisas que eu queria há tempos: ferramentas de debugging direto na VM, um parser de debug-info e pontos de extensão pro logger — tudo sem encher o projeto de dependência nem esconder telemetria por baixo do pano.
+
+🇬🇧 New release is out! 🎉 And this one packs stuff I'd wanted for a while: VM debugging primitives, a debug-info parser and logger extension points — all without bloating the project with dependencies or sneaking in any telemetry.
+[/quote]
+
+[size=22][b]✨ O que tem de novo / What's new[/b][/size]
+
+[b]🔍 VM Debugging primitives[/b]
+🇧🇷 Acessores seguros direto no [b]Amx[/b]: leitura de registradores ([b]cip[/b], [b]frame[/b], [b]stack[/b], [b]heap[/b], [b]stp[/b]), acesso a células com bounds-check ([b]read_cell[/b] / [b]write_cell[/b]) e gerenciamento de debug hook ([b]install_debug_hook[/b] / [b]remove_debug_hook[/b]). Sempre disponível, sem feature flag.
+🇬🇧 Safe accessors right on [b]Amx[/b]: register reads, bounds-checked cell access and debug-hook management. Always available, no feature gate.
+
+[b]🧩 samp::debug — parser de AMX_DBG (feature [i]debug[/i])[/b]
+🇧🇷 Decoder puro do bloco de debug que o [b]pawncc -d2/-d3[/b] anexa ao [b].amx[/b]. Mapeia endereço de código ↔ linha de fonte ↔ símbolo ↔ função. Zero dependência extra.
+🇬🇧 Pure-logic decoder for the debug block [b]pawncc -d2/-d3[/b] appends to the [b].amx[/b]. Maps code address ↔ source line ↔ symbol ↔ function. Zero extra dependencies.
+
+[b]📡 External sinks no logger[/b]
+🇧🇷 Trait [b]samp::logger::Sink[/b] + [b]LoggerConfig::add_sink[/b] pra mandar log pro destino que você quiser (Sentry, OTLP, um HTTP seu...). [b]Nada de telemetria embutida no SDK[/b] — é você que liga, se quiser.
+🇬🇧 [b]Sink[/b] trait + [b]add_sink[/b] to ship logs wherever you want. [b]No telemetry baked into the SDK[/b] — you turn it on, if you ever want to.
+
+[b]📦 Já tá no crates.io / Now on crates.io[/b]
+[code]
+samp = { package = "rust-samp", version = "3" }
+[/code]
+
+[b]🛡️ Segurança & governança / Security & governance[/b]
+🇧🇷 OpenSSF Scorecard, Actions pinadas por SHA, permissões de token mínimas, Dependabot e política de segurança. O básico bem feito.
+🇬🇧 OpenSSF Scorecard, SHA-pinned Actions, least-privilege tokens, Dependabot and a security policy. The basics, done right.
+
+[size=18][b]📋 Changelog completo / Full changelog[/b][/size]
+[url=https://github.com/NullSablex/rust-samp/blob/master/CHANGELOG.md]CHANGELOG.md[/url]
+
+[size=22][b]🚀 E não para por aí / And it doesn't stop here[/b][/size]
+
+[quote]
+🇧🇷 O [b]PawnPro[/b] e o novo [b]PawnPro Debugger[/b] vão ser atualizados em breve pra usar esse material novo do SDK. E o Debugger... esse vem [b]chegando logo[/b] 👀 — montado em cima justamente das primitivas de debugging e do parser de AMX_DBG dessa release. As peças foram pensadas pra se encaixar.
+
+🇬🇧 [b]PawnPro[/b] and the new [b]PawnPro Debugger[/b] are getting updated soon to ride on this new SDK material. And the Debugger... that one's [b]landing soon[/b] 👀 — built right on top of the debugging primitives and the AMX_DBG parser from this release. The pieces were made to fit together.
+[/quote]
+
+[list]
+[*][url=https://github.com/NullSablex/PawnPro][b]PawnPro[/b][/url] — 🇧🇷 atualização chegando / 🇬🇧 update coming
+[*][url=https://github.com/NullSablex/PawnPro-Debugger][b]PawnPro Debugger[/b][/url] — 🇧🇷 lançamento em breve / 🇬🇧 launching soon
+[/list]
+
+[align=center][i]🇧🇷 Deu pra notar que tem coisa boa vindo. Issues, PRs e feedback são sempre bem-vindos!
+🇬🇧 You can probably tell there's good stuff on the way. Issues, PRs and feedback are always welcome![/i]
+
+[url=https://github.com/NullSablex/rust-samp][b]⭐ github.com/NullSablex/rust-samp[/b][/url][/align]

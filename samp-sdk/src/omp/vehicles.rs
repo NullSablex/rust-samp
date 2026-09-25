@@ -25,6 +25,7 @@
 use super::players::{ENTITY_OFFSET, SLOT_ENTITY_GET_POSITION};
 use super::server::ServerComponent;
 use super::types::{UID, Vector3};
+use super::vtable::call_vtable;
 
 /// UID of the Open Multiplayer `Vehicles` component.
 pub const VEHICLES_COMPONENT_UID: UID = 0x3f1f_62ee_9e22_ab19;
@@ -181,18 +182,14 @@ impl VehicleHandler {
 pub unsafe fn vehicle_event_dispatcher(
     component: *mut IVehiclesComponent,
 ) -> *mut IVehicleDispatcher {
-    #[cfg(not(target_env = "msvc"))]
-    type GetFn = unsafe extern "C" fn(*mut u8) -> *mut IVehicleDispatcher;
-    #[cfg(target_env = "msvc")]
-    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> *mut IVehicleDispatcher;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_VEHICLE_DISPATCHER)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get(this) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_VEHICLE_DISPATCHER,
+        () -> *mut IVehicleDispatcher,
+        (),
+        std::ptr::null_mut()
+    )
 }
 
 /// Registers `handler` on the vehicle dispatcher (`addEventHandler`, slot [0]).
@@ -203,18 +200,14 @@ pub unsafe fn add_vehicle_handler(
     dispatcher: *mut IVehicleDispatcher,
     handler: *mut VehicleHandler,
 ) -> bool {
-    #[cfg(not(target_env = "msvc"))]
-    type AddFn = unsafe extern "C" fn(*mut u8, *mut VehicleHandler, i8) -> bool;
-    #[cfg(target_env = "msvc")]
-    type AddFn = unsafe extern "thiscall" fn(*mut u8, *mut VehicleHandler, i8) -> bool;
-
-    let Some((this, f_ptr)) =
-        (unsafe { super::vtable::secondary_call_target_ptr(dispatcher.cast::<u8>(), 0, 0) })
-    else {
-        return false;
-    };
-    let add: AddFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { add(this, handler, 0) }
+    call_vtable!(
+        dispatcher.cast::<u8>(),
+        0,
+        0,
+        (*mut VehicleHandler, i8) -> bool,
+        (handler, 0),
+        false
+    )
 }
 
 /// `IReadOnlyPool<IVehicle>::get(int)` — the vehicle with that id, or null.
@@ -223,22 +216,14 @@ pub unsafe fn add_vehicle_handler(
 /// `component` must be a live `IVehiclesComponent`.
 #[must_use]
 pub unsafe fn vehicle_by_id(component: *mut IVehiclesComponent, id: i32) -> *mut IVehicle {
-    #[cfg(not(target_env = "msvc"))]
-    type GetFn = unsafe extern "C" fn(*mut u8, i32) -> *mut IVehicle;
-    #[cfg(target_env = "msvc")]
-    type GetFn = unsafe extern "thiscall" fn(*mut u8, i32) -> *mut IVehicle;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            component.cast::<u8>(),
-            VEHICLE_POOL_OFFSET,
-            super::players::SLOT_POOL_GET_PUB,
-        )
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get(this, id) }
+    call_vtable!(
+        component.cast::<u8>(),
+        VEHICLE_POOL_OFFSET,
+        super::players::SLOT_POOL_GET_PUB,
+        (i32) -> *mut IVehicle,
+        (id),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IEntity::getID()` for a vehicle — the id Pawn scripts use.
@@ -247,22 +232,14 @@ pub unsafe fn vehicle_by_id(component: *mut IVehiclesComponent, id: i32) -> *mut
 /// See [`vehicle_model`].
 #[must_use]
 pub unsafe fn vehicle_id(vehicle: *mut IVehicle) -> i32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetIdFn = unsafe extern "C" fn(*mut u8) -> i32;
-    #[cfg(target_env = "msvc")]
-    type GetIdFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            vehicle.cast::<u8>(),
-            ENTITY_OFFSET,
-            super::players::SLOT_ENTITY_GET_ID,
-        )
-    }) else {
-        return -1;
-    };
-    let get_id: GetIdFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_id(this) }
+    call_vtable!(
+        vehicle.cast::<u8>(),
+        ENTITY_OFFSET,
+        super::players::SLOT_ENTITY_GET_ID,
+        () -> i32,
+        (),
+        -1
+    )
 }
 
 /// Casts a component handle obtained by UID into the vehicles component.
@@ -301,66 +278,19 @@ pub unsafe fn create_vehicle(
     respawn_delay_secs: i64,
     siren: bool,
 ) -> *mut IVehicle {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn = unsafe extern "C" fn(
-        *mut u8,
-        bool,
-        i32,
-        Vector3,
-        f32,
-        i32,
-        i32,
-        i64,
-        bool,
-    ) -> *mut IVehicle;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(
-        *mut u8,
-        bool,
-        i32,
-        Vector3,
-        f32,
-        i32,
-        i32,
-        i64,
-        bool,
-    ) -> *mut IVehicle;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_VEHICLE)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe {
-        create(
-            this,
-            false, // isStatic
-            model,
-            position,
-            z_angle,
-            colour1,
-            colour2,
-            respawn_delay_secs,
-            siren,
-        )
-    }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_VEHICLE,
+        (bool, i32, Vector3, f32, i32, i32, i64, bool) -> *mut IVehicle,
+        (false, model, position, z_angle, colour1, colour2, respawn_delay_secs, siren),
+        std::ptr::null_mut()
+    )
 }
 
 /// Reads a `f32` getter that takes no arguments from the vehicle's vtable.
 unsafe fn vehicle_f32(vehicle: *mut IVehicle, slot: usize) -> f32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetFn = unsafe extern "C" fn(*mut u8) -> f32;
-    #[cfg(target_env = "msvc")]
-    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> f32;
-
-    let Some((this, f_ptr)) =
-        (unsafe { super::vtable::secondary_call_target_ptr(vehicle.cast::<u8>(), 0, slot) })
-    else {
-        return 0.0;
-    };
-    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get(this) }
+    call_vtable!(vehicle.cast::<u8>(), 0, slot, () -> f32, (), 0.0)
 }
 
 /// `IVehicle::getModel()`.
@@ -369,18 +299,7 @@ unsafe fn vehicle_f32(vehicle: *mut IVehicle, slot: usize) -> f32 {
 /// `vehicle` must come from [`create_vehicle`] and still exist.
 #[must_use]
 pub unsafe fn vehicle_model(vehicle: *mut IVehicle) -> i32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetModelFn = unsafe extern "C" fn(*mut u8) -> i32;
-    #[cfg(target_env = "msvc")]
-    type GetModelFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(vehicle.cast::<u8>(), 0, SLOT_VEHICLE_GET_MODEL)
-    }) else {
-        return 0;
-    };
-    let get_model: GetModelFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_model(this) }
+    call_vtable!(vehicle.cast::<u8>(), 0, SLOT_VEHICLE_GET_MODEL, () -> i32, (), 0)
 }
 
 /// `IVehicle::getHealth()`.
@@ -397,18 +316,14 @@ pub unsafe fn vehicle_health(vehicle: *mut IVehicle) -> f32 {
 /// # Safety
 /// See [`vehicle_model`].
 pub unsafe fn vehicle_set_health(vehicle: *mut IVehicle, health: f32) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetHealthFn = unsafe extern "C" fn(*mut u8, f32);
-    #[cfg(target_env = "msvc")]
-    type SetHealthFn = unsafe extern "thiscall" fn(*mut u8, f32);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(vehicle.cast::<u8>(), 0, SLOT_VEHICLE_SET_HEALTH)
-    }) else {
-        return;
-    };
-    let set_health: SetHealthFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set_health(this, health) };
+    call_vtable!(
+        vehicle.cast::<u8>(),
+        0,
+        SLOT_VEHICLE_SET_HEALTH,
+        (f32) -> (),
+        (health),
+        ()
+    )
 }
 
 /// `IVehicle::setColour(int, int)`.
@@ -416,18 +331,14 @@ pub unsafe fn vehicle_set_health(vehicle: *mut IVehicle, health: f32) {
 /// # Safety
 /// See [`vehicle_model`].
 pub unsafe fn vehicle_set_colour(vehicle: *mut IVehicle, colour1: i32, colour2: i32) {
-    #[cfg(not(target_env = "msvc"))]
-    type SetColourFn = unsafe extern "C" fn(*mut u8, i32, i32);
-    #[cfg(target_env = "msvc")]
-    type SetColourFn = unsafe extern "thiscall" fn(*mut u8, i32, i32);
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(vehicle.cast::<u8>(), 0, SLOT_VEHICLE_SET_COLOUR)
-    }) else {
-        return;
-    };
-    let set_colour: SetColourFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { set_colour(this, colour1, colour2) };
+    call_vtable!(
+        vehicle.cast::<u8>(),
+        0,
+        SLOT_VEHICLE_SET_COLOUR,
+        (i32, i32) -> (),
+        (colour1, colour2),
+        ()
+    )
 }
 
 /// `IEntity::getPosition()` for a vehicle.
@@ -439,27 +350,19 @@ pub unsafe fn vehicle_set_colour(vehicle: *mut IVehicle, colour1: i32, colour2: 
 /// See [`vehicle_model`].
 #[must_use]
 pub unsafe fn vehicle_position(vehicle: *mut IVehicle) -> Vector3 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetPositionFn = unsafe extern "C" fn(*mut u8) -> Vector3;
-    #[cfg(target_env = "msvc")]
-    type GetPositionFn = unsafe extern "thiscall" fn(*mut u8) -> Vector3;
-
     let zero = Vector3 {
         x: 0.0,
         y: 0.0,
         z: 0.0,
     };
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(
-            vehicle.cast::<u8>(),
-            ENTITY_OFFSET,
-            SLOT_ENTITY_GET_POSITION,
-        )
-    }) else {
-        return zero;
-    };
-    let get_position: GetPositionFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_position(this) }
+    call_vtable!(
+        vehicle.cast::<u8>(),
+        ENTITY_OFFSET,
+        SLOT_ENTITY_GET_POSITION,
+        () -> Vector3,
+        (),
+        zero
+    )
 }
 
 #[cfg(test)]

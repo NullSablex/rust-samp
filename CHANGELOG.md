@@ -4,9 +4,33 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [Unreleased]
+## [v3.6.0-rc.2] — Unreleased
 
-### `rust-samp-sdk` (lib `samp_sdk`)
+Second candidate. It finishes the two categories rc.1 could not reach —
+iterating a pool and reading a player's extensions — adds the remaining
+components, and then spends the rest of its time on assurance rather than
+surface: a null-safety sweep over the whole open.mp layer, and a refactor that
+removed a third of it.
+
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0-rc.2
+
+#### Changed
+
+- **The open.mp wrappers lost a third of their code.** Every accessor repeated
+  the same twelve lines: name the function type per calling convention, adjust
+  `this`, read the slot, give up when either is missing. That is now one macro,
+  `call_vtable!`, used by about forty wrappers — 577 lines deleted against 265
+  added. The behaviour is unchanged and the same servers were run again to say
+  so, but "fails closed" is now implemented once instead of forty times, which
+  is what makes the null-safety tests below meaningful.
+
+#### Tests
+
+- **A null-safety sweep over the whole open.mp layer**: every public entry point
+  is called with a null handle and has to answer with its documented default —
+  `None`, zero, a null pointer, `false`, or an empty range. Sixty-odd entry
+  points, six tests. A plugin asking about a player who just disconnected is the
+  ordinary case for this, not an edge one.
 
 #### Fixed
 

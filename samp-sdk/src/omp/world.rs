@@ -17,6 +17,7 @@
 use super::players::{ENTITY_OFFSET, SLOT_ENTITY_GET_ID};
 use super::server::ServerComponent;
 use super::types::{Colour, StringView, UID, Vector2, Vector3};
+use super::vtable::call_vtable;
 
 /// UID of the Open Multiplayer `TextDraws` component.
 pub const TEXTDRAWS_COMPONENT_UID: UID = 0x9b5d_c2b1_d15c_992a;
@@ -234,25 +235,14 @@ pub unsafe fn create_object(
     rotation: Vector3,
     draw_distance: f32,
 ) -> *mut super::players::IObject {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn =
-        unsafe extern "C" fn(*mut u8, i32, Vector3, Vector3, f32) -> *mut super::players::IObject;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(
-        *mut u8,
-        i32,
-        Vector3,
-        Vector3,
-        f32,
-    ) -> *mut super::players::IObject;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_OBJECT)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { create(this, model, position, rotation, draw_distance) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_OBJECT,
+        (i32, Vector3, Vector3, f32) -> *mut super::players::IObject,
+        (model, position, rotation, draw_distance),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IPickupsComponent::create(modelId, type, pos, virtualWorld, isStatic)`.
@@ -268,20 +258,14 @@ pub unsafe fn create_pickup(
     virtual_world: u32,
     is_static: bool,
 ) -> *mut IPickup {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn =
-        unsafe extern "C" fn(*mut u8, i32, PickupType, Vector3, u32, bool) -> *mut IPickup;
-    #[cfg(target_env = "msvc")]
-    type CreateFn =
-        unsafe extern "thiscall" fn(*mut u8, i32, PickupType, Vector3, u32, bool) -> *mut IPickup;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_PICKUP)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { create(this, model, pickup_type, position, virtual_world, is_static) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_PICKUP,
+        (i32, PickupType, Vector3, u32, bool) -> *mut IPickup,
+        (model, pickup_type, position, virtual_world, is_static),
+        std::ptr::null_mut()
+    )
 }
 
 /// Casts a component handle obtained by UID into the text draws component.
@@ -323,22 +307,18 @@ pub unsafe fn create_textdraw(
     position: Vector2,
     text: &str,
 ) -> *mut ITextDraw {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn = unsafe extern "C" fn(*mut u8, Vector2, StringView) -> *mut ITextDraw;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(*mut u8, Vector2, StringView) -> *mut ITextDraw;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_TEXTDRAW)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    let view = StringView {
+    let text = StringView {
         data: text.as_ptr(),
         len: text.len(),
     };
-    unsafe { create(this, position, view) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_TEXTDRAW,
+        (Vector2, StringView) -> *mut ITextDraw,
+        (position, text),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IGangZonesComponent::create(pos)`.
@@ -350,18 +330,14 @@ pub unsafe fn create_gangzone(
     component: *mut IGangZonesComponent,
     area: GangZonePos,
 ) -> *mut IGangZone {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn = unsafe extern "C" fn(*mut u8, GangZonePos) -> *mut IGangZone;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(*mut u8, GangZonePos) -> *mut IGangZone;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_GANGZONE)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { create(this, area) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_GANGZONE,
+        (GangZonePos) -> *mut IGangZone,
+        (area),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IActorsComponent::create(skin, pos, angle)` — a static NPC-looking actor.
@@ -375,18 +351,14 @@ pub unsafe fn create_actor(
     position: Vector3,
     angle: f32,
 ) -> *mut IActor {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn = unsafe extern "C" fn(*mut u8, i32, Vector3, f32) -> *mut IActor;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(*mut u8, i32, Vector3, f32) -> *mut IActor;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_ACTOR)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { create(this, skin, position, angle) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_ACTOR,
+        (i32, Vector3, f32) -> *mut IActor,
+        (skin, position, angle),
+        std::ptr::null_mut()
+    )
 }
 
 /// Casts a component handle obtained by UID into the text labels component.
@@ -436,48 +408,18 @@ pub unsafe fn create_textlabel(
     virtual_world: i32,
     line_of_sight: bool,
 ) -> *mut ITextLabel {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn = unsafe extern "C" fn(
-        *mut u8,
-        StringView,
-        Colour,
-        Vector3,
-        f32,
-        i32,
-        bool,
-    ) -> *mut ITextLabel;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(
-        *mut u8,
-        StringView,
-        Colour,
-        Vector3,
-        f32,
-        i32,
-        bool,
-    ) -> *mut ITextLabel;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_TEXTLABEL)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    let view = StringView {
+    let text = StringView {
         data: text.as_ptr(),
         len: text.len(),
     };
-    unsafe {
-        create(
-            this,
-            view,
-            colour,
-            position,
-            draw_distance,
-            virtual_world,
-            line_of_sight,
-        )
-    }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_TEXTLABEL,
+        (StringView, Colour, Vector3, f32, i32, bool) -> *mut ITextLabel,
+        (text, colour, position, draw_distance, virtual_world, line_of_sight),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IMenusComponent::create(title, position, columns, col1Width, col2Width)`.
@@ -493,23 +435,18 @@ pub unsafe fn create_menu(
     column1_width: f32,
     column2_width: f32,
 ) -> *mut IMenu {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn = unsafe extern "C" fn(*mut u8, StringView, Vector2, u8, f32, f32) -> *mut IMenu;
-    #[cfg(target_env = "msvc")]
-    type CreateFn =
-        unsafe extern "thiscall" fn(*mut u8, StringView, Vector2, u8, f32, f32) -> *mut IMenu;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_MENU)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    let view = StringView {
+    let title = StringView {
         data: title.as_ptr(),
         len: title.len(),
     };
-    unsafe { create(this, view, position, columns, column1_width, column2_width) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_MENU,
+        (StringView, Vector2, u8, f32, f32) -> *mut IMenu,
+        (title, position, columns, column1_width, column2_width),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IClassesComponent::create(skin, team, spawn, angle, weapons)` — a spawn
@@ -529,26 +466,14 @@ pub unsafe fn create_class(
     angle: f32,
     weapons: &[WeaponSlot; MAX_WEAPON_SLOTS],
 ) -> *mut IClass {
-    #[cfg(not(target_env = "msvc"))]
-    type CreateFn =
-        unsafe extern "C" fn(*mut u8, i32, i32, Vector3, f32, *const WeaponSlot) -> *mut IClass;
-    #[cfg(target_env = "msvc")]
-    type CreateFn = unsafe extern "thiscall" fn(
-        *mut u8,
-        i32,
-        i32,
-        Vector3,
-        f32,
-        *const WeaponSlot,
-    ) -> *mut IClass;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_CLASS)
-    }) else {
-        return std::ptr::null_mut();
-    };
-    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { create(this, skin, team, spawn, angle, weapons.as_ptr()) }
+    call_vtable!(
+        component.cast::<u8>(),
+        0,
+        SLOT_CREATE_CLASS,
+        (i32, i32, Vector3, f32, *const WeaponSlot) -> *mut IClass,
+        (skin, team, spawn, angle, weapons.as_ptr()),
+        std::ptr::null_mut()
+    )
 }
 
 /// `IEntity::getID()` for any entity that carries the subobject — an object, a
@@ -559,18 +484,7 @@ pub unsafe fn create_class(
 /// `IEntity`, which every entity in the SDK does.
 #[must_use]
 pub unsafe fn entity_id(entity: *mut u8) -> i32 {
-    #[cfg(not(target_env = "msvc"))]
-    type GetIdFn = unsafe extern "C" fn(*mut u8) -> i32;
-    #[cfg(target_env = "msvc")]
-    type GetIdFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
-
-    let Some((this, f_ptr)) = (unsafe {
-        super::vtable::secondary_call_target_ptr(entity, ENTITY_OFFSET, SLOT_ENTITY_GET_ID)
-    }) else {
-        return -1;
-    };
-    let get_id: GetIdFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { get_id(this) }
+    call_vtable!(entity, ENTITY_OFFSET, SLOT_ENTITY_GET_ID, () -> i32, (), -1)
 }
 
 #[cfg(test)]

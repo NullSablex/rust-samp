@@ -5,3 +5,5 @@ mod amx_string;
 mod buffer;
 #[cfg(not(feature = "samp-only"))]
 mod omp_lifecycle;
+#[cfg(not(feature = "samp-only"))]
+mod omp_null_safety;
