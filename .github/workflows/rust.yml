@@ -128,6 +128,13 @@ jobs:
           toolchain: nightly
           components: miri, rust-src
 
+      # `retour` pulls in `alloca`, whose build script compiles C for the
+      # target. Building it for i686 needs the 32-bit headers, the same ones
+      # the build matrix installs — without them the job fails on
+      # `bits/libc-header-start.h`, which reads like a Miri problem and is not.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
