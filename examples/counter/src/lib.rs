@@ -119,13 +119,27 @@ impl SampPlugin for Counter {
                     false,
                 )
             };
+            // Vehicle events, same shape as the player ones.
+            let dispatcher = unsafe { samp::omp::vehicle_event_dispatcher(vehicles) };
+            if !dispatcher.is_null() {
+                let handler = Box::leak(Box::new(samp::omp::VehicleHandler::new(
+                    &raw const omp_vehicles::VTABLE,
+                )));
+                let ok = unsafe { samp::omp::add_vehicle_handler(dispatcher, handler) };
+                info!("[omp] vehicle handler registered: {ok}");
+            }
+
             if vehicle.is_null() {
                 info!("[omp] vehicle creation refused by the server");
             } else {
                 unsafe { samp::omp::vehicle_set_health(vehicle, 750.0) };
                 let pos = unsafe { samp::omp::vehicle_position(vehicle) };
+                let id = unsafe { samp::omp::vehicle_id(vehicle) };
+                // Looking the same vehicle up by id must land on the same object.
+                let looked_up = unsafe { samp::omp::vehicle_by_id(vehicles, id) };
                 info!(
-                    "[omp] vehicle model={} health={} pos=({:.1},{:.1},{:.1})",
+                    "[omp] vehicle id={id} lookup_ok={} model={} health={} pos=({:.1},{:.1},{:.1})",
+                    std::ptr::eq(looked_up, vehicle),
                     unsafe { samp::omp::vehicle_model(vehicle) },
                     unsafe { samp::omp::vehicle_health(vehicle) },
                     pos.x,
@@ -360,9 +374,12 @@ mod omp_players {
             // Reading from the IPlayer the server just handed us: the name
             // comes back as a StringView through a hidden pointer on both ABIs.
             let is_bot = unsafe { samp::omp::player_is_bot(player) };
-            info!("[omp-event] onPlayerConnect: bot={is_bot}");
             let name = unsafe { samp::omp::player_name(player) };
-            info!("[omp-event] name={:?}", name.as_deref().unwrap_or("<none>"));
+            let id = unsafe { samp::omp::player_id(player) };
+            info!(
+                "[omp-event] onPlayerConnect: id={id} name={:?} bot={is_bot}",
+                name.as_deref().unwrap_or("<none>")
+            );
         }
     );
 
@@ -441,7 +458,23 @@ mod omp_players {
                     // Position comes from the IEntity subobject, which needs
                     // the `this` pointer adjusted before indexing.
                     let world = unsafe { samp::omp::player_virtual_world(player) };
-                    info!("[omp-event] score={score} health={health} world={world}");
+                    unsafe {
+                        samp::omp::player_set_money(player, 5000);
+                        samp::omp::player_set_team(player, 3);
+                        samp::omp::player_set_armour(player, 50.0);
+                    }
+                    let id = unsafe { samp::omp::player_id(player) };
+                    // The same object, reached through the pool by id?
+                    let pool = samp::plugin::omp_core()
+                        .map(|core| unsafe { samp::omp::player_pool(core) })
+                        .unwrap_or(std::ptr::null_mut());
+                    let looked_up = unsafe { samp::omp::player_by_id(pool, id) };
+                    info!(
+                        "[omp-event] score={score} health={health} world={world} team={} armour={} lookup_ok={}",
+                        unsafe { samp::omp::player_team(player) },
+                        unsafe { samp::omp::player_armour(player) },
+                        std::ptr::eq(looked_up, player)
+                    );
                     let pos = unsafe { samp::omp::player_position(player) };
                     info!("[omp-event] pos=({:.1},{:.1},{:.1})", pos.x, pos.y, pos.z);
                 }
@@ -477,6 +510,105 @@ use omp_players::{
     SPAWN_VTABLE as PLAYER_SPAWN_VTABLE, TEXT_VTABLE as PLAYER_TEXT_VTABLE,
     UPDATE_VTABLE as PLAYER_UPDATE_VTABLE, VTABLE as PLAYER_CONNECT_VTABLE,
 };
+
+mod omp_vehicles {
+    use log::info;
+    use samp::omp::{IVehicle, VehicleHandler, VehicleHandlerVTable};
+
+    macro_rules! vh {
+        (fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? $body:block) => {
+            #[cfg(not(target_env = "msvc"))]
+            unsafe extern "C" fn $name($($arg: $ty),*) $(-> $ret)? $body
+            #[cfg(target_env = "msvc")]
+            unsafe extern "thiscall" fn $name($($arg: $ty),*) $(-> $ret)? $body
+        };
+    }
+
+    vh!(
+        fn stream_in(_t: *mut VehicleHandler, _v: *mut IVehicle, _p: *mut u8) {}
+    );
+    vh!(
+        fn stream_out(_t: *mut VehicleHandler, _v: *mut IVehicle, _p: *mut u8) {}
+    );
+    vh!(
+        fn death(_t: *mut VehicleHandler, _v: *mut IVehicle, _p: *mut u8) {}
+    );
+    vh!(
+        fn enter(_t: *mut VehicleHandler, _p: *mut u8, _v: *mut IVehicle, _passenger: bool) {}
+    );
+    vh!(
+        fn exit(_t: *mut VehicleHandler, _p: *mut u8, _v: *mut IVehicle) {}
+    );
+    vh!(
+        fn damage_status(_t: *mut VehicleHandler, _v: *mut IVehicle, _p: *mut u8) {}
+    );
+    vh!(
+        fn paint_job(_t: *mut VehicleHandler, _p: *mut u8, _v: *mut IVehicle, _j: i32) -> bool {
+            true
+        }
+    );
+    vh!(
+        fn modification(_t: *mut VehicleHandler, _p: *mut u8, _v: *mut IVehicle, _c: i32) -> bool {
+            true
+        }
+    );
+    vh!(
+        fn respray(
+            _t: *mut VehicleHandler,
+            _p: *mut u8,
+            _v: *mut IVehicle,
+            _c1: i32,
+            _c2: i32,
+        ) -> bool {
+            true
+        }
+    );
+    vh!(
+        fn mod_shop(_t: *mut VehicleHandler, _p: *mut u8, _enter: bool, _interior: i32) {}
+    );
+    vh!(
+        fn spawn(_t: *mut VehicleHandler, _v: *mut IVehicle) {
+            info!("[omp-event] onVehicleSpawn straight from the server");
+        }
+    );
+    vh!(
+        fn unoccupied(
+            _t: *mut VehicleHandler,
+            _v: *mut IVehicle,
+            _p: *mut u8,
+            _d: *const u8,
+        ) -> bool {
+            true
+        }
+    );
+    vh!(
+        fn trailer(_t: *mut VehicleHandler, _p: *mut u8, _v: *mut IVehicle) -> bool {
+            true
+        }
+    );
+    vh!(
+        fn siren(_t: *mut VehicleHandler, _p: *mut u8, _v: *mut IVehicle, _s: u8) -> bool {
+            true
+        }
+    );
+
+    pub static VTABLE: VehicleHandlerVTable = VehicleHandlerVTable {
+        on_vehicle_stream_in: stream_in,
+        on_vehicle_stream_out: stream_out,
+        on_vehicle_death: death,
+        on_player_enter_vehicle: enter,
+        on_player_exit_vehicle: exit,
+        on_vehicle_damage_status_update: damage_status,
+        on_vehicle_paint_job: paint_job,
+        on_vehicle_mod: modification,
+        on_vehicle_respray: respray,
+        on_enter_exit_mod_shop: mod_shop,
+        on_vehicle_spawn: spawn,
+        on_unoccupied_vehicle_update: unoccupied,
+        on_trailer_update: trailer,
+        on_vehicle_siren_state_change: siren,
+    };
+}
 
 initialize_plugin!(
     natives: [

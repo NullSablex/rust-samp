@@ -44,16 +44,17 @@ pub use players::{
 pub use players::{
     IObject, IPlayerChangeDispatcher, IPlayerCheckDispatcher, IPlayerClickDispatcher,
     IPlayerObject, IPlayerShotDispatcher, IPlayerStreamDispatcher, IPlayerUpdateDispatcher,
-    IVehicle, PlayerBulletData, PlayerChangeHandler, PlayerChangeHandlerVTable, PlayerCheckHandler,
+    PlayerBulletData, PlayerChangeHandler, PlayerChangeHandlerVTable, PlayerCheckHandler,
     PlayerCheckHandlerVTable, PlayerClickHandler, PlayerClickHandlerVTable, PlayerShotHandler,
     PlayerShotHandlerVTable, PlayerStreamHandler, PlayerStreamHandlerVTable, PlayerUpdateHandler,
     PlayerUpdateHandlerVTable, add_player_change_handler, add_player_check_handler,
     add_player_click_handler, add_player_shot_handler, add_player_stream_handler,
-    add_player_update_handler, player_change_dispatcher, player_check_dispatcher,
-    player_click_dispatcher, player_health, player_is_bot, player_kick, player_name,
-    player_position, player_score, player_send_message, player_set_health, player_set_position,
-    player_set_score, player_set_virtual_world, player_shot_dispatcher, player_stream_dispatcher,
-    player_update_dispatcher, player_virtual_world,
+    add_player_update_handler, player_armour, player_by_id, player_change_dispatcher,
+    player_check_dispatcher, player_click_dispatcher, player_give_money, player_health, player_id,
+    player_is_bot, player_kick, player_name, player_position, player_score, player_send_message,
+    player_set_armour, player_set_health, player_set_money, player_set_position, player_set_score,
+    player_set_skin, player_set_team, player_set_virtual_world, player_shot_dispatcher,
+    player_stream_dispatcher, player_team, player_update_dispatcher, player_virtual_world,
 };
 pub use server::{
     AmxFunctionTable, IEventDispatcherPawn, IPawnScript, PAWN_COMPONENT_UID, PawnComponent,
@@ -68,6 +69,8 @@ pub use types::{
     Colour, ComponentType, SemanticVersion, StringView, UID, Vector2, Vector3, Vector4,
 };
 pub use vehicles::{
-    IVehiclesComponent, VEHICLES_COMPONENT_UID, as_vehicles_component, create_vehicle,
-    vehicle_health, vehicle_model, vehicle_position, vehicle_set_colour, vehicle_set_health,
+    IVehicle, IVehicleDispatcher, IVehiclesComponent, VEHICLES_COMPONENT_UID, VehicleHandler,
+    VehicleHandlerVTable, add_vehicle_handler, as_vehicles_component, create_vehicle,
+    vehicle_by_id, vehicle_event_dispatcher, vehicle_health, vehicle_id, vehicle_model,
+    vehicle_position, vehicle_set_colour, vehicle_set_health,
 };

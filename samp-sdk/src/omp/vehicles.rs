@@ -54,6 +54,22 @@ const SLOT_VEHICLE_GET_MODEL: usize = 57;
 #[cfg(target_env = "msvc")]
 const SLOT_VEHICLE_GET_MODEL: usize = 56;
 
+/// Slot of `IVehiclesComponent::getEventDispatcher()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_VEHICLE_DISPATCHER: usize = 21;
+#[cfg(target_env = "msvc")]
+const SLOT_VEHICLE_DISPATCHER: usize = 19;
+
+/// Offset of the `IReadOnlyPool<IVehicle>` subobject inside the component.
+///
+/// Larger than the player pool's because `IVehiclesComponent` reaches it
+/// through `IComponent`, which carries an `IUIDProvider` of its own. From
+/// clang's record layout.
+#[cfg(not(target_env = "msvc"))]
+const VEHICLE_POOL_OFFSET: isize = 44;
+#[cfg(target_env = "msvc")]
+const VEHICLE_POOL_OFFSET: isize = 64;
+
 /// Opaque handle for the server's `IVehiclesComponent*`.
 #[repr(C)]
 pub struct IVehiclesComponent {
@@ -64,6 +80,189 @@ pub struct IVehiclesComponent {
 #[repr(C)]
 pub struct IVehicle {
     _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IEventDispatcher<VehicleEventHandler>*`.
+#[repr(C)]
+pub struct IVehicleDispatcher {
+    _opaque: [u8; 0],
+}
+
+/// `VehicleEventHandler` vtable — Itanium ABI.
+///
+/// Fourteen slots, in the order `vehicles.hpp` declares them. No virtual
+/// destructor, so MSVC numbers them the same; only the calling convention
+/// differs. The handlers returning `bool` can refuse the action: a `false` from
+/// `on_vehicle_paint_job`, `on_vehicle_mod` or `on_vehicle_respray` rejects it.
+#[cfg(not(target_env = "msvc"))]
+#[repr(C)]
+pub struct VehicleHandlerVTable {
+    pub on_vehicle_stream_in: unsafe extern "C" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_vehicle_stream_out: unsafe extern "C" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_vehicle_death: unsafe extern "C" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_player_enter_vehicle:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, bool),
+    pub on_player_exit_vehicle: unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle),
+    pub on_vehicle_damage_status_update:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_vehicle_paint_job:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, i32) -> bool,
+    pub on_vehicle_mod:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, i32) -> bool,
+    pub on_vehicle_respray:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, i32, i32) -> bool,
+    pub on_enter_exit_mod_shop: unsafe extern "C" fn(*mut VehicleHandler, *mut u8, bool, i32),
+    pub on_vehicle_spawn: unsafe extern "C" fn(*mut VehicleHandler, *mut IVehicle),
+    pub on_unoccupied_vehicle_update:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut IVehicle, *mut u8, *const u8) -> bool,
+    pub on_trailer_update:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle) -> bool,
+    pub on_vehicle_siren_state_change:
+        unsafe extern "C" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, u8) -> bool,
+}
+
+/// `VehicleEventHandler` vtable — MSVC ABI (`this` in ECX).
+#[cfg(target_env = "msvc")]
+#[repr(C)]
+pub struct VehicleHandlerVTable {
+    pub on_vehicle_stream_in:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_vehicle_stream_out:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_vehicle_death: unsafe extern "thiscall" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_player_enter_vehicle:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, bool),
+    pub on_player_exit_vehicle:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle),
+    pub on_vehicle_damage_status_update:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut IVehicle, *mut u8),
+    pub on_vehicle_paint_job:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, i32) -> bool,
+    pub on_vehicle_mod:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, i32) -> bool,
+    pub on_vehicle_respray:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, i32, i32) -> bool,
+    pub on_enter_exit_mod_shop:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, bool, i32),
+    pub on_vehicle_spawn: unsafe extern "thiscall" fn(*mut VehicleHandler, *mut IVehicle),
+    pub on_unoccupied_vehicle_update:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut IVehicle, *mut u8, *const u8) -> bool,
+    pub on_trailer_update:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle) -> bool,
+    pub on_vehicle_siren_state_change:
+        unsafe extern "thiscall" fn(*mut VehicleHandler, *mut u8, *mut IVehicle, u8) -> bool,
+}
+
+/// Object the server calls on vehicle events. The `*mut u8` arguments are
+/// `IPlayer*`; casting them to [`super::players::IPlayer`] is the caller's
+/// call, and keeps this module from depending on the player one.
+#[repr(C)]
+pub struct VehicleHandler {
+    vtable: *const VehicleHandlerVTable,
+}
+
+// SAFETY: the handler is only ever touched on the server's main thread.
+unsafe impl Send for VehicleHandler {}
+unsafe impl Sync for VehicleHandler {}
+
+impl VehicleHandler {
+    /// Builds a handler backed by `vtable`.
+    #[must_use]
+    pub fn new(vtable: *const VehicleHandlerVTable) -> Self {
+        Self { vtable }
+    }
+}
+
+/// `IVehiclesComponent::getEventDispatcher()`.
+///
+/// # Safety
+/// `component` must be a live `IVehiclesComponent`.
+#[must_use]
+pub unsafe fn vehicle_event_dispatcher(
+    component: *mut IVehiclesComponent,
+) -> *mut IVehicleDispatcher {
+    #[cfg(not(target_env = "msvc"))]
+    type GetFn = unsafe extern "C" fn(*mut u8) -> *mut IVehicleDispatcher;
+    #[cfg(target_env = "msvc")]
+    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> *mut IVehicleDispatcher;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_VEHICLE_DISPATCHER)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get(this) }
+}
+
+/// Registers `handler` on the vehicle dispatcher (`addEventHandler`, slot [0]).
+///
+/// # Safety
+/// Both pointers must be valid, and `handler` must outlive the registration.
+pub unsafe fn add_vehicle_handler(
+    dispatcher: *mut IVehicleDispatcher,
+    handler: *mut VehicleHandler,
+) -> bool {
+    #[cfg(not(target_env = "msvc"))]
+    type AddFn = unsafe extern "C" fn(*mut u8, *mut VehicleHandler, i8) -> bool;
+    #[cfg(target_env = "msvc")]
+    type AddFn = unsafe extern "thiscall" fn(*mut u8, *mut VehicleHandler, i8) -> bool;
+
+    let Some((this, f_ptr)) =
+        (unsafe { super::vtable::secondary_call_target_ptr(dispatcher.cast::<u8>(), 0, 0) })
+    else {
+        return false;
+    };
+    let add: AddFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { add(this, handler, 0) }
+}
+
+/// `IReadOnlyPool<IVehicle>::get(int)` — the vehicle with that id, or null.
+///
+/// # Safety
+/// `component` must be a live `IVehiclesComponent`.
+#[must_use]
+pub unsafe fn vehicle_by_id(component: *mut IVehiclesComponent, id: i32) -> *mut IVehicle {
+    #[cfg(not(target_env = "msvc"))]
+    type GetFn = unsafe extern "C" fn(*mut u8, i32) -> *mut IVehicle;
+    #[cfg(target_env = "msvc")]
+    type GetFn = unsafe extern "thiscall" fn(*mut u8, i32) -> *mut IVehicle;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            component.cast::<u8>(),
+            VEHICLE_POOL_OFFSET,
+            super::players::SLOT_POOL_GET_PUB,
+        )
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get(this, id) }
+}
+
+/// `IEntity::getID()` for a vehicle — the id Pawn scripts use.
+///
+/// # Safety
+/// See [`vehicle_model`].
+#[must_use]
+pub unsafe fn vehicle_id(vehicle: *mut IVehicle) -> i32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetIdFn = unsafe extern "C" fn(*mut u8) -> i32;
+    #[cfg(target_env = "msvc")]
+    type GetIdFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            vehicle.cast::<u8>(),
+            ENTITY_OFFSET,
+            super::players::SLOT_ENTITY_GET_ID,
+        )
+    }) else {
+        return -1;
+    };
+    let get_id: GetIdFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_id(this) }
 }
 
 /// Casts a component handle obtained by UID into the vehicles component.

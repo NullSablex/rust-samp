@@ -169,6 +169,20 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **Entities by id, without touching the pools' hash sets.** `player_by_id` and
+  `vehicle_by_id` go through `IReadOnlyPool<T>::get`, a secondary base of each
+  pool (offset 40/56 for players, 44/64 for vehicles — the vehicle component
+  reaches it through `IComponent`, which carries a `IUIDProvider` of its own).
+  Iterating still means mirroring a `robin_hood` hash set, which this does not
+  do; answering "who is player 7?" no longer requires it. `player_id` and
+  `vehicle_id` come from the shared `IEntity`. Proven live: looking the created
+  vehicle and the connected player up by id returns the very pointers the server
+  handed over.
+- **Vehicle events**: `vehicle_event_dispatcher` plus a fourteen-slot
+  `VehicleHandlerVTable` — stream in and out, death, enter and exit, damage,
+  paint job, mods, respray, mod shop, spawn, unoccupied updates, trailers and
+  sirens. Registration verified on both platforms.
+- **More of `IPlayer`**: money, armour, team and skin.
 - **`samp::omp::vehicles` — the vehicle component.** Query it by UID, spawn a
   vehicle with `create_vehicle`, then read or set model, health, colours and
   position. `create` is overloaded, so MSVC emits the pair reversed and the

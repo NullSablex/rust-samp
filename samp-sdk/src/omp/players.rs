@@ -37,6 +37,7 @@
 
 use super::component::ICore;
 use super::types::{Colour, StringView, Vector3};
+use super::vehicles::IVehicle;
 
 /// Slot of `ICore::getPlayers()`.
 #[cfg(not(target_env = "msvc"))]
@@ -98,12 +99,70 @@ pub(crate) const ENTITY_OFFSET: isize = 40;
 #[cfg(target_env = "msvc")]
 pub(crate) const ENTITY_OFFSET: isize = 56;
 
+/// Offset of the `IReadOnlyPool<IPlayer>` subobject inside an `IPlayerPool`.
+///
+/// Same reasoning as [`ENTITY_OFFSET`]: the pool interface is a secondary base,
+/// so looking a player up by id means adjusting `this` first. From clang's
+/// record layout of `IPlayerPool`.
+#[cfg(not(target_env = "msvc"))]
+const PLAYER_POOL_OFFSET: isize = 40;
+#[cfg(target_env = "msvc")]
+const PLAYER_POOL_OFFSET: isize = 56;
+
+/// `IReadOnlyPool<T>::get(int)` is its first method, and `bounds()` the second.
+/// Neither interface declares a destructor, so both ABIs agree.
+pub(crate) const SLOT_POOL_GET_PUB: usize = 0;
+const SLOT_POOL_GET: usize = SLOT_POOL_GET_PUB;
+
 /// Slots inside the `IEntity` vtable. It declares no destructor, so the
 /// numbering is identical on both ABIs.
+pub(crate) const SLOT_ENTITY_GET_ID: usize = 0;
 pub(crate) const SLOT_ENTITY_GET_POSITION: usize = 1;
 const SLOT_ENTITY_SET_POSITION: usize = 2;
 const SLOT_ENTITY_GET_VIRTUAL_WORLD: usize = 5;
 const SLOT_ENTITY_SET_VIRTUAL_WORLD: usize = 6;
+
+/// Slot of `IPlayer::setMoney(int)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_MONEY: usize = 62;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_MONEY: usize = 61;
+
+/// Slot of `IPlayer::giveMoney(int)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GIVE_MONEY: usize = 63;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GIVE_MONEY: usize = 62;
+
+/// Slot of `IPlayer::setArmour(float)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_ARMOUR: usize = 81;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_ARMOUR: usize = 80;
+
+/// Slot of `IPlayer::getArmour()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_ARMOUR: usize = 82;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_ARMOUR: usize = 81;
+
+/// Slot of `IPlayer::setTeam(int)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_TEAM: usize = 95;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_TEAM: usize = 94;
+
+/// Slot of `IPlayer::getTeam()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_TEAM: usize = 96;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_TEAM: usize = 95;
+
+/// Slot of `IPlayer::setSkin(int, bool)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_SKIN: usize = 97;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_SKIN: usize = 96;
 
 /// Slot of `IPlayer::setScore(int)`.
 #[cfg(not(target_env = "msvc"))]
@@ -261,19 +320,14 @@ impl PlayerConnectHandler {
     }
 }
 
-/// Opaque handles for the objects a shot can hit.
-#[repr(C)]
-pub struct IVehicle {
-    _opaque: [u8; 0],
-}
-
-/// See [`IVehicle`].
+/// Opaque handles for the objects a shot can hit, beyond the vehicle the
+/// [`vehicles`](super::vehicles) module already defines.
 #[repr(C)]
 pub struct IObject {
     _opaque: [u8; 0],
 }
 
-/// See [`IVehicle`].
+/// See [`IObject`].
 #[repr(C)]
 pub struct IPlayerObject {
     _opaque: [u8; 0],
@@ -818,6 +872,181 @@ pub unsafe fn player_set_virtual_world(player: *mut IPlayer, world: i32) {
     };
     let set_world: SetWorldFn = unsafe { std::mem::transmute(f_ptr) };
     unsafe { set_world(this, world) };
+}
+
+/// Calls a `void(int)` setter on the player's primary vtable.
+unsafe fn player_set_i32(player: *mut IPlayer, slot: usize, value: i32) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetFn = unsafe extern "C" fn(*mut u8, i32);
+    #[cfg(target_env = "msvc")]
+    type SetFn = unsafe extern "thiscall" fn(*mut u8, i32);
+
+    let Some((this, f_ptr)) =
+        (unsafe { super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, slot) })
+    else {
+        return;
+    };
+    let set: SetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set(this, value) };
+}
+
+/// Calls an `int()` getter on the player's primary vtable.
+unsafe fn player_get_i32(player: *mut IPlayer, slot: usize) -> i32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetFn = unsafe extern "C" fn(*mut u8) -> i32;
+    #[cfg(target_env = "msvc")]
+    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
+
+    let Some((this, f_ptr)) =
+        (unsafe { super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, slot) })
+    else {
+        return 0;
+    };
+    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get(this) }
+}
+
+/// `IPlayer::setMoney(int)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_money(player: *mut IPlayer, amount: i32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_SET_MONEY, amount) };
+}
+
+/// `IPlayer::giveMoney(int)` — adds to what the player already has.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_give_money(player: *mut IPlayer, amount: i32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_GIVE_MONEY, amount) };
+}
+
+/// `IPlayer::setTeam(int)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_team(player: *mut IPlayer, team: i32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_SET_TEAM, team) };
+}
+
+/// `IPlayer::getTeam()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_team(player: *mut IPlayer) -> i32 {
+    unsafe { player_get_i32(player, SLOT_PLAYER_GET_TEAM) }
+}
+
+/// `IPlayer::setArmour(float)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_armour(player: *mut IPlayer, armour: f32) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetFn = unsafe extern "C" fn(*mut u8, f32);
+    #[cfg(target_env = "msvc")]
+    type SetFn = unsafe extern "thiscall" fn(*mut u8, f32);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_ARMOUR)
+    }) else {
+        return;
+    };
+    let set: SetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set(this, armour) };
+}
+
+/// `IPlayer::getArmour()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_armour(player: *mut IPlayer) -> f32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetFn = unsafe extern "C" fn(*mut u8) -> f32;
+    #[cfg(target_env = "msvc")]
+    type GetFn = unsafe extern "thiscall" fn(*mut u8) -> f32;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_GET_ARMOUR)
+    }) else {
+        return 0.0;
+    };
+    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get(this) }
+}
+
+/// `IPlayer::setSkin(int, bool)` — `send` asks the server to tell the other
+/// players about the change, which is what a script normally wants.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_skin(player: *mut IPlayer, skin: i32, send: bool) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetSkinFn = unsafe extern "C" fn(*mut u8, i32, bool);
+    #[cfg(target_env = "msvc")]
+    type SetSkinFn = unsafe extern "thiscall" fn(*mut u8, i32, bool);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_SKIN)
+    }) else {
+        return;
+    };
+    let set_skin: SetSkinFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set_skin(this, skin, send) };
+}
+
+/// `IEntity::getID()` — the id Pawn scripts know this player by.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_id(player: *mut IPlayer) -> i32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetIdFn = unsafe extern "C" fn(*mut u8) -> i32;
+    #[cfg(target_env = "msvc")]
+    type GetIdFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            player.cast::<u8>(),
+            ENTITY_OFFSET,
+            SLOT_ENTITY_GET_ID,
+        )
+    }) else {
+        return -1;
+    };
+    let get_id: GetIdFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_id(this) }
+}
+
+/// `IReadOnlyPool<IPlayer>::get(int)` — the player with that id, or null.
+///
+/// Answers "who is player 7?" without touching the pool's hash set, whose
+/// layout belongs to `robin_hood` and would have to be mirrored to iterate.
+///
+/// # Safety
+/// `pool` must come from [`player_pool`].
+#[must_use]
+pub unsafe fn player_by_id(pool: *mut IPlayerPool, id: i32) -> *mut IPlayer {
+    #[cfg(not(target_env = "msvc"))]
+    type GetFn = unsafe extern "C" fn(*mut u8, i32) -> *mut IPlayer;
+    #[cfg(target_env = "msvc")]
+    type GetFn = unsafe extern "thiscall" fn(*mut u8, i32) -> *mut IPlayer;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            pool.cast::<u8>(),
+            PLAYER_POOL_OFFSET,
+            SLOT_POOL_GET,
+        )
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get(this, id) }
 }
 
 /// `IPlayer::sendClientMessage(const Colour&, StringView)` — a chat line for
