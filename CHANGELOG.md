@@ -21,6 +21,18 @@ for the full directory.
   component, create one, read its id. The text draw `create` is overloaded, so
   MSVC emits it at [18] against [19]; the other two lose only the destructor
   slot. Created and read back on Linux and Windows.
+- **Text labels, menus and spawn classes**, finishing the sweep of components
+  that expose a `create`. Text labels overload it three ways (global, per
+  player, per vehicle) and MSVC emits the set reversed, so the global one lands
+  on [18] in both ABIs — a coincidence of the reversal, not a rule. Spawn
+  classes take the thirteen weapon slots the server expects, exposed as
+  `WeaponSlot`. All created and read back on both platforms.
+- **What is deliberately not wrapped**: the per-player interfaces (dialogs,
+  checkpoints, menus shown to a player) are not components with a `create` —
+  they are extensions queried off an `IPlayer`, a different shape that deserves
+  its own pass. Pool iteration likewise stays out: it means mirroring a
+  `robin_hood` hash set, while `player_by_id` and `vehicle_by_id` cover the
+  question that iteration was usually asked for.
 
 ### CI
 

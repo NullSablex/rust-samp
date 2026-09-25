@@ -16,7 +16,7 @@
 
 use super::players::{ENTITY_OFFSET, SLOT_ENTITY_GET_ID};
 use super::server::ServerComponent;
-use super::types::{StringView, UID, Vector2, Vector3};
+use super::types::{Colour, StringView, UID, Vector2, Vector3};
 
 /// UID of the Open Multiplayer `TextDraws` component.
 pub const TEXTDRAWS_COMPONENT_UID: UID = 0x9b5d_c2b1_d15c_992a;
@@ -26,6 +26,15 @@ pub const GANGZONES_COMPONENT_UID: UID = 0xb335_1d11_ee8d_8056;
 
 /// UID of the Open Multiplayer `Actors` component.
 pub const ACTORS_COMPONENT_UID: UID = 0xc81c_a021_eae2_ad5c;
+
+/// UID of the Open Multiplayer `TextLabels` component.
+pub const TEXTLABELS_COMPONENT_UID: UID = 0xa0c5_7ea8_0a00_9742;
+
+/// UID of the Open Multiplayer `Menus` component.
+pub const MENUS_COMPONENT_UID: UID = 0x621e_219e_b97e_e0b2;
+
+/// UID of the Open Multiplayer `Classes` component.
+pub const CLASSES_COMPONENT_UID: UID = 0x8cfb_3183_976d_a208;
 
 /// UID of the Open Multiplayer `Objects` component.
 pub const OBJECTS_COMPONENT_UID: UID = 0x59f8_415f_72da_6160;
@@ -59,6 +68,71 @@ const SLOT_CREATE_GANGZONE: usize = 17;
 const SLOT_CREATE_ACTOR: usize = 19;
 #[cfg(target_env = "msvc")]
 const SLOT_CREATE_ACTOR: usize = 17;
+
+/// `ITextLabelsComponent::create` — the global overload. Three of them share
+/// the name (global, per player, per vehicle), so MSVC emits the set reversed:
+/// [18], [17], [16] against Itanium's [18], [19], [20].
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CREATE_TEXTLABEL: usize = 18;
+#[cfg(target_env = "msvc")]
+const SLOT_CREATE_TEXTLABEL: usize = 18;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CREATE_MENU: usize = 19;
+#[cfg(target_env = "msvc")]
+const SLOT_CREATE_MENU: usize = 17;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_CREATE_CLASS: usize = 19;
+#[cfg(target_env = "msvc")]
+const SLOT_CREATE_CLASS: usize = 17;
+
+/// How many weapon slots a spawn class carries (`MAX_WEAPON_SLOTS`).
+pub const MAX_WEAPON_SLOTS: usize = 13;
+
+/// One weapon slot of a spawn class (`WeaponSlotData`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WeaponSlot {
+    pub id: u8,
+    pub ammo: u32,
+}
+
+/// Opaque handle for `ITextLabelsComponent*`.
+#[repr(C)]
+pub struct ITextLabelsComponent {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `ITextLabel*`.
+#[repr(C)]
+pub struct ITextLabel {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IMenusComponent*`.
+#[repr(C)]
+pub struct IMenusComponent {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IMenu*`.
+#[repr(C)]
+pub struct IMenu {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IClassesComponent*`.
+#[repr(C)]
+pub struct IClassesComponent {
+    _opaque: [u8; 0],
+}
+
+/// Opaque handle for `IClass*`.
+#[repr(C)]
+pub struct IClass {
+    _opaque: [u8; 0],
+}
 
 /// Opaque handle for `ITextDrawsComponent*`.
 #[repr(C)]
@@ -315,6 +389,168 @@ pub unsafe fn create_actor(
     unsafe { create(this, skin, position, angle) }
 }
 
+/// Casts a component handle obtained by UID into the text labels component.
+///
+/// # Safety
+/// `component` must be what `queryComponent(TEXTLABELS_COMPONENT_UID)` returned.
+#[must_use]
+pub unsafe fn as_textlabels_component(
+    component: *mut ServerComponent,
+) -> *mut ITextLabelsComponent {
+    component.cast::<ITextLabelsComponent>()
+}
+
+/// Casts a component handle obtained by UID into the menus component.
+///
+/// # Safety
+/// `component` must be what `queryComponent(MENUS_COMPONENT_UID)` returned.
+#[must_use]
+pub unsafe fn as_menus_component(component: *mut ServerComponent) -> *mut IMenusComponent {
+    component.cast::<IMenusComponent>()
+}
+
+/// Casts a component handle obtained by UID into the classes component.
+///
+/// # Safety
+/// `component` must be what `queryComponent(CLASSES_COMPONENT_UID)` returned.
+#[must_use]
+pub unsafe fn as_classes_component(component: *mut ServerComponent) -> *mut IClassesComponent {
+    component.cast::<IClassesComponent>()
+}
+
+/// `ITextLabelsComponent::create(text, colour, pos, drawDist, vw, los)` — a
+/// label everyone sees.
+///
+/// `line_of_sight` decides whether the label shows through walls.
+///
+/// # Safety
+/// `component` must be a live `ITextLabelsComponent`.
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn create_textlabel(
+    component: *mut ITextLabelsComponent,
+    text: &str,
+    colour: Colour,
+    position: Vector3,
+    draw_distance: f32,
+    virtual_world: i32,
+    line_of_sight: bool,
+) -> *mut ITextLabel {
+    #[cfg(not(target_env = "msvc"))]
+    type CreateFn = unsafe extern "C" fn(
+        *mut u8,
+        StringView,
+        Colour,
+        Vector3,
+        f32,
+        i32,
+        bool,
+    ) -> *mut ITextLabel;
+    #[cfg(target_env = "msvc")]
+    type CreateFn = unsafe extern "thiscall" fn(
+        *mut u8,
+        StringView,
+        Colour,
+        Vector3,
+        f32,
+        i32,
+        bool,
+    ) -> *mut ITextLabel;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_TEXTLABEL)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
+    let view = StringView {
+        data: text.as_ptr(),
+        len: text.len(),
+    };
+    unsafe {
+        create(
+            this,
+            view,
+            colour,
+            position,
+            draw_distance,
+            virtual_world,
+            line_of_sight,
+        )
+    }
+}
+
+/// `IMenusComponent::create(title, position, columns, col1Width, col2Width)`.
+///
+/// # Safety
+/// `component` must be a live `IMenusComponent`.
+#[must_use]
+pub unsafe fn create_menu(
+    component: *mut IMenusComponent,
+    title: &str,
+    position: Vector2,
+    columns: u8,
+    column1_width: f32,
+    column2_width: f32,
+) -> *mut IMenu {
+    #[cfg(not(target_env = "msvc"))]
+    type CreateFn = unsafe extern "C" fn(*mut u8, StringView, Vector2, u8, f32, f32) -> *mut IMenu;
+    #[cfg(target_env = "msvc")]
+    type CreateFn =
+        unsafe extern "thiscall" fn(*mut u8, StringView, Vector2, u8, f32, f32) -> *mut IMenu;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_MENU)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
+    let view = StringView {
+        data: title.as_ptr(),
+        len: title.len(),
+    };
+    unsafe { create(this, view, position, columns, column1_width, column2_width) }
+}
+
+/// `IClassesComponent::create(skin, team, spawn, angle, weapons)` — a spawn
+/// class, what `AddPlayerClass` creates on the script side.
+///
+/// The weapons array is passed by reference, so it only has to outlive the
+/// call.
+///
+/// # Safety
+/// `component` must be a live `IClassesComponent`.
+#[must_use]
+pub unsafe fn create_class(
+    component: *mut IClassesComponent,
+    skin: i32,
+    team: i32,
+    spawn: Vector3,
+    angle: f32,
+    weapons: &[WeaponSlot; MAX_WEAPON_SLOTS],
+) -> *mut IClass {
+    #[cfg(not(target_env = "msvc"))]
+    type CreateFn =
+        unsafe extern "C" fn(*mut u8, i32, i32, Vector3, f32, *const WeaponSlot) -> *mut IClass;
+    #[cfg(target_env = "msvc")]
+    type CreateFn = unsafe extern "thiscall" fn(
+        *mut u8,
+        i32,
+        i32,
+        Vector3,
+        f32,
+        *const WeaponSlot,
+    ) -> *mut IClass;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(component.cast::<u8>(), 0, SLOT_CREATE_CLASS)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let create: CreateFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { create(this, skin, team, spawn, angle, weapons.as_ptr()) }
+}
+
 /// `IEntity::getID()` for any entity that carries the subobject — an object, a
 /// pickup, a vehicle or a player.
 ///
@@ -381,6 +617,36 @@ mod tests {
             ],
             [18, 17, 17]
         );
+    }
+
+    #[test]
+    fn the_last_batch_of_uids_and_slots_match() {
+        assert_eq!(TEXTLABELS_COMPONENT_UID, 0xa0c5_7ea8_0a00_9742);
+        assert_eq!(MENUS_COMPONENT_UID, 0x621e_219e_b97e_e0b2);
+        assert_eq!(CLASSES_COMPONENT_UID, 0x8cfb_3183_976d_a208);
+
+        // Text labels overload `create` three ways; the global one happens to
+        // land on 18 in both ABIs, which the reversal makes a coincidence
+        // rather than a rule.
+        #[cfg(not(target_env = "msvc"))]
+        assert_eq!(
+            [SLOT_CREATE_TEXTLABEL, SLOT_CREATE_MENU, SLOT_CREATE_CLASS],
+            [18, 19, 19]
+        );
+        #[cfg(target_env = "msvc")]
+        assert_eq!(
+            [SLOT_CREATE_TEXTLABEL, SLOT_CREATE_MENU, SLOT_CREATE_CLASS],
+            [18, 17, 17]
+        );
+
+        // `WeaponSlotData` is a byte and a word, and the server reads an array
+        // of them.
+        assert_eq!(
+            std::mem::size_of::<WeaponSlot>(),
+            8,
+            "padded to 4-byte alignment"
+        );
+        assert_eq!(MAX_WEAPON_SLOTS, 13);
     }
 
     #[test]

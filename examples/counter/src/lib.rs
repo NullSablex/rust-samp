@@ -245,6 +245,65 @@ impl SampPlugin for Counter {
             });
         }
 
+        // Text labels, menus and spawn classes close the component sweep.
+        if let Some(c) = samp::plugin::omp_query_component(samp::omp::TEXTLABELS_COMPONENT_UID) {
+            let label = unsafe {
+                samp::omp::create_textlabel(
+                    samp::omp::as_textlabels_component(c),
+                    "rust-samp",
+                    samp::omp::types::Colour::rgba(255, 255, 255, 255),
+                    samp::omp::types::Vector3 {
+                        x: 1.0,
+                        y: 1.0,
+                        z: 1.0,
+                    },
+                    20.0,
+                    0,
+                    true,
+                )
+            };
+            info!("[omp] textlabel id={}", unsafe {
+                samp::omp::entity_id(label.cast::<u8>())
+            });
+        }
+
+        if let Some(c) = samp::plugin::omp_query_component(samp::omp::MENUS_COMPONENT_UID) {
+            let menu = unsafe {
+                samp::omp::create_menu(
+                    samp::omp::as_menus_component(c),
+                    "menu",
+                    samp::omp::types::Vector2 { x: 50.0, y: 180.0 },
+                    1,
+                    200.0,
+                    0.0,
+                )
+            };
+            info!("[omp] menu id={}", unsafe {
+                samp::omp::entity_id(menu.cast::<u8>())
+            });
+        }
+
+        if let Some(c) = samp::plugin::omp_query_component(samp::omp::CLASSES_COMPONENT_UID) {
+            let weapons = [samp::omp::WeaponSlot::default(); samp::omp::MAX_WEAPON_SLOTS];
+            let class = unsafe {
+                samp::omp::create_class(
+                    samp::omp::as_classes_component(c),
+                    46,
+                    0,
+                    samp::omp::types::Vector3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 3.0,
+                    },
+                    0.0,
+                    &weapons,
+                )
+            };
+            info!("[omp] class id={}", unsafe {
+                samp::omp::entity_id(class.cast::<u8>())
+            });
+        }
+
         let text = unsafe { samp::omp::player_text_dispatcher(pool) };
         if !text.is_null() {
             let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(

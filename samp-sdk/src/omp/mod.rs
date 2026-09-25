@@ -82,6 +82,12 @@ pub use world::{
     create_gangzone, create_textdraw,
 };
 pub use world::{
+    CLASSES_COMPONENT_UID, IClass, IClassesComponent, IMenu, IMenusComponent, ITextLabel,
+    ITextLabelsComponent, MAX_WEAPON_SLOTS, MENUS_COMPONENT_UID, TEXTLABELS_COMPONENT_UID,
+    WeaponSlot, as_classes_component, as_menus_component, as_textlabels_component, create_class,
+    create_menu, create_textlabel,
+};
+pub use world::{
     IObjectsComponent, IPickup, IPickupsComponent, OBJECTS_COMPONENT_UID, PICKUPS_COMPONENT_UID,
     PickupType, as_objects_component, as_pickups_component, create_object, create_pickup,
     entity_id,
