@@ -169,8 +169,13 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
-- **Reading an `IPlayer`**: `player_name`, `player_is_bot` and `player_kick`,
-  the first methods called on a player object the server hands a handler.
+- **Reading and acting on an `IPlayer`**: `player_name`, `player_is_bot`,
+  `player_kick`, `player_health` / `player_set_health`, `player_score` /
+  `player_set_score` and `player_send_message`. Slots derived with
+  `scripts/omp-vtable.py` and proven live: writing a score of 1337 reads back
+  as 1337 on Linux and on Windows. Health is read-only in practice for a bot —
+  the client sends its own on the next sync packet — which is why the
+  round-trip test uses the score, a value the server owns.
   Validated live on both platforms — the NPC reports `name="TesteDetour"
   bot=true`. Unlike the component classes, the Windows server carries no RTTI
   for `Player`, so these indices cannot be re-derived from the binary; they are

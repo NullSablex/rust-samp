@@ -49,7 +49,8 @@ pub use players::{
     PlayerUpdateHandlerVTable, add_player_change_handler, add_player_check_handler,
     add_player_click_handler, add_player_shot_handler, add_player_stream_handler,
     add_player_update_handler, player_change_dispatcher, player_check_dispatcher,
-    player_click_dispatcher, player_is_bot, player_kick, player_name, player_shot_dispatcher,
+    player_click_dispatcher, player_health, player_is_bot, player_kick, player_name, player_score,
+    player_send_message, player_set_health, player_set_score, player_shot_dispatcher,
     player_stream_dispatcher, player_update_dispatcher,
 };
 pub use server::{

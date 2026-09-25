@@ -293,7 +293,7 @@ mod omp_players {
         PlayerSpawnHandler, PlayerSpawnHandlerVTable, PlayerTextHandler, PlayerTextHandlerVTable,
         PlayerUpdateHandler, PlayerUpdateHandlerVTable,
     };
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// The server calls these through a vtable, so the calling convention is
     /// the platform's: `extern "C"` under the Itanium ABI, `thiscall` under
@@ -349,8 +349,17 @@ mod omp_players {
     );
 
     handler!(
-        fn on_spawn(_this: *mut PlayerSpawnHandler, _player: *mut IPlayer) {
-            info!("[omp-event] onPlayerSpawn straight from the server");
+        fn on_spawn(_this: *mut PlayerSpawnHandler, player: *mut IPlayer) {
+            // Acting on the player, not just observing.
+            let health = unsafe { samp::omp::player_health(player) };
+            unsafe {
+                samp::omp::player_send_message(
+                    player,
+                    samp::omp::types::Colour::rgba(0, 255, 0, 255),
+                    "hello from rust-samp",
+                );
+            }
+            info!("[omp-event] onPlayerSpawn: health={health}");
         }
     );
 
@@ -376,11 +385,25 @@ mod omp_players {
     );
 
     handler!(
-        fn on_update(_this: *mut PlayerUpdateHandler, _player: *mut IPlayer, _now: i64) -> bool {
+        fn on_update(_this: *mut PlayerUpdateHandler, player: *mut IPlayer, _now: i64) -> bool {
             // Fires for every player on every tick, so it only reports once.
-            static REPORTED: AtomicBool = AtomicBool::new(false);
-            if !REPORTED.swap(true, Ordering::Relaxed) {
-                info!("[omp-event] onPlayerUpdate straight from the server (logged once)");
+            // The first tick writes the health, the next one reads it back:
+            // the server resets health right after a spawn, so a write checked
+            // inside the spawn handler proves nothing.
+            static STEP: AtomicUsize = AtomicUsize::new(0);
+            match STEP.fetch_add(1, Ordering::Relaxed) {
+                0 => {
+                    info!("[omp-event] onPlayerUpdate straight from the server");
+                    // Score, not health: health comes back from the client on
+                    // the next sync packet, so writing it proves nothing here.
+                    unsafe { samp::omp::player_set_score(player, 1337) };
+                }
+                1 => {
+                    let score = unsafe { samp::omp::player_score(player) };
+                    let health = unsafe { samp::omp::player_health(player) };
+                    info!("[omp-event] after writing score 1337: score={score} health={health}");
+                }
+                _ => {}
             }
             true
         }

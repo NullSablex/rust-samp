@@ -36,7 +36,7 @@
 //! ```
 
 use super::component::ICore;
-use super::types::{StringView, Vector3};
+use super::types::{Colour, StringView, Vector3};
 
 /// Slot of `ICore::getPlayers()`.
 #[cfg(not(target_env = "msvc"))]
@@ -73,6 +73,36 @@ const SLOT_PLAYER_IS_BOT: usize = 7;
 const SLOT_PLAYER_GET_NAME: usize = 27;
 #[cfg(target_env = "msvc")]
 const SLOT_PLAYER_GET_NAME: usize = 26;
+
+/// Slot of `IPlayer::setHealth(float)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_HEALTH: usize = 77;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_HEALTH: usize = 76;
+
+/// Slot of `IPlayer::getHealth()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_HEALTH: usize = 78;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_HEALTH: usize = 77;
+
+/// Slot of `IPlayer::setScore(int)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_SCORE: usize = 79;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_SCORE: usize = 78;
+
+/// Slot of `IPlayer::getScore()`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_SCORE: usize = 80;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_SCORE: usize = 79;
+
+/// Slot of `IPlayer::sendClientMessage(const Colour&, StringView)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SEND_MESSAGE: usize = 100;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SEND_MESSAGE: usize = 99;
 
 /// Opaque handle for the server's `IPlayer*`, as received by a handler.
 #[repr(C)]
@@ -582,6 +612,116 @@ pub unsafe fn player_name(player: *mut IPlayer) -> Option<String> {
     std::str::from_utf8(bytes).ok().map(String::from)
 }
 
+/// `IPlayer::getHealth()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_health(player: *mut IPlayer) -> f32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetHealthFn = unsafe extern "C" fn(*mut u8) -> f32;
+    #[cfg(target_env = "msvc")]
+    type GetHealthFn = unsafe extern "thiscall" fn(*mut u8) -> f32;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_GET_HEALTH)
+    }) else {
+        return 0.0;
+    };
+    let get_health: GetHealthFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_health(this) }
+}
+
+/// `IPlayer::setHealth(float)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_health(player: *mut IPlayer, health: f32) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetHealthFn = unsafe extern "C" fn(*mut u8, f32);
+    #[cfg(target_env = "msvc")]
+    type SetHealthFn = unsafe extern "thiscall" fn(*mut u8, f32);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_HEALTH)
+    }) else {
+        return;
+    };
+    let set_health: SetHealthFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set_health(this, health) };
+}
+
+/// `IPlayer::getScore()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_score(player: *mut IPlayer) -> i32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetScoreFn = unsafe extern "C" fn(*mut u8) -> i32;
+    #[cfg(target_env = "msvc")]
+    type GetScoreFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_GET_SCORE)
+    }) else {
+        return 0;
+    };
+    let get_score: GetScoreFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_score(this) }
+}
+
+/// `IPlayer::setScore(int)`.
+///
+/// Unlike health, the score is the server's own value — a client cannot
+/// overwrite it on the next sync packet.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_score(player: *mut IPlayer, score: i32) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetScoreFn = unsafe extern "C" fn(*mut u8, i32);
+    #[cfg(target_env = "msvc")]
+    type SetScoreFn = unsafe extern "thiscall" fn(*mut u8, i32);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SET_SCORE)
+    }) else {
+        return;
+    };
+    let set_score: SetScoreFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set_score(this, score) };
+}
+
+/// `IPlayer::sendClientMessage(const Colour&, StringView)` — a chat line for
+/// this player only.
+///
+/// `colour` is RGBA, the order [`Colour`] stores. The text is borrowed for the
+/// duration of the call: the server copies what it needs, and a `StringView`
+/// carries a length, so no NUL terminator is required.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_send_message(player: *mut IPlayer, colour: Colour, text: &str) {
+    #[cfg(not(target_env = "msvc"))]
+    type SendMessageFn = unsafe extern "C" fn(*mut u8, *const Colour, StringView);
+    #[cfg(target_env = "msvc")]
+    type SendMessageFn = unsafe extern "thiscall" fn(*mut u8, *const Colour, StringView);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_PLAYER_SEND_MESSAGE)
+    }) else {
+        return;
+    };
+    let send: SendMessageFn = unsafe { std::mem::transmute(f_ptr) };
+
+    let view = StringView {
+        data: text.as_ptr(),
+        len: text.len(),
+    };
+    unsafe { send(this, &raw const colour, view) };
+}
+
 /// Writes the `get<X>Dispatcher` + `add_<x>_handler` pair for one event group.
 macro_rules! dispatcher_pair {
     ($getter:ident -> $dispatcher:ident @ $slot:ident, $adder:ident($handler:ident)) => {
@@ -741,14 +881,23 @@ mod tests {
         // `IEntity` override (secondary base) sits before any of these, so the
         // shift is exactly one. Unlike the component classes, the Windows
         // server carries no RTTI for `Player`, so these cannot be re-derived
-        // from the binary — they are pinned here and validated by running a
-        // server on both platforms.
+        // from the binary — `scripts/omp-vtable.py` derives them from the
+        // headers with clang, and a running server proves them.
         #[cfg(not(target_env = "msvc"))]
-        let expected = [6, 8, 27];
+        let expected = [6, 8, 27, 77, 78, 79, 80, 100];
         #[cfg(target_env = "msvc")]
-        let expected = [5, 7, 26];
+        let expected = [5, 7, 26, 76, 77, 78, 79, 99];
         assert_eq!(
-            [SLOT_PLAYER_KICK, SLOT_PLAYER_IS_BOT, SLOT_PLAYER_GET_NAME],
+            [
+                SLOT_PLAYER_KICK,
+                SLOT_PLAYER_IS_BOT,
+                SLOT_PLAYER_GET_NAME,
+                SLOT_PLAYER_SET_HEALTH,
+                SLOT_PLAYER_GET_HEALTH,
+                SLOT_PLAYER_SET_SCORE,
+                SLOT_PLAYER_GET_SCORE,
+                SLOT_PLAYER_SEND_MESSAGE,
+            ],
             expected
         );
     }
