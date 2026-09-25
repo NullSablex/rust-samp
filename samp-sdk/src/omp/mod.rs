@@ -18,6 +18,7 @@ pub mod component;
 pub mod component_api;
 pub mod core;
 pub mod events;
+pub mod extensions;
 pub mod players;
 pub mod server;
 pub mod timers;
@@ -33,6 +34,7 @@ pub use component::{
 pub use component_api::{OmpComponentHandle, component_name, component_version};
 pub use core::{LogLevel, core_log_ln, core_log_ln_u8, core_print_ln, core_print_ln_u8};
 pub use events::{PawnEventHandler, PawnEventHandlerVTable};
+pub use extensions::extension;
 pub use players::{
     DisconnectReason, IPlayer, IPlayerConnectDispatcher, IPlayerDamageDispatcher, IPlayerPool,
     IPlayerSpawnDispatcher, IPlayerTextDispatcher, PlayerConnectHandler,

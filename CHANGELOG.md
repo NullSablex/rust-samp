@@ -40,6 +40,23 @@ for the full directory.
   in registers, MSVC sees a type with a constructor and uses a hidden pointer,
   and Rust cannot tell the two apart from a `#[repr(C)]` struct — so the MSVC
   side is spelled out. Verified on both platforms with an NPC connected.
+- **`samp::omp::extension` reads the per-player extension map.** Components
+  attach their data with `addExtension`, which files it in a `robin_hood` flat
+  map that the virtual getter never consults — so checkpoints, dialogs, a
+  player's objects were unreachable through vtables alone. This walks the map:
+  the field offsets come from clang's record layout and are pinned per ABI by
+  tests, the hash is `robin_hood`'s own (it specializes for integral keys, so
+  `std::hash` and its per-standard-library differences never enter), and the
+  reimplementation is checked against values printed by the real thing.
+  The lookup fails closed: the probe is bounded by the table size, and a
+  candidate is only returned once `getExtensionID()` on it answers with the UID
+  that was asked for. Verified live on both platforms — the checkpoint data of a
+  connected player is found, and the dialog data correctly is not, because the
+  server had not attached it.
+
+  It is the one place in this SDK whose correctness rests on a vendored
+  library's internals rather than an ABI, and `check-abi-slots.py` cannot cover
+  it. The Pawn natives remain the route that does not depend on any of this.
 - **`player_extension`** exposes `IExtensible::getExtension(UID)`, with the
   caveat measured rather than assumed: the stock components attach their
   per-player data with `addExtension`, which files it in a map the virtual

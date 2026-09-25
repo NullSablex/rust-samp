@@ -627,6 +627,21 @@ mod omp_players {
                     // Iterating the pool by id range, rather than by reading
                     // the hash set behind `entries()`.
                     let count = unsafe { samp::omp::all_players(pool) }.len();
+                    // The per-player extension map: data a component
+                    // attached with addExtension, which the virtual
+                    // getExtension does not report.
+                    const CHECKPOINT_DATA_UID: u64 = 0xbc07_576a_a359_1a66;
+                    const DIALOG_DATA_UID: u64 = 0xbc03_376a_a359_1a11;
+                    let checkpoints =
+                        unsafe { samp::omp::extension(player.cast::<u8>(), CHECKPOINT_DATA_UID) };
+                    let dialogs =
+                        unsafe { samp::omp::extension(player.cast::<u8>(), DIALOG_DATA_UID) };
+                    info!(
+                        "[omp-event] extensions: checkpoints={} dialogs={}",
+                        !checkpoints.is_null(),
+                        !dialogs.is_null()
+                    );
+
                     // The plain accessors, written then read back.
                     unsafe {
                         samp::omp::player_set_interior(player, 3);
