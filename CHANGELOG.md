@@ -169,6 +169,12 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **Position and virtual world**, through the `IEntity` subobject the player
+  carries: `player_position`, `player_set_position`, `player_virtual_world` and
+  `player_set_virtual_world`. `IEntity` is a secondary base, so `this` is
+  adjusted by 40 bytes on Itanium and 56 on MSVC — clang's record layout gives
+  both — before indexing its own vtable, where the four methods sit at the same
+  slots on either ABI. Read back live on Linux and Windows.
 - **Reading and acting on an `IPlayer`**: `player_name`, `player_is_bot`,
   `player_kick`, `player_health` / `player_set_health`, `player_score` /
   `player_set_score` and `player_send_message`. Slots derived with

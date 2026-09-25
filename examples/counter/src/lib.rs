@@ -401,7 +401,12 @@ mod omp_players {
                 1 => {
                     let score = unsafe { samp::omp::player_score(player) };
                     let health = unsafe { samp::omp::player_health(player) };
-                    info!("[omp-event] after writing score 1337: score={score} health={health}");
+                    // Position comes from the IEntity subobject, which needs
+                    // the `this` pointer adjusted before indexing.
+                    let world = unsafe { samp::omp::player_virtual_world(player) };
+                    info!("[omp-event] score={score} health={health} world={world}");
+                    let pos = unsafe { samp::omp::player_position(player) };
+                    info!("[omp-event] pos=({:.1},{:.1},{:.1})", pos.x, pos.y, pos.z);
                 }
                 _ => {}
             }

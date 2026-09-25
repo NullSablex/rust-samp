@@ -173,11 +173,18 @@ def layout(source: pathlib.Path, flags: list[str], target: str, class_name: str)
     # The "indices" block lists the slots as a caller would index them, which is
     # what a vtable wrapper needs — the layout block above it counts RTTI and
     # offset-to-top entries that no call goes through.
-    pattern = re.compile(
-        rf"V(?:F)?Table indices for '{re.escape(class_name)}' \((\d+) entries\)\.\n(.*?)(?:\n\n|\Z)",
-        re.S,
-    )
-    match = pattern.search(dump)
+    # When the stub overrides everything the interface declares and adds
+    # nothing, clang attributes the index table to the stub instead. The
+    # indices are the interface's either way.
+    match = None
+    for name in (class_name, "__Stub"):
+        pattern = re.compile(
+            rf"V(?:F)?Table indices for '{re.escape(name)}' \((\d+) entries\)\.\n(.*?)(?:\n\n|\Z)",
+            re.S,
+        )
+        match = pattern.search(dump)
+        if match:
+            break
     if not match:
         return []
     slots: list[str] = []
@@ -221,13 +228,17 @@ def main() -> int:
     if not itanium:
         sys.exit(f"clang emitted no vtable for {args.class_name}")
 
-    # Match by method signature: the same method sits at different indices.
-    msvc_index = {name: i for i, name in enumerate(msvc) if name}
+    # Match by signature with the declaring class stripped: the two dumps may
+    # attribute the same method to the interface or to the stub.
+    def key(entry: str) -> str:
+        return re.sub(r"\b[A-Za-z_][\w:]*::", "", entry)
+
+    msvc_index = {key(name): i for i, name in enumerate(msvc) if name}
     print(f"{args.class_name}  (Itanium / MSVC)")
     for index, name in enumerate(itanium):
         if not name:
             continue
-        other = msvc_index.get(name)
+        other = msvc_index.get(key(name))
         shown = str(other) if other is not None else "-"
         print(f"  {index:3} / {shown:>3}   {name}")
     if not msvc_available:

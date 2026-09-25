@@ -86,6 +86,25 @@ const SLOT_PLAYER_GET_HEALTH: usize = 78;
 #[cfg(target_env = "msvc")]
 const SLOT_PLAYER_GET_HEALTH: usize = 77;
 
+/// Offset of the `IEntity` subobject inside an `IPlayer`.
+///
+/// `IPlayer : public IExtensible, public IEntity`, so position, rotation and
+/// virtual world live in a **secondary** vtable rather than the primary one:
+/// the `this` pointer has to be adjusted before indexing. The offset is the
+/// size of `IExtensible`, which is why it matches the one `OmpComponent` uses
+/// for `IUIDProvider`. Derived from clang's record layout for both ABIs.
+#[cfg(not(target_env = "msvc"))]
+const ENTITY_OFFSET: isize = 40;
+#[cfg(target_env = "msvc")]
+const ENTITY_OFFSET: isize = 56;
+
+/// Slots inside the `IEntity` vtable. It declares no destructor, so the
+/// numbering is identical on both ABIs.
+const SLOT_ENTITY_GET_POSITION: usize = 1;
+const SLOT_ENTITY_SET_POSITION: usize = 2;
+const SLOT_ENTITY_GET_VIRTUAL_WORLD: usize = 5;
+const SLOT_ENTITY_SET_VIRTUAL_WORLD: usize = 6;
+
 /// Slot of `IPlayer::setScore(int)`.
 #[cfg(not(target_env = "msvc"))]
 const SLOT_PLAYER_SET_SCORE: usize = 79;
@@ -693,6 +712,114 @@ pub unsafe fn player_set_score(player: *mut IPlayer, score: i32) {
     unsafe { set_score(this, score) };
 }
 
+/// `IEntity::getPosition()` — where the player is.
+///
+/// A `Vector3` is twelve bytes, too large to come back in registers, so the
+/// caller supplies a hidden pointer. The details differ per ABI and are easy to
+/// get wrong by hand — on i386 System V the pointer goes **before** `this` and
+/// the callee pops it (`ret $0x4` in the server's own `Player::getPosition`),
+/// so writing the pointer as an ordinary argument unbalances the stack.
+///
+/// Declaring the return type and letting the compiler apply the rule avoids all
+/// of that.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_position(player: *mut IPlayer) -> Vector3 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetPositionFn = unsafe extern "C" fn(*mut u8) -> Vector3;
+    #[cfg(target_env = "msvc")]
+    type GetPositionFn = unsafe extern "thiscall" fn(*mut u8) -> Vector3;
+
+    let zero = Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            player.cast::<u8>(),
+            ENTITY_OFFSET,
+            SLOT_ENTITY_GET_POSITION,
+        )
+    }) else {
+        return zero;
+    };
+    let get_position: GetPositionFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_position(this) }
+}
+
+/// `IEntity::setPosition(Vector3)` — teleports the player.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_position(player: *mut IPlayer, position: Vector3) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetPositionFn = unsafe extern "C" fn(*mut u8, Vector3);
+    #[cfg(target_env = "msvc")]
+    type SetPositionFn = unsafe extern "thiscall" fn(*mut u8, Vector3);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            player.cast::<u8>(),
+            ENTITY_OFFSET,
+            SLOT_ENTITY_SET_POSITION,
+        )
+    }) else {
+        return;
+    };
+    let set_position: SetPositionFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set_position(this, position) };
+}
+
+/// `IEntity::getVirtualWorld()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_virtual_world(player: *mut IPlayer) -> i32 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetWorldFn = unsafe extern "C" fn(*mut u8) -> i32;
+    #[cfg(target_env = "msvc")]
+    type GetWorldFn = unsafe extern "thiscall" fn(*mut u8) -> i32;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            player.cast::<u8>(),
+            ENTITY_OFFSET,
+            SLOT_ENTITY_GET_VIRTUAL_WORLD,
+        )
+    }) else {
+        return 0;
+    };
+    let get_world: GetWorldFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_world(this) }
+}
+
+/// `IEntity::setVirtualWorld(int)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_virtual_world(player: *mut IPlayer, world: i32) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetWorldFn = unsafe extern "C" fn(*mut u8, i32);
+    #[cfg(target_env = "msvc")]
+    type SetWorldFn = unsafe extern "thiscall" fn(*mut u8, i32);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            player.cast::<u8>(),
+            ENTITY_OFFSET,
+            SLOT_ENTITY_SET_VIRTUAL_WORLD,
+        )
+    }) else {
+        return;
+    };
+    let set_world: SetWorldFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set_world(this, world) };
+}
+
 /// `IPlayer::sendClientMessage(const Colour&, StringView)` — a chat line for
 /// this player only.
 ///
@@ -899,6 +1026,28 @@ mod tests {
                 SLOT_PLAYER_SEND_MESSAGE,
             ],
             expected
+        );
+    }
+
+    #[test]
+    fn the_entity_subobject_sits_where_iextensible_ends() {
+        // clang's record layout for `IPlayer`: the `IEntity` base starts at 40
+        // under Itanium and 56 under MSVC — the size of `IExtensible` on each,
+        // the same number `OmpComponent` uses for its `IUIDProvider`.
+        #[cfg(not(target_env = "msvc"))]
+        assert_eq!(ENTITY_OFFSET, 40);
+        #[cfg(target_env = "msvc")]
+        assert_eq!(ENTITY_OFFSET, 56);
+
+        // `IEntity` declares no destructor, so both ABIs number it the same.
+        assert_eq!(
+            [
+                SLOT_ENTITY_GET_POSITION,
+                SLOT_ENTITY_SET_POSITION,
+                SLOT_ENTITY_GET_VIRTUAL_WORLD,
+                SLOT_ENTITY_SET_VIRTUAL_WORLD,
+            ],
+            [1, 2, 5, 6]
         );
     }
 
