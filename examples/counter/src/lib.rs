@@ -624,6 +624,10 @@ mod omp_players {
                         .map(|core| unsafe { samp::omp::player_pool(core) })
                         .unwrap_or(std::ptr::null_mut());
                     let looked_up = unsafe { samp::omp::player_by_id(pool, id) };
+                    // Iterating the pool by id range, rather than by reading
+                    // the hash set behind `entries()`.
+                    let count = unsafe { samp::omp::all_players(pool) }.len();
+                    info!("[omp-event] pool reports {count} player(s)");
                     info!(
                         "[omp-event] score={score} health={health} world={world} team={} armour={} lookup_ok={}",
                         unsafe { samp::omp::player_team(player) },

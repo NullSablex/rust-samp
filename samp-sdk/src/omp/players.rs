@@ -36,7 +36,7 @@
 //! ```
 
 use super::component::ICore;
-use super::types::{Colour, StringView, Vector3};
+use super::types::{Colour, StringView, UID, Vector3};
 use super::vehicles::IVehicle;
 
 /// Slot of `ICore::getPlayers()`.
@@ -113,6 +113,11 @@ const PLAYER_POOL_OFFSET: isize = 56;
 /// Neither interface declares a destructor, so both ABIs agree.
 pub(crate) const SLOT_POOL_GET_PUB: usize = 0;
 const SLOT_POOL_GET: usize = SLOT_POOL_GET_PUB;
+pub(crate) const SLOT_POOL_BOUNDS: usize = 1;
+
+/// `IExtensible::getExtension(UID)` — slot [0] of every entity's primary
+/// vtable, since `IExtensible` is the first base and declares it first.
+const SLOT_GET_EXTENSION: usize = 0;
 
 /// Slots inside the `IEntity` vtable. It declares no destructor, so the
 /// numbering is identical on both ABIs.
@@ -1047,6 +1052,119 @@ pub unsafe fn player_by_id(pool: *mut IPlayerPool, id: i32) -> *mut IPlayer {
     };
     let get: GetFn = unsafe { std::mem::transmute(f_ptr) };
     unsafe { get(this, id) }
+}
+
+/// The range of ids a pool can hand out, as `IReadOnlyPool<T>::bounds()`
+/// reports it: inclusive on both ends.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolBounds {
+    pub first: usize,
+    pub last: usize,
+}
+
+/// `IReadOnlyPool<T>::bounds()` for any pool, given the offset of its
+/// subobject.
+///
+/// Walking these ids and asking for each one is how this SDK iterates a pool.
+/// The alternative, `entries()`, returns a `robin_hood` hash set whose layout
+/// would have to be mirrored, and mirroring it wrong reads the server's memory
+/// at random.
+///
+/// # Safety
+/// `pool` must point at an object carrying `IReadOnlyPool<T>` at `offset`.
+#[must_use]
+pub unsafe fn pool_bounds(pool: *mut u8, offset: isize) -> PoolBounds {
+    // `bounds()` returns a `Pair<size_t, size_t>`. Eight bytes, but the two
+    // ABIs disagree on how: GCC hands it back in registers, while MSVC sees a
+    // type with a constructor and returns it through a hidden pointer. Rust
+    // cannot infer that difference from a `#[repr(C)]` struct — it applies the
+    // C rule, registers on both — so the MSVC side is spelled out.
+    #[cfg(not(target_env = "msvc"))]
+    type BoundsFn = unsafe extern "C" fn(*mut u8) -> PoolBounds;
+    #[cfg(target_env = "msvc")]
+    type BoundsFn = unsafe extern "thiscall" fn(*mut u8, *mut PoolBounds) -> *mut PoolBounds;
+
+    // An empty range: `first > last`, so a loop over it runs zero times.
+    let empty = PoolBounds { first: 1, last: 0 };
+    let Some((this, f_ptr)) =
+        (unsafe { super::vtable::secondary_call_target_ptr(pool, offset, SLOT_POOL_BOUNDS) })
+    else {
+        return empty;
+    };
+    let bounds: BoundsFn = unsafe { std::mem::transmute(f_ptr) };
+
+    #[cfg(not(target_env = "msvc"))]
+    let result = unsafe { bounds(this) };
+
+    #[cfg(target_env = "msvc")]
+    let result = {
+        let mut out = empty;
+        unsafe { bounds(this, &raw mut out) };
+        out
+    };
+
+    result
+}
+
+/// Every player currently in the pool.
+///
+/// Named `all_players` rather than `players`, which at a call site would read
+/// as the module of that name.
+///
+/// Named  rather than  so it does not read as the module
+/// of the same name at a call site.
+///
+/// Walks the ids `bounds()` reports and keeps the ones the pool answers for, so
+/// a gap in the middle costs one call and nothing else.
+///
+/// # Safety
+/// `pool` must come from [`player_pool`].
+#[must_use]
+pub unsafe fn all_players(pool: *mut IPlayerPool) -> Vec<*mut IPlayer> {
+    let bounds = unsafe { pool_bounds(pool.cast::<u8>(), PLAYER_POOL_OFFSET) };
+    let mut found = Vec::new();
+    for id in bounds.first..=bounds.last {
+        let Ok(id) = i32::try_from(id) else { break };
+        let player = unsafe { player_by_id(pool, id) };
+        if !player.is_null() {
+            found.push(player);
+        }
+    }
+    found
+}
+
+/// `IExtensible::getExtension(UID)` on a player.
+///
+/// **This reaches less than it looks like it should.** Components attach their
+/// per-player data with `addExtension`, which files it in a `robin_hood` map
+/// that the virtual `getExtension` does not consult — the C++ side finds it
+/// through `queryExtension<T>()`, a template that checks the map first and only
+/// then calls the virtual. So the stock components' data (dialogs, checkpoints,
+/// a player's menu) comes back null here.
+///
+/// What this does reach is an extension a component exposes by overriding
+/// `getExtension` itself. For the rest, the Pawn natives are the working route:
+/// `Amx::call_native("ShowPlayerDialog", ...)`. Reading the map would mean
+/// mirroring `robin_hood`'s layout, which this SDK does not do — see the note
+/// on `entries()` in [`pool_bounds`].
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_extension(player: *mut IPlayer, uid: UID) -> *mut u8 {
+    #[cfg(not(target_env = "msvc"))]
+    type GetExtFn = unsafe extern "C" fn(*mut u8, UID) -> *mut u8;
+    #[cfg(target_env = "msvc")]
+    type GetExtFn = unsafe extern "thiscall" fn(*mut u8, UID) -> *mut u8;
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(player.cast::<u8>(), 0, SLOT_GET_EXTENSION)
+    }) else {
+        return std::ptr::null_mut();
+    };
+    let get_extension: GetExtFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { get_extension(this, uid) }
 }
 
 /// `IPlayer::sendClientMessage(const Colour&, StringView)` — a chat line for

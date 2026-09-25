@@ -27,6 +27,21 @@ for the full directory.
   on [18] in both ABIs — a coincidence of the reversal, not a rule. Spawn
   classes take the thirteen weapon slots the server expects, exposed as
   `WeaponSlot`. All created and read back on both platforms.
+- **Pool iteration, without the hash set.** `pool_bounds` calls
+  `IReadOnlyPool<T>::bounds()` and `all_players` walks that id range, asking the
+  pool for each one — so listing who is connected costs a call per id and never
+  touches `entries()`, whose `robin_hood` layout this SDK refuses to mirror.
+  `bounds()` returns a `Pair<size_t, size_t>`: GCC hands those eight bytes back
+  in registers, MSVC sees a type with a constructor and uses a hidden pointer,
+  and Rust cannot tell the two apart from a `#[repr(C)]` struct — so the MSVC
+  side is spelled out. Verified on both platforms with an NPC connected.
+- **`player_extension`** exposes `IExtensible::getExtension(UID)`, with the
+  caveat measured rather than assumed: the stock components attach their
+  per-player data with `addExtension`, which files it in a map the virtual
+  getter does not consult, so dialogs and checkpoints come back null there. The
+  Pawn natives remain the working route for those, through
+  `Amx::call_native`. Wrappers that would always fail were dropped rather than
+  shipped.
 - **What is deliberately not wrapped**: the per-player interfaces (dialogs,
   checkpoints, menus shown to a player) are not components with a `create` —
   they are extensions queried off an `IPlayer`, a different shape that deserves
