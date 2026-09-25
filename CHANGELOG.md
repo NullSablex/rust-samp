@@ -8,12 +8,25 @@ for the full directory.
 
 ### `rust-samp-sdk` (lib `samp_sdk`)
 
+#### Fixed
+
+- **`Amx::opcode_table` read the VM's flags before checking it could call into
+  it**, so a `data_only` view — which has no function table — flipped a flag on
+  the VM and then gave up. Miri caught it in CI as an uninitialized read; on a
+  real VM it was a pointless write. The table is resolved first now.
+
 #### Added
 
 - **Text draws, gang zones and actors** join the world module: query the
   component, create one, read its id. The text draw `create` is overloaded, so
   MSVC emits it at [18] against [19]; the other two lose only the destructor
   slot. Created and read back on Linux and Windows.
+
+### CI
+
+- The Miri job installs the 32-bit headers its dependencies' build scripts need.
+  Without them it failed on `bits/libc-header-start.h`, which reads like a Miri
+  problem and is an apt package.
 
 ## [v3.6.0-rc.1] — 2026/09/25
 

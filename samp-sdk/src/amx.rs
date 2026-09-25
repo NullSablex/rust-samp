@@ -479,6 +479,11 @@ impl Amx {
     pub fn opcode_table(&self, count: usize) -> Option<Vec<usize>> {
         let amx = NonNull::new(self.ptr)?.as_ptr();
 
+        // Resolve the function table first: without one there is nothing to
+        // call, and flipping a flag on the VM to then give up would leave it
+        // read and rewritten for no reason.
+        let exec = Exec::from_table(self.table().ok()?);
+
         // Toggle the BROWSE flag so `amx_Exec(.., 0)` returns the label table
         // instead of executing. Restore the previous flags afterwards.
         let saved = unsafe { std::ptr::addr_of!((*amx).flags).read_unaligned() };
@@ -486,7 +491,6 @@ impl Amx {
             std::ptr::addr_of_mut!((*amx).flags)
                 .write_unaligned(saved | i32::from(AmxFlags::BROWSE.bits()));
         }
-        let exec = Exec::from_table(self.table().ok()?);
         // `retval` receives `(cell)amx_opcodelist` — a pointer to the table. On the
         // 32-bit SA-MP/open.mp VMs `cell` and `void*` are both 32-bit (the VM
         // asserts `sizeof(cell)==sizeof(void*)`), so it round-trips through i32.
@@ -974,7 +978,9 @@ mod vm_tests {
     /// `[hea, stk)` — mirroring `amx_GetAddr`. Here `stp = data.len()`.
     fn with_amx(data: &mut [u8], cip: i32, frm: i32, hea: i32, stk: i32, f: impl FnOnce(&Amx)) {
         let stp = i32::try_from(data.len()).unwrap();
-        let mut raw = MaybeUninit::<AMX>::uninit();
+        // Zeroed rather than uninit: the tests read fields they never set, and
+        // reading uninitialized memory is undefined behaviour Miri reports.
+        let mut raw = MaybeUninit::<AMX>::zeroed();
         let p = raw.as_mut_ptr();
         unsafe {
             let base = data.as_mut_ptr();
@@ -1022,7 +1028,9 @@ mod vm_tests {
         blob[hdr_size + 4..hdr_size + 8].copy_from_slice(&0x11i32.to_ne_bytes());
         let dat = i32::try_from(hdr_size + 8).unwrap();
 
-        let mut raw = MaybeUninit::<AMX>::uninit();
+        // Zeroed rather than uninit: the tests read fields they never set, and
+        // reading uninitialized memory is undefined behaviour Miri reports.
+        let mut raw = MaybeUninit::<AMX>::zeroed();
         let p = raw.as_mut_ptr();
         unsafe {
             let base = blob.as_mut_ptr();
