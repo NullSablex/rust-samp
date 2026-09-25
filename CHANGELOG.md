@@ -23,8 +23,11 @@ calls into Pawn publics, encodings that stop losing characters quietly, and
 `samp::omp` — player and vehicle events delivered by the server itself, entities
 created and read, players and vehicles found by id.
 
-It went through two release candidates (`v3.6.0-rc.1`, `v3.6.0-rc.2`); what
-follows is everything both carried. The open.mp interface layer is the newest
+It went through two release candidates, `v3.6.0-rc.1` and `v3.6.0-rc.2`, both
+published here and on crates.io. Their entries are kept below as they were
+written, so anyone still on `3.5.0-rc.1` or `3.5.0-rc.2` can see what their
+version carried and what the next candidate changed. What follows here is
+everything both carried, in one place. The open.mp interface layer is the newest
 part of it and has been exercised against real servers on both platforms, but
 not yet on a public server with players — expect its shape to be refined in
 3.7 as it meets real use.
@@ -442,6 +445,481 @@ deprecations reach plugin authors through it, and it now requires
   what "fails closed" covers.
 - The README says the toolkit can talk to the server directly, and its feature
   list no longer claims `encoding` is limited to two code pages.
+- New page **Background Work and the Main Thread** (`docs/threads.md`) with the
+  worker-thread pattern, the draining rules and the guarantees.
+- `docs/internals/omp-abi.md` gains the per-ABI slot tables for
+  `ITimersComponent` and `ITimer`, and states that a wrong slot fails silently.
+  The `vtable` helper table now lists the `_ptr` variants.
+
+## [v3.6.0-rc.2] — 2026/09/25
+
+> Kept as published: this entry lists only what the second candidate added on
+> top of the first. The whole release is consolidated under `v3.6.0`.
+
+Second candidate. It finishes the two categories rc.1 could not reach —
+iterating a pool and reading a player's extensions — adds the remaining
+components, and then spends the rest of its time on assurance rather than
+surface: a null-safety sweep over the whole open.mp layer, and a refactor that
+removed a third of it.
+
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0-rc.2
+
+#### Changed
+
+- **The open.mp wrappers lost a third of their code.** Every accessor repeated
+  the same twelve lines: name the function type per calling convention, adjust
+  `this`, read the slot, give up when either is missing. That is now one macro,
+  `call_vtable!`, used by about forty wrappers — 577 lines deleted against 265
+  added. The behaviour is unchanged and the same servers were run again to say
+  so, but "fails closed" is now implemented once instead of forty times, which
+  is what makes the null-safety tests below meaningful.
+
+#### Tests
+
+- **A null-safety sweep over the whole open.mp layer**: every public entry point
+  is called with a null handle and has to answer with its documented default —
+  `None`, zero, a null pointer, `false`, or an empty range. Sixty-odd entry
+  points, six tests. A plugin asking about a player who just disconnected is the
+  ordinary case for this, not an edge one.
+
+#### Fixed
+
+- **`Amx::opcode_table` read the VM's flags before checking it could call into
+  it**, so a `data_only` view — which has no function table — flipped a flag on
+  the VM and then gave up. Miri caught it in CI as an uninitialized read; on a
+  real VM it was a pointless write. The table is resolved first now.
+
+#### Added
+
+- **Text draws, gang zones and actors** join the world module: query the
+  component, create one, read its id. The text draw `create` is overloaded, so
+  MSVC emits it at [18] against [19]; the other two lose only the destructor
+  slot. Created and read back on Linux and Windows.
+- **Text labels, menus and spawn classes**, finishing the sweep of components
+  that expose a `create`. Text labels overload it three ways (global, per
+  player, per vehicle) and MSVC emits the set reversed, so the global one lands
+  on [18] in both ABIs — a coincidence of the reversal, not a rule. Spawn
+  classes take the thirteen weapon slots the server expects, exposed as
+  `WeaponSlot`. All created and read back on both platforms.
+- **Nine more `IPlayer` accessors**: money, skin, wanted level, interior,
+  weather, drunk level and `setControllable`. Written and read back on both
+  platforms — wanted=4, money=250 and skin=46 come back as set; interior stays 0
+  because a bot resends its own, the same client-sync story as health and
+  armour.
+- **Pool iteration, without the hash set.** `pool_bounds` calls
+  `IReadOnlyPool<T>::bounds()` and `all_players` walks that id range, asking the
+  pool for each one — so listing who is connected costs a call per id and never
+  touches `entries()`, whose `robin_hood` layout this SDK refuses to mirror.
+  `bounds()` returns a `Pair<size_t, size_t>`: GCC hands those eight bytes back
+  in registers, MSVC sees a type with a constructor and uses a hidden pointer,
+  and Rust cannot tell the two apart from a `#[repr(C)]` struct — so the MSVC
+  side is spelled out. Verified on both platforms with an NPC connected.
+- **`samp::omp::extension` reads the per-player extension map.** Components
+  attach their data with `addExtension`, which files it in a `robin_hood` flat
+  map that the virtual getter never consults — so checkpoints, dialogs, a
+  player's objects were unreachable through vtables alone. This walks the map:
+  the field offsets come from clang's record layout and are pinned per ABI by
+  tests, the hash is `robin_hood`'s own (it specializes for integral keys, so
+  `std::hash` and its per-standard-library differences never enter), and the
+  reimplementation is checked against values printed by the real thing.
+  The lookup fails closed: the probe is bounded by the table size, and a
+  candidate is only returned once `getExtensionID()` on it answers with the UID
+  that was asked for. Verified live on both platforms — the checkpoint data of a
+  connected player is found, and the dialog data correctly is not, because the
+  server had not attached it.
+
+  It is the one place in this SDK whose correctness rests on a vendored
+  library's internals rather than an ABI, and `check-abi-slots.py` cannot cover
+  it. The Pawn natives remain the route that does not depend on any of this.
+- **`player_extension`** exposes `IExtensible::getExtension(UID)`, with the
+  caveat measured rather than assumed: the stock components attach their
+  per-player data with `addExtension`, which files it in a map the virtual
+  getter does not consult, so dialogs and checkpoints come back null there. The
+  Pawn natives remain the working route for those, through
+  `Amx::call_native`. Wrappers that would always fail were dropped rather than
+  shipped.
+- **What is deliberately not wrapped**: the per-player interfaces (dialogs,
+  checkpoints, menus shown to a player) are not components with a `create` —
+  they are extensions queried off an `IPlayer`, a different shape that deserves
+  its own pass. Pool iteration likewise stays out: it means mirroring a
+  `robin_hood` hash set, while `player_by_id` and `vehicle_by_id` cover the
+  question that iteration was usually asked for.
+
+### CI
+
+- The Miri job installs the 32-bit headers its dependencies' build scripts need.
+  Without them it failed on `bits/libc-header-start.h`, which reads like a Miri
+  problem and is an apt package.
+
+## [v3.6.0-rc.1] — 2026/09/25
+
+> Kept as published. The content also appears, consolidated, under `v3.6.0`.
+
+**Release candidate.** Everything here is implemented, tested and exercised
+against real servers on Linux and Windows, but none of it has run on a public
+server with players. The release is large — it fixes four ABI defects and adds
+the whole open.mp interface layer — so it goes out as a candidate first, to be
+validated in the field before it becomes v3.6.0.
+
+Cargo does not resolve a pre-release from an ordinary requirement, so
+`rust-samp = "3"` keeps pointing at 3.4.0. Trying the candidate is explicit:
+
+```toml
+samp = { package = "rust-samp", version = "3.5.0-rc.1" }
+```
+
+What would make it final: the open.mp interface wrappers used by a plugin that
+ships, and no ABI correction needed in the process. Report anything that
+misbehaves — a wrong vtable slot shows up as a value that makes no sense on
+Linux and as a crash on Windows.
+
+Correctness release, in two parts.
+
+**Bug fixes:** several vtable layouts were wrong for native open.mp components.
+`SampPlugin::on_tick` never fired on Linux, `getUID()` returned a different value
+on every run, and on Windows the timer call and `removeExtension` corrupted the
+stack. Every index is now verified against the official server binaries. Anyone
+shipping a Rust component under open.mp wants this release.
+
+**Soundness:** the SDK now runs clean under
+[Miri](https://github.com/rust-lang/miri) on `i686-unknown-linux-gnu`, with the
+default (strict) provenance and Stacked Borrows checks. That part changes no
+behavior on a real server — it removes undefined behavior the compiler was free
+to exploit, not crashes observed in the field.
+
+Beyond the fixes, the release adds what plugin authors had to hand-roll: the
+generated Pawn include, a queue back to the main thread, typed calls into Pawn
+publics, and encodings that stop losing characters quietly.
+
+The per-crate sections come first, then the ones belonging to the repository
+rather than to any published crate.
+
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.5.0-rc.1
+
+Additive public API plus two deprecations.
+
+#### Fixed
+
+- **`getUID()` returned garbage on Linux.** The secondary `IUIDProvider` vtable
+  the SDK hands the server carried two destructor thunks before `getUID`. It has
+  none: `IUIDProvider` declares no virtual destructor, so the secondary vtable
+  holds a single slot, on Itanium exactly as on MSVC. The server called slot [0]
+  and got the no-op thunk, so every component reported whatever happened to be
+  in the return registers — a different UID on each run. The primary vtable also
+  gains the `getUID` override at slot [17], where Itanium places it. Verified on
+  a live server: the component now reports the UID from `Cargo.toml` instead of
+  a value that changed every start.
+- **`ITimersComponent::create` used the wrong overload on Windows.** MSVC emits
+  an overload set in **reverse** declaration order, so slot [16] is
+  `create(handler, initial, interval, count)` and the three-argument overload
+  the SDK calls is [17]. Calling the wrong one passed four arguments' worth of
+  cleanup against three arguments pushed, corrupting the stack. Confirmed by
+  disassembly: slot [16] ends in `ret 0x18`, slot [17] in `ret 0x10`.
+- **`IExtensible::removeExtension` overloads were swapped on Windows**, by the
+  same rule. In the vtable the SDK hands the server, slot [2] must be the `UID`
+  overload and [3] the pointer one. Under `thiscall` the callee pops the
+  arguments, so the previous order popped 4 bytes where the server had pushed 8.
+- **`on_tick` never fired for native open.mp components on Linux.** The
+  `ITimersComponent` and `ITimer` slot indices were the MSVC ones, used on both
+  ABIs. On Itanium every method shifts: the destructor takes two slots (D1 + D0)
+  instead of one, and the `getUID()` override from `PROVIDE_UID` sits in the
+  primary vtable. So `create(handler, interval, repeating)` is slot **18**, not
+  16, and `ITimer::kill()` is **11**, not 10. The SDK was calling
+  `TimersComponent::reset()`, which returns non-null, so no warning was logged
+  and the plugin believed the timer existed. Slots now confirmed against the
+  official `Timers.so` and `Timers.dll` of open.mp 1.5.8.3079, pinned by a
+  regression test, and verified on a live server: a component that logged
+  nothing before now delivers its callbacks to Pawn. SA-MP (`ProcessTick`) and
+  MSVC builds were never affected.
+- **`component_name()` / `component_version()` read the wrong slots on Linux**,
+  for the same reason: `componentName()` is `[7]` and `componentVersion()` is
+  `[9]` on Itanium, against `[6]` and `[8]` on MSVC. Both returned `None`
+  instead of the component's data. The correct per-ABI numbers were already in
+  `docs/internals/omp-abi.md`; the code disagreed with its own documentation.
+- **Calls through server vtables** (`core_print_ln`, `core_log_ln`, the `_u8`
+  variants, `component_name`, `component_version`, the repeating timer helpers)
+  rebuilt the function pointer from a `usize`, which carries no provenance.
+  They now use the `_ptr` helpers below.
+- **A `data_only` view panicked instead of failing.** `Amx::data_only` builds a
+  view for reading VM memory with no function table, and its documentation says
+  that calls needing one "will fail" — they asserted instead, which on an FFI
+  boundary means aborting the server. Every such call now returns
+  `AmxError::NotFound`. The scenario is a debugger or a paused VM, where a
+  plugin holds the `AMX*` without a call context.
+- **`component_name()` / `component_version()` used the wrong return
+  convention on Linux.** Both call functions returning a small struct, and the
+  caller was written for MSVC's hidden pointer on both ABIs. The Itanium ABI
+  hands a struct that size back in `EAX:EDX`, so the reads came back empty —
+  and the same mistake applied to `IPlayer::getName` crashed a live server,
+  which is how it surfaced. Now split per ABI, and verified against a running
+  server: the Timers component reports `name="Timers" version=(1, 5, 8)` on
+  Linux and on Windows.
+- **`Amx::call_native`** rebuilt the native's function pointer by
+  `transmute`-ing the `u32` address read from the AMX header. It now goes
+  through `std::ptr::with_exposed_provenance`, the sanctioned int-to-pointer
+  conversion.
+
+#### Added
+
+- **Encoding losses are reportable.** `encode_checked` returns the encoded bytes
+  plus whether the encoding had to substitute characters it cannot represent,
+  and `unmappable_chars` names them for the log. `Buffer::write_str_checked` and
+  `UnsizedBuffer::write_str_checked` do the same for the write path. Until now a
+  Cyrillic name on a Windows-1252 server became `?????` with nothing said
+  anywhere — the conversion is lossy by nature, but staying quiet about it was a
+  choice the SDK made for the plugin.
+- **Encodings beyond the two obvious ones.** `set_default_encoding` always
+  accepted any `encoding_rs` encoding, but the module re-exported only
+  `WINDOWS_1251` and `WINDOWS_1252`, so the rest were invisible. It now
+  re-exports the ones servers actually run — 1250, 1253, 1254, 1256, 1257,
+  `ISO_8859_2` and `UTF_8` — with a table naming the communities behind each.
+- **`set_default_encoding_by_label("windows-1254")`.** Resolves an encoding from
+  the name a configuration file carries, following the WHATWG label rules, so a
+  multi-region plugin can read it from the server config instead of compiling it
+  in. An unknown label returns `None` and leaves the current encoding alone.
+- **`samp_sdk::exports` covers the open.mp-only slots `[44..=51]`**:
+  `PushStringLen`, `SetStringLen`, `Swap16/32/64`, `GetNativeByIndex`,
+  `MakeAddr` and `StrSize`, with their raw signatures in `samp_sdk::raw`. The
+  table SA-MP provides stops at `[43]`, so these are documented as open.mp only
+  and are meant to be reached through the gated wrapper in `rust-samp`.
+- **`Amx::call_public` — typed calls into Pawn publics.** `amx.call_public("OnPlayerScored", (7, "headshot", 1.5))`,
+  with the arguments in a tuple in the same order as the Pawn signature. The
+  types carry what `exec_public!` makes the caller mark by hand: `&str` and
+  `String` are copied into the AMX heap and arrive as `const arg[]`, `&[i32]` as
+  `arg[]`, cell-sized values go straight in. Being a method rather than a macro,
+  it works in generic code and behind abstractions. The new `samp_sdk::call`
+  module holds the `PublicArg` / `PublicArgs` traits; `exec_public!` stays for
+  argument types outside that list.
+- **`omp::vtable::vtable_slot_ptr` and `secondary_call_target_ptr`.** Same
+  contract as `vtable_slot` / `secondary_call_target`, but the slot is read and
+  returned as `*const ()` instead of `usize`, so the function pointer keeps its
+  provenance before the caller `transmute`s it to a function type.
+
+#### Deprecated
+
+- **`omp::vtable::vtable_slot` and `secondary_call_target`.** A function pointer
+  rebuilt from a `usize` carries no provenance, and calling it is undefined
+  behavior. Both remain as wrappers over the `_ptr` variants and return the same
+  address; switch to `vtable_slot_ptr` / `secondary_call_target_ptr`.
+
+#### Tests
+
+- Timer and component slot indices are pinned per ABI, with the dump of the
+  official binary named as the source.
+- Mock vtables in the `omp::core`, `omp::component_api` and `omp::vtable` tests
+  store pointers instead of integers, so Miri can follow them.
+- `uid_get_uid_recovers_from_subobject_pointer` derived the `IUIDProvider`
+  pointer from the `uid_vtable` field alone, then stepped back to the whole
+  object — a Stacked Borrows violation in the test, not in `uid_get_uid`. It now
+  derives the pointer from the whole object, as the server does.
+- The `AmxString` test helper leaked its backing buffer on purpose; it now hands
+  the buffer to the caller, which keeps it alive for the test.
+
+### `rust-samp` (lib `samp`) — 3.5.0-rc.1
+
+#### Added
+
+- **Native player events, no Pawn in the middle.** `samp::omp::players` reaches
+  `ICore::getPlayers()`, then the pool's `IEventDispatcher<PlayerConnectEventHandler>`,
+  and registers a handler on it: the server calls the plugin directly for
+  connect, disconnect, incoming connection and client init. Until now the only
+  way to see a player connect was the `#[event]` detour over `amx_Exec`, which
+  sees what the gamemode is told and costs a hook. Slots verified against
+  `omp-server` (`ICore::getPlayers` at 8/7, `getPlayerConnectDispatcher` at
+  10/9) and the whole path exercised with an NPC on Linux and on Windows.
+  `DisconnectReason::from_raw` maps an unknown value to `Custom` rather than
+  transmuting it into a variant that does not exist.
+- **Spawn, text and damage events**, through the same mechanism:
+  `player_spawn_dispatcher`, `player_text_dispatcher` and
+  `player_damage_dispatcher` with their handler vtables. `onPlayerRequestSpawn`
+  returning `false` denies a spawn and `onPlayerText` returning `false` blocks a
+  message, as the server defines. Spawn was exercised with an NPC on both
+  platforms; text and damage have their registration verified, and their slots
+  pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **Objects and pickups** (`samp::omp::world`): query the component, create
+  one, read its id. Both `create` calls sit at indices the two ABIs disagree
+  about (21/19 and 19/17), which is the rule rather than the exception once a
+  component overloads anything. `entity_id` reads the id of any entity carrying
+  the `IEntity` subobject — object, pickup, vehicle or player. Created and read
+  back on both platforms.
+- **Entities by id, without touching the pools' hash sets.** `player_by_id` and
+  `vehicle_by_id` go through `IReadOnlyPool<T>::get`, a secondary base of each
+  pool (offset 40/56 for players, 44/64 for vehicles — the vehicle component
+  reaches it through `IComponent`, which carries a `IUIDProvider` of its own).
+  Iterating still means mirroring a `robin_hood` hash set, which this does not
+  do; answering "who is player 7?" no longer requires it. `player_id` and
+  `vehicle_id` come from the shared `IEntity`. Proven live: looking the created
+  vehicle and the connected player up by id returns the very pointers the server
+  handed over.
+- **Vehicle events**: `vehicle_event_dispatcher` plus a fourteen-slot
+  `VehicleHandlerVTable` — stream in and out, death, enter and exit, damage,
+  paint job, mods, respray, mod shop, spawn, unoccupied updates, trailers and
+  sirens. Registration verified on both platforms.
+- **More of `IPlayer`**: money, armour, team and skin.
+- **`samp::omp::vehicles` — the vehicle component.** Query it by UID, spawn a
+  vehicle with `create_vehicle`, then read or set model, health, colours and
+  position. `create` is overloaded, so MSVC emits the pair reversed and the
+  eight-argument overload lands at [18] there against [19] under Itanium — the
+  same shape as the timer defect this release opened with, caught this time by
+  `scripts/omp-vtable.py` before a line was written. A vehicle spawned on both
+  platforms reports `model=411 health=750 pos=(10.0,20.0,3.0)`.
+- **Position and virtual world**, through the `IEntity` subobject the player
+  carries: `player_position`, `player_set_position`, `player_virtual_world` and
+  `player_set_virtual_world`. `IEntity` is a secondary base, so `this` is
+  adjusted by 40 bytes on Itanium and 56 on MSVC — clang's record layout gives
+  both — before indexing its own vtable, where the four methods sit at the same
+  slots on either ABI. Read back live on Linux and Windows.
+- **Reading and acting on an `IPlayer`**: `player_name`, `player_is_bot`,
+  `player_kick`, `player_health` / `player_set_health`, `player_score` /
+  `player_set_score` and `player_send_message`. Slots derived with
+  `scripts/omp-vtable.py` and proven live: writing a score of 1337 reads back
+  as 1337 on Linux and on Windows. Health is read-only in practice for a bot —
+  the client sends its own on the next sync packet — which is why the
+  round-trip test uses the score, a value the server owns.
+  Validated live on both platforms — the NPC reports `name="TesteDetour"
+  bot=true`. Unlike the component classes, the Windows server carries no RTTI
+  for `Player`, so these indices cannot be re-derived from the binary; they are
+  pinned by tests and proven by running a server.
+- **The remaining player dispatchers**: stream, shot, change, click, check and
+  update, closing the eleven `IPlayerPool` exposes. `onPlayerUpdate` fires for
+  every player on every tick and was validated on both platforms;
+  `onPlayerShot*` and `onPlayerClickMap` carry types the server passes by value
+  or by const reference (`Vector3`, `PlayerBulletData`), declared accordingly.
+  Every slot is re-derived by `scripts/check-abi-slots.py`, now at 22 checks.
+- **`samp::omp_amx::AmxOmpExt` — the AMX functions open.mp adds.**
+  `native_by_index`, `make_addr`, `str_size` and the byte-swap helpers, as
+  methods on `Amx`. Each one first checks that the SDK read the function table
+  from `getAmxFunctions()`, and returns `AmxError::NotFound` otherwise:
+  resolving entry 44 of SA-MP's 44-entry table would read past its end and call
+  an arbitrary address. A legacy plugin under open.mp is refused for the same
+  reason — its table arrives through SA-MP's `Load()` with no stated size.
+  `extended_table_available()` reports availability up front.
+- **`samp::mainthread` — handing work back to the main thread.** A worker
+  thread calls `post(closure)`; the closure runs on the main thread at the next
+  tick, which is the only place the AMX VM may be touched. Jobs run in order, a
+  job posted during a drain waits for the next tick (so self-posting work cannot
+  spin), and a panic inside a job is caught and logged instead of unwinding into
+  the server. `pending()` reports the backlog and `run_pending()` drives the
+  queue by hand for plugins that do not enable the tick; without a tick and
+  without that call, the SDK warns once the backlog passes 10,000. Until now
+  every plugin doing HTTP, SMTP or database work had to hand-roll this hop, and
+  getting it wrong means touching the VM off-thread.
+- **Generated Pawn include.** `#[native]` now derives each native's Pawn
+  declaration from its Rust signature, and the plugin can write the `.inc` the
+  script side includes: start the server once with `SAMP_PAWN_INCLUDE=path`, or
+  call `samp::plugin::pawn_include()` / `write_pawn_include(path)`. Works on
+  either server and in either mode. `f32` maps to `Float:`, `bool` to `bool:`,
+  `AmxString` to `const arg[]`, `Ref<T>` to `&arg` keeping the tag, and buffers
+  to `arg[]`; an unrecognized type falls back to a plain cell, and a `raw`
+  native comes back commented out. The include no longer has to be maintained by
+  hand, so it cannot drift from the code.
+
+It also re-exports `samp::omp::vtable`, so the new helpers and the two
+deprecations reach plugin authors through it, and it now requires
+`rust-samp-sdk` 3.5.0-rc.1 — which is where the `on_tick` fix lives.
+
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.5.0-rc.1
+
+#### Added
+
+- `#[native]` also emits a hidden accessor with the native's Pawn declaration,
+  which `initialize_plugin!` collects for the generated include described under
+  `rust-samp`.
+
+### Security
+
+- **`rustls` 0.23.44 → 0.23.45** ([RUSTSEC-2026-0285], via #66). Reaches the
+  lockfile through the `sink-demo` example only — `sentry` → `reqwest` →
+  `hyper-rustls`. No shipped crate depends on it.
+
+[RUSTSEC-2026-0285]: https://rustsec.org/advisories/RUSTSEC-2026-0285
+
+### Dependencies
+
+- Weekly lockfile refresh across **70 packages** (#64), plus `flate2`
+  1.1.9 → 1.1.10 (#57). All transitive or build-time; no manifest requirement
+  and no public API changed.
+- Docs toolchain: `pymdown-extensions` 11.0.2 → 12.0.1 (#62).
+- GitHub Actions: bumps to the `codeql`, `scorecard`, `docs` and `release`
+  workflows (#58, #60).
+
+### Internal
+
+- `Runtime::logger()`, which asserted when the server passed no `logprintf` —
+  every native Open Multiplayer run — is replaced by `try_logger()`, returning
+  `Option`. Internal to the crate (`Runtime` is `pub(crate)`), so no plugin sees
+  the change.
+
+### Tooling
+
+- **`scripts/check-abi-slots.py`** re-derives every vtable slot index from the
+  official server binaries and fails when the source disagrees. On Linux the
+  `.so` files keep their symbols, so each slot is identified by name; on Windows
+  it locates vtables through RTTI and identifies methods by the `ret N` of each
+  slot — which is exactly what pins the `create` overload pair MSVC emits in
+  reverse. It would have caught all four defects above on its own. Not part of
+  CI, since it needs servers that cannot be redistributed.
+
+- **Both scripts find their inputs instead of hardcoding them.** The SDK
+  checkout comes from `--sdk`, `$OPENMP_SDK` or the usual locations, and the
+  servers from `--linux`/`--win`, `$OPENMP_LINUX_SERVER`/`$OPENMP_WIN_SERVER` or
+  likewise; a checkout missing its submodules is reported as such rather than
+  failing three steps later. The fuzzing seed was regenerated: the previous one
+  was compiled from an absolute path, which the AMX debug block stores verbatim.
+- **`scripts/omp-vtable.py --rust`** emits the cfg-gated slot constants ready to
+  paste, with `--filter` to pick methods. Wrapping the next interface is then
+  mechanical: generate the constants, write the call, run a server.
+- **`scripts/omp-vtable.py`** asks clang where an interface's methods land, in
+  both ABIs at once, by generating a stub and dumping the vtable layout. Until
+  now MSVC indices were derived by hand from the ABI rules, because the Windows
+  server carries RTTI for three classes only. Run against `IPlayerPool`, it
+  reproduces every index this release ships.
+
+### Validation
+
+- **The `#[event]` detour was exercised end to end for the first time.** It
+  rewrites `amx_Exec` at runtime through `retour`, which is pinned to an alpha,
+  and no test had ever seen a callback actually fire through it. An NPC
+  connecting now proves it on all four combinations — SA-MP and open.mp, Linux
+  and Windows — with the handler running before the gamemode's public, and
+  `EventReturn::Suppress` skipping the public as documented.
+- The open.mp interface layer was exercised the same way: player and vehicle
+  events firing, entities created and read back, lookups by id returning the
+  pointers the server handed over, on both platforms.
+
+### Fuzzing
+
+- **Harness for `AmxDbg::parse`** (`fuzz/`, driven by `cargo-fuzz`). The
+  debug block comes from a `.amx` file on the server's disk, which the plugin
+  did not produce, so the parser's contract is that no input panics or hangs it.
+  A first run of 6.3 million cases over two minutes found nothing — the
+  allocation caps already in the parser hold. Seed inputs are versioned;
+  `CONTRIBUTING.md` documents the workflow. Out of the workspace: it needs
+  nightly and links libFuzzer.
+
+### CI
+
+- **Dependabot now watches transitive Cargo dependencies** (#63), with
+  `dependency-type: all` and security updates grouped into a single weekly pull
+  request. Before this, a patched version of a crate nobody declares would only
+  surface when `cargo audit` failed an unrelated pull request.
+- New advisory `miri (i686)` job running `cargo miri test` over the library
+  crates on `i686-unknown-linux-gnu`. It reports undefined behaviour — the class
+  of bug the FFI layer is exposed to and the regular test run cannot see. Being
+  nightly-only, it does not gate the merge.
+
+### Docs
+
+- `docs/encoding.md` gains the encoding table, selecting one by label at
+  runtime, reporting a lossy conversion, and a section on multi-byte encodings —
+  Pawn counts cells, so `strlen` and indexing mean something different there.
+- `docs/natives.md` gains the generated-include workflow and the Rust-to-Pawn
+  type table.
+- `docs/exec-public.md` is reorganized around `Amx::call_public`, with
+  `exec_public!` kept for the argument types the method does not take.
+- `docs/omp-native.md` gains a section on the extended AMX function table: what
+  the eight extra entries are and why the wrapper refuses them outside a native
+  component.
 - New page **Background Work and the Main Thread** (`docs/threads.md`) with the
   worker-thread pattern, the draining rules and the guarantees.
 - `docs/internals/omp-abi.md` gains the per-ABI slot tables for
