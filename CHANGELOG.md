@@ -4,7 +4,18 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [v3.6.0-rc.1] — Unreleased
+## [Unreleased]
+
+### `rust-samp-sdk` (lib `samp_sdk`)
+
+#### Added
+
+- **Text draws, gang zones and actors** join the world module: query the
+  component, create one, read its id. The text draw `create` is overloaded, so
+  MSVC emits it at [18] against [19]; the other two lose only the destructor
+  slot. Created and read back on Linux and Windows.
+
+## [v3.6.0-rc.1] — 2026/09/25
 
 **Release candidate.** Everything here is implemented, tested and exercised
 against real servers on Linux and Windows, but none of it has run on a public

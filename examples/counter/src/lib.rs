@@ -198,6 +198,53 @@ impl SampPlugin for Counter {
             });
         }
 
+        // Text draws, gang zones and actors — same shape once more.
+        if let Some(c) = samp::plugin::omp_query_component(samp::omp::TEXTDRAWS_COMPONENT_UID) {
+            let td = unsafe {
+                samp::omp::create_textdraw(
+                    samp::omp::as_textdraws_component(c),
+                    samp::omp::types::Vector2 { x: 320.0, y: 240.0 },
+                    "rust-samp",
+                )
+            };
+            info!("[omp] textdraw id={}", unsafe {
+                samp::omp::entity_id(td.cast::<u8>())
+            });
+        }
+
+        if let Some(c) = samp::plugin::omp_query_component(samp::omp::GANGZONES_COMPONENT_UID) {
+            let zone = unsafe {
+                samp::omp::create_gangzone(
+                    samp::omp::as_gangzones_component(c),
+                    samp::omp::GangZonePos {
+                        min: samp::omp::types::Vector2 { x: 0.0, y: 0.0 },
+                        max: samp::omp::types::Vector2 { x: 100.0, y: 100.0 },
+                    },
+                )
+            };
+            info!("[omp] gangzone id={}", unsafe {
+                samp::omp::entity_id(zone.cast::<u8>())
+            });
+        }
+
+        if let Some(c) = samp::plugin::omp_query_component(samp::omp::ACTORS_COMPONENT_UID) {
+            let actor = unsafe {
+                samp::omp::create_actor(
+                    samp::omp::as_actors_component(c),
+                    46,
+                    samp::omp::types::Vector3 {
+                        x: 2.0,
+                        y: 3.0,
+                        z: 4.0,
+                    },
+                    0.0,
+                )
+            };
+            info!("[omp] actor id={}", unsafe {
+                samp::omp::entity_id(actor.cast::<u8>())
+            });
+        }
+
         let text = unsafe { samp::omp::player_text_dispatcher(pool) };
         if !text.is_null() {
             let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(

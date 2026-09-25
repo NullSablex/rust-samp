@@ -76,6 +76,12 @@ pub use vehicles::{
     vehicle_position, vehicle_set_colour, vehicle_set_health,
 };
 pub use world::{
+    ACTORS_COMPONENT_UID, GANGZONES_COMPONENT_UID, GangZonePos, IActor, IActorsComponent,
+    IGangZone, IGangZonesComponent, ITextDraw, ITextDrawsComponent, TEXTDRAWS_COMPONENT_UID,
+    as_actors_component, as_gangzones_component, as_textdraws_component, create_actor,
+    create_gangzone, create_textdraw,
+};
+pub use world::{
     IObjectsComponent, IPickup, IPickupsComponent, OBJECTS_COMPONENT_UID, PICKUPS_COMPONENT_UID,
     PickupType, as_objects_component, as_pickups_component, create_object, create_pickup,
     entity_id,
