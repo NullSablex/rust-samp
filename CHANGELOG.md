@@ -169,6 +169,13 @@ Additive public API plus two deprecations.
   message, as the server defines. Spawn was exercised with an NPC on both
   platforms; text and damage have their registration verified, and their slots
   pinned by tests and by `scripts/check-abi-slots.py`, but no NPC triggers them.
+- **`samp::omp::vehicles` — the vehicle component.** Query it by UID, spawn a
+  vehicle with `create_vehicle`, then read or set model, health, colours and
+  position. `create` is overloaded, so MSVC emits the pair reversed and the
+  eight-argument overload lands at [18] there against [19] under Itanium — the
+  same shape as the timer defect this release opened with, caught this time by
+  `scripts/omp-vtable.py` before a line was written. A vehicle spawned on both
+  platforms reports `model=411 health=750 pos=(10.0,20.0,3.0)`.
 - **Position and virtual world**, through the `IEntity` subobject the player
   carries: `player_position`, `player_set_position`, `player_virtual_world` and
   `player_set_virtual_world`. `IEntity` is a secondary base, so `this` is

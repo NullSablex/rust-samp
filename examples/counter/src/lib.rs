@@ -98,6 +98,43 @@ impl SampPlugin for Counter {
             );
         }
 
+        // Vehicles: query the component by UID, spawn one, read it back.
+        if let Some(component) =
+            samp::plugin::omp_query_component(samp::omp::VEHICLES_COMPONENT_UID)
+        {
+            let vehicles = unsafe { samp::omp::as_vehicles_component(component) };
+            let vehicle = unsafe {
+                samp::omp::create_vehicle(
+                    vehicles,
+                    411, // Infernus
+                    samp::omp::types::Vector3 {
+                        x: 10.0,
+                        y: 20.0,
+                        z: 3.0,
+                    },
+                    90.0,
+                    -1,
+                    -1,
+                    -1,
+                    false,
+                )
+            };
+            if vehicle.is_null() {
+                info!("[omp] vehicle creation refused by the server");
+            } else {
+                unsafe { samp::omp::vehicle_set_health(vehicle, 750.0) };
+                let pos = unsafe { samp::omp::vehicle_position(vehicle) };
+                info!(
+                    "[omp] vehicle model={} health={} pos=({:.1},{:.1},{:.1})",
+                    unsafe { samp::omp::vehicle_model(vehicle) },
+                    unsafe { samp::omp::vehicle_health(vehicle) },
+                    pos.x,
+                    pos.y,
+                    pos.z
+                );
+            }
+        }
+
         let text = unsafe { samp::omp::player_text_dispatcher(pool) };
         if !text.is_null() {
             let handler = Box::leak(Box::new(samp::omp::PlayerTextHandler::new(

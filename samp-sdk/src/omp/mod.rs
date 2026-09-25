@@ -22,6 +22,7 @@ pub mod players;
 pub mod server;
 pub mod timers;
 pub mod types;
+pub mod vehicles;
 pub mod vtable;
 
 pub use component::{
@@ -65,4 +66,8 @@ pub use timers::{
 };
 pub use types::{
     Colour, ComponentType, SemanticVersion, StringView, UID, Vector2, Vector3, Vector4,
+};
+pub use vehicles::{
+    IVehiclesComponent, VEHICLES_COMPONENT_UID, as_vehicles_component, create_vehicle,
+    vehicle_health, vehicle_model, vehicle_position, vehicle_set_colour, vehicle_set_health,
 };

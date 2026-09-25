@@ -94,13 +94,13 @@ const SLOT_PLAYER_GET_HEALTH: usize = 77;
 /// size of `IExtensible`, which is why it matches the one `OmpComponent` uses
 /// for `IUIDProvider`. Derived from clang's record layout for both ABIs.
 #[cfg(not(target_env = "msvc"))]
-const ENTITY_OFFSET: isize = 40;
+pub(crate) const ENTITY_OFFSET: isize = 40;
 #[cfg(target_env = "msvc")]
-const ENTITY_OFFSET: isize = 56;
+pub(crate) const ENTITY_OFFSET: isize = 56;
 
 /// Slots inside the `IEntity` vtable. It declares no destructor, so the
 /// numbering is identical on both ABIs.
-const SLOT_ENTITY_GET_POSITION: usize = 1;
+pub(crate) const SLOT_ENTITY_GET_POSITION: usize = 1;
 const SLOT_ENTITY_SET_POSITION: usize = 2;
 const SLOT_ENTITY_GET_VIRTUAL_WORLD: usize = 5;
 const SLOT_ENTITY_SET_VIRTUAL_WORLD: usize = 6;
