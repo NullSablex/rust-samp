@@ -27,6 +27,11 @@ for the full directory.
   on [18] in both ABIs — a coincidence of the reversal, not a rule. Spawn
   classes take the thirteen weapon slots the server expects, exposed as
   `WeaponSlot`. All created and read back on both platforms.
+- **Nine more `IPlayer` accessors**: money, skin, wanted level, interior,
+  weather, drunk level and `setControllable`. Written and read back on both
+  platforms — wanted=4, money=250 and skin=46 come back as set; interior stays 0
+  because a bot resends its own, the same client-sync story as health and
+  armour.
 - **Pool iteration, without the hash set.** `pool_bounds` calls
   `IReadOnlyPool<T>::bounds()` and `all_players` walks that id range, asking the
   pool for each one — so listing who is connected costs a call per id and never

@@ -52,11 +52,13 @@ pub use players::{
     add_player_click_handler, add_player_shot_handler, add_player_stream_handler,
     add_player_update_handler, all_players, player_armour, player_by_id, player_change_dispatcher,
     player_check_dispatcher, player_click_dispatcher, player_extension, player_give_money,
-    player_health, player_id, player_is_bot, player_kick, player_name, player_position,
-    player_score, player_send_message, player_set_armour, player_set_health, player_set_money,
-    player_set_position, player_set_score, player_set_skin, player_set_team,
-    player_set_virtual_world, player_shot_dispatcher, player_stream_dispatcher, player_team,
-    player_update_dispatcher, player_virtual_world, pool_bounds,
+    player_health, player_id, player_interior, player_is_bot, player_kick, player_money,
+    player_name, player_position, player_score, player_send_message, player_set_armour,
+    player_set_controllable, player_set_drunk_level, player_set_health, player_set_interior,
+    player_set_money, player_set_position, player_set_score, player_set_skin, player_set_team,
+    player_set_virtual_world, player_set_wanted_level, player_set_weather, player_shot_dispatcher,
+    player_skin, player_stream_dispatcher, player_team, player_update_dispatcher,
+    player_virtual_world, player_wanted_level, pool_bounds,
 };
 pub use server::{
     AmxFunctionTable, IEventDispatcherPawn, IPawnScript, PAWN_COMPONENT_UID, PawnComponent,

@@ -169,6 +169,55 @@ const SLOT_PLAYER_SET_SKIN: usize = 97;
 #[cfg(target_env = "msvc")]
 const SLOT_PLAYER_SET_SKIN: usize = 96;
 
+/// Slots of the plain `int` accessors, all reached through
+/// [`player_set_i32`] / [`player_get_i32`]. Every pair is one apart between
+/// ABIs, the usual destructor shift, and comes from `scripts/omp-vtable.py`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_DRUNK: usize = 40;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_DRUNK: usize = 39;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_WANTED: usize = 49;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_WANTED: usize = 48;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_WANTED: usize = 50;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_WANTED: usize = 49;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_MONEY: usize = 65;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_MONEY: usize = 64;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_SKIN: usize = 98;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_SKIN: usize = 97;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_WEATHER: usize = 107;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_WEATHER: usize = 106;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_INTERIOR: usize = 118;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_INTERIOR: usize = 117;
+
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_GET_INTERIOR: usize = 119;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_GET_INTERIOR: usize = 118;
+
+/// Slot of `IPlayer::setControllable(bool)`.
+#[cfg(not(target_env = "msvc"))]
+const SLOT_PLAYER_SET_CONTROLLABLE: usize = 46;
+#[cfg(target_env = "msvc")]
+const SLOT_PLAYER_SET_CONTROLLABLE: usize = 45;
+
 /// Slot of `IPlayer::setScore(int)`.
 #[cfg(not(target_env = "msvc"))]
 const SLOT_PLAYER_SET_SCORE: usize = 79;
@@ -1054,6 +1103,97 @@ pub unsafe fn player_by_id(pool: *mut IPlayerPool, id: i32) -> *mut IPlayer {
     unsafe { get(this, id) }
 }
 
+/// `IPlayer::getMoney()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_money(player: *mut IPlayer) -> i32 {
+    unsafe { player_get_i32(player, SLOT_PLAYER_GET_MONEY) }
+}
+
+/// `IPlayer::getSkin()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_skin(player: *mut IPlayer) -> i32 {
+    unsafe { player_get_i32(player, SLOT_PLAYER_GET_SKIN) }
+}
+
+/// `IPlayer::setWantedLevel(unsigned)` — zero to six, as the game shows.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_wanted_level(player: *mut IPlayer, level: u32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_SET_WANTED, level as i32) };
+}
+
+/// `IPlayer::getWantedLevel()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_wanted_level(player: *mut IPlayer) -> u32 {
+    unsafe { player_get_i32(player, SLOT_PLAYER_GET_WANTED) as u32 }
+}
+
+/// `IPlayer::setInterior(unsigned)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_interior(player: *mut IPlayer, interior: u32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_SET_INTERIOR, interior as i32) };
+}
+
+/// `IPlayer::getInterior()`.
+///
+/// # Safety
+/// See [`player_kick`].
+#[must_use]
+pub unsafe fn player_interior(player: *mut IPlayer) -> u32 {
+    unsafe { player_get_i32(player, SLOT_PLAYER_GET_INTERIOR) as u32 }
+}
+
+/// `IPlayer::setWeather(int)` — for this player alone.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_weather(player: *mut IPlayer, weather: i32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_SET_WEATHER, weather) };
+}
+
+/// `IPlayer::setDrunkLevel(int)`.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_drunk_level(player: *mut IPlayer, level: i32) {
+    unsafe { player_set_i32(player, SLOT_PLAYER_SET_DRUNK, level) };
+}
+
+/// `IPlayer::setControllable(bool)` — `false` freezes the player.
+///
+/// # Safety
+/// See [`player_kick`].
+pub unsafe fn player_set_controllable(player: *mut IPlayer, controllable: bool) {
+    #[cfg(not(target_env = "msvc"))]
+    type SetFn = unsafe extern "C" fn(*mut u8, bool);
+    #[cfg(target_env = "msvc")]
+    type SetFn = unsafe extern "thiscall" fn(*mut u8, bool);
+
+    let Some((this, f_ptr)) = (unsafe {
+        super::vtable::secondary_call_target_ptr(
+            player.cast::<u8>(),
+            0,
+            SLOT_PLAYER_SET_CONTROLLABLE,
+        )
+    }) else {
+        return;
+    };
+    let set: SetFn = unsafe { std::mem::transmute(f_ptr) };
+    unsafe { set(this, controllable) };
+}
+
 /// The range of ids a pool can hand out, as `IReadOnlyPool<T>::bounds()`
 /// reports it: inclusive on both ends.
 #[repr(C)]
@@ -1361,6 +1501,38 @@ mod tests {
         let expected = [6, 8, 27, 77, 78, 79, 80, 100];
         #[cfg(target_env = "msvc")]
         let expected = [5, 7, 26, 76, 77, 78, 79, 99];
+
+        // The plain accessors added later, same source, same shift.
+        #[cfg(not(target_env = "msvc"))]
+        assert_eq!(
+            [
+                SLOT_PLAYER_SET_DRUNK,
+                SLOT_PLAYER_SET_CONTROLLABLE,
+                SLOT_PLAYER_SET_WANTED,
+                SLOT_PLAYER_GET_WANTED,
+                SLOT_PLAYER_GET_MONEY,
+                SLOT_PLAYER_GET_SKIN,
+                SLOT_PLAYER_SET_WEATHER,
+                SLOT_PLAYER_SET_INTERIOR,
+                SLOT_PLAYER_GET_INTERIOR,
+            ],
+            [40, 46, 49, 50, 65, 98, 107, 118, 119]
+        );
+        #[cfg(target_env = "msvc")]
+        assert_eq!(
+            [
+                SLOT_PLAYER_SET_DRUNK,
+                SLOT_PLAYER_SET_CONTROLLABLE,
+                SLOT_PLAYER_SET_WANTED,
+                SLOT_PLAYER_GET_WANTED,
+                SLOT_PLAYER_GET_MONEY,
+                SLOT_PLAYER_GET_SKIN,
+                SLOT_PLAYER_SET_WEATHER,
+                SLOT_PLAYER_SET_INTERIOR,
+                SLOT_PLAYER_GET_INTERIOR,
+            ],
+            [39, 45, 48, 49, 64, 97, 106, 117, 118]
+        );
         assert_eq!(
             [
                 SLOT_PLAYER_KICK,

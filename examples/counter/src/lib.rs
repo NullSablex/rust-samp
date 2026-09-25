@@ -627,7 +627,19 @@ mod omp_players {
                     // Iterating the pool by id range, rather than by reading
                     // the hash set behind `entries()`.
                     let count = unsafe { samp::omp::all_players(pool) }.len();
-                    info!("[omp-event] pool reports {count} player(s)");
+                    // The plain accessors, written then read back.
+                    unsafe {
+                        samp::omp::player_set_interior(player, 3);
+                        samp::omp::player_set_wanted_level(player, 4);
+                        samp::omp::player_set_money(player, 250);
+                    }
+                    info!(
+                        "[omp-event] pool reports {count} player(s); interior={} wanted={} money={} skin={}",
+                        unsafe { samp::omp::player_interior(player) },
+                        unsafe { samp::omp::player_wanted_level(player) },
+                        unsafe { samp::omp::player_money(player) },
+                        unsafe { samp::omp::player_skin(player) }
+                    );
                     info!(
                         "[omp-event] score={score} health={health} world={world} team={} armour={} lookup_ok={}",
                         unsafe { samp::omp::player_team(player) },
