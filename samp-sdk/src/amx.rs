@@ -103,7 +103,7 @@ impl Amx {
     /// `AmxError::NotFound` if a listed native is not declared in the script,
     /// or VM state errors if called outside the load cycle.
     pub fn register(&self, natives: &[AMX_NATIVE_INFO]) -> AmxResult<()> {
-        let register = Register::from_table(self.table()?);
+        let register = Register::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         // `usize` -> `i32`: the `amx_Register` ABI takes the count as `int`.
         // Practical truncation would require >2 billion natives — impossible.
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
@@ -120,7 +120,7 @@ impl Amx {
             return Err(AmxError::Memory);
         }
 
-        let allot = Allot::from_table(self.table()?);
+        let allot = Allot::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
 
         let mut amx_addr = 0;
         let mut phys_addr = 0;
@@ -156,7 +156,7 @@ impl Amx {
     /// (stack or heap overflow), `Divide`, `Native` (a called native
     /// returned an error) or `Index` if `index` does not match a valid function.
     pub fn exec(&self, index: AmxExecIdx) -> AmxResult<i32> {
-        let exec = Exec::from_table(self.table()?);
+        let exec = Exec::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let mut retval = 0;
 
         amx_try!(exec(self.ptr, &raw mut retval, index.into()));
@@ -256,7 +256,7 @@ impl Amx {
     /// `AmxError::NotFound` if `name` contains an interior NUL byte or if the
     /// native is not registered in the VM.
     pub fn find_native(&self, name: &str) -> AmxResult<i32> {
-        let find_native = FindNative::from_table(self.table()?);
+        let find_native = FindNative::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut index = -1;
 
@@ -404,7 +404,7 @@ impl Amx {
     /// `AmxError::NotFound` if `name` contains an interior NUL byte or if the
     /// public function is not declared in the Pawn script.
     pub fn find_public(&self, name: &str) -> AmxResult<AmxExecIdx> {
-        let find_public = FindPublic::from_table(self.table()?);
+        let find_public = FindPublic::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut index = -1;
 
@@ -430,7 +430,7 @@ impl Amx {
     /// pubvar is not declared. `AmxError::MemoryAccess` if the address returned
     /// by the VM is invalid.
     pub fn find_pubvar<T: Sized + AmxPrimitive>(&self, name: &str) -> AmxResult<Ref<'_, T>> {
-        let find_pubvar = FindPubVar::from_table(self.table()?);
+        let find_pubvar = FindPubVar::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut cell_ptr = 0;
 
@@ -445,7 +445,7 @@ impl Amx {
     /// Propagates any [`AmxError`] returned by `amx_Flags` — in practice, it
     /// only fails if the internal `AMX*` is corrupted or null.
     pub fn flags(&self) -> AmxResult<AmxFlags> {
-        let flags = Flags::from_table(self.table()?);
+        let flags = Flags::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let mut value: u16 = 0;
 
         amx_try!(flags(self.ptr, &raw mut value));
@@ -482,7 +482,7 @@ impl Amx {
         // Resolve the function table first: without one there is nothing to
         // call, and flipping a flag on the VM to then give up would leave it
         // read and rewritten for no reason.
-        let exec = Exec::from_table(self.table().ok()?);
+        let exec = Exec::try_from_table(self.table().ok()?)?;
 
         // Toggle the BROWSE flag so `amx_Exec(.., 0)` returns the label table
         // instead of executing. Restore the previous flags afterwards.
@@ -518,7 +518,7 @@ impl Amx {
     /// `AmxError::MemoryAccess` if `address` does not correspond to a valid
     /// cell in the Pawn script address space.
     pub fn get_ref<T: Sized + AmxPrimitive>(&self, address: i32) -> AmxResult<Ref<'_, T>> {
-        let get_addr = GetAddr::from_table(self.table()?);
+        let get_addr = GetAddr::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let mut dest = 0;
         let mut dest_addr = std::ptr::addr_of_mut!(dest);
 
@@ -563,7 +563,7 @@ impl Amx {
     /// Propagates any [`AmxError`] from `amx_Push` — typically
     /// `AmxError::StackError`/`StackLow` if the stack is full.
     pub fn push<'a, T: AmxCell<'a>>(&'a self, value: T) -> AmxResult<()> {
-        let push = Push::from_table(self.table()?);
+        let push = Push::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
 
         amx_try!(push(self.ptr, value.as_cell()));
 
@@ -576,7 +576,7 @@ impl Amx {
     /// `AmxError::MemoryAccess` if `value` does not point to valid memory in
     /// the script space. Other [`AmxError`] are propagated from `amx_StrLen`.
     pub fn strlen(&self, value: *const i32) -> AmxResult<usize> {
-        let strlen = StrLen::from_table(self.table()?);
+        let strlen = StrLen::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
         let mut len = 0;
         amx_try!(strlen(value, &raw mut len));
         // `len` returned by `amx_StrLen` is always >= 0 (a negative value
@@ -997,6 +997,32 @@ mod vm_tests {
         }
         let amx = Amx::new(p, 0);
         f(&amx);
+    }
+
+    /// A function table the server filled only partly — every slot empty. The
+    /// calls that need one of those slots used to assert, which ends the
+    /// server's process; they now answer with an error the plugin can report.
+    #[test]
+    fn an_empty_slot_in_the_function_table_is_an_error_not_an_abort() {
+        let table = [0usize; 64];
+        let mut raw = MaybeUninit::<AMX>::zeroed();
+        let amx = Amx::new(raw.as_mut_ptr(), table.as_ptr() as usize);
+
+        assert!(matches!(
+            amx.find_public("OnGameModeInit"),
+            Err(AmxError::NotFound)
+        ));
+        assert!(matches!(amx.flags(), Err(AmxError::NotFound)));
+        assert!(matches!(
+            amx.exec(AmxExecIdx::Main),
+            Err(AmxError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn a_null_function_table_resolves_to_nothing() {
+        use crate::exports::{Exec, Export};
+        assert!(Exec::try_from_table(0).is_none());
     }
 
     #[test]

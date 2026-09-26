@@ -252,6 +252,40 @@ where
     crate::plugin::initialize(constructor);
 }
 
+/// Resolves the `Amx` a native was called with, registering it if the SDK has
+/// not seen it yet.
+///
+/// Called by every `#[native]` wrapper. The unseen case is real — a GDK-style
+/// plugin can call a native on a script this plugin never received in
+/// `AmxLoad` — and so is the case with no runtime at all, when another plugin
+/// calls in before this one loaded. Neither may end the server's process: both
+/// return `None`, and the native answers `0`.
+pub fn native_amx(amx: *mut AMX) -> Option<&'static crate::amx::Amx> {
+    let ident = crate::amx::AmxIdent::from(amx);
+
+    if Runtime::try_get().is_none() {
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            // No logger either, this early: stderr is all there is.
+            eprintln!(
+                "{} a native was called before the plugin loaded; it returned 0",
+                crate::macros::SDK_LOG_PREFIX
+            );
+        }
+        return None;
+    }
+
+    if let Some(amx) = crate::amx::get(ident) {
+        return Some(amx);
+    }
+    crate::amx::add(amx);
+    let found = crate::amx::get(ident);
+    if found.is_none() {
+        sdk_warn!("a native was called on a script the SDK could not register; it returned 0");
+    }
+    found
+}
+
 /// Stores the Pawn declaration of each native, as derived by `#[native]`.
 ///
 /// Called from both entry points (SA-MP `Load` and `ComponentEntryPoint`), so

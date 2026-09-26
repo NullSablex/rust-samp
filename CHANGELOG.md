@@ -112,6 +112,16 @@ for the full directory.
 
 #### Fixed
 
+- **A native called outside the server's own ordering could end its process.**
+  The `#[native]` wrapper resolved the script and the plugin with `expect`, before
+  the `catch_unwind` that guards the native's body — so a panic there crossed
+  into the server. That ordering is not guaranteed: another plugin can call a
+  native directly, on a script this one never received or before this one has
+  loaded. Both now answer `0`, with the reason logged once, through
+  `interlayer::native_amx` and `plugin::try_get`.
+- The `#[event]` hook no longer assumes the function table carries `amx_Exec`;
+  without it, the SDK says `#[event]` handlers will not fire, instead of
+  panicking. Its log lines also stop hardcoding the SDK prefix.
 - **The turnkey logger lost the severity of every line on the server's side.**
   It routed through the plain log, which open.mp classifies as a message, so a
   `warn!` arrived as `[Info]`. It now maps the level, so warnings and errors
@@ -120,6 +130,14 @@ for the full directory.
 
 #### Tests
 
+- The panic audit: every `unwrap`, `expect`, `assert!` and `panic!` outside test
+  code was classified by whether the server can reach it. Four were, and are
+  fixed above; the rest are compile-time layout checks, `debug_assert!`s, or
+  invariants the servers' call order guarantees — the runtime and the plugin are
+  created by `Supports`/`ComponentEntryPoint`, the first call each server makes.
+  An empty function-table slot is now pinned by a test that expects an error, and
+  the `counter` example, whose every native went through the changed wrapper,
+  was run on open.mp Linux, open.mp Windows under Wine and SA-MP Linux.
 - The include parser was checked against the 38 includes the open.mp server
   ships: 1068 native declarations and 117 forwards read, with no divergence from a
   count of the declaration lines — the pawndoc `/** */` blocks and `///` lines
@@ -164,6 +182,10 @@ for the full directory.
 
 #### Added
 
+- `#[native]` registers its name as a C string literal. The name used to be
+  built with `CString::new(...).unwrap()` and leaked on purpose so the server
+  could keep the pointer; a literal lives in the binary for as long as the plugin
+  is loaded, with nothing to allocate, leak or unwrap.
 - `#[native]` takes `default(...)`, `sizeof(...)`, `varargs` and `args = "…"`,
   which shape the Pawn declaration it derives; an argument named that the
   function does not have is a compile error.
@@ -178,6 +200,21 @@ for the full directory.
   include with the natives behind it from a test.
 
 ### `rust-samp-sdk` (lib `samp_sdk`) — unreleased
+
+#### Fixed
+
+- **An AMX function table the server left partly empty ended the server's
+  process.** Every `Amx` call resolved its function through `Export::from_table`,
+  which asserted on an empty slot — a panic on the path of every native, and a
+  panic there aborts the process. The calls now answer `Err(AmxError::NotFound)`,
+  which a native reports like any other error. The first assertion, on a null
+  table, was already unreachable: `Amx` checks for that before resolving.
+
+#### Deprecated
+
+- `Export::from_table`, in favour of `Export::try_from_table`, which returns
+  `None` instead of panicking. The old method keeps its signature and behaviour,
+  so nothing that calls it breaks.
 
 #### Added
 

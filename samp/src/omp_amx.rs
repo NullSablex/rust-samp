@@ -119,7 +119,7 @@ impl AmxOmpExt for Amx {
     fn native_by_index(&self, index: i32) -> AmxResult<AMX_NATIVE_INFO> {
         let table = extended_table()?;
         let amx = self.amx().ok_or(AmxError::NotFound)?;
-        let get = GetNativeByIndex::from_table(table);
+        let get = GetNativeByIndex::try_from_table(table).ok_or(AmxError::NotFound)?;
 
         let mut info = AMX_NATIVE_INFO {
             name: std::ptr::null_mut(),
@@ -135,7 +135,7 @@ impl AmxOmpExt for Amx {
     fn make_addr(&self, phys_addr: *mut i32) -> AmxResult<i32> {
         let table = extended_table()?;
         let amx = self.amx().ok_or(AmxError::NotFound)?;
-        let make = MakeAddr::from_table(table);
+        let make = MakeAddr::try_from_table(table).ok_or(AmxError::NotFound)?;
 
         let mut address = 0;
         let code = make(amx.as_ptr(), phys_addr, &raw mut address);
@@ -147,7 +147,7 @@ impl AmxOmpExt for Amx {
 
     unsafe fn str_size(&self, cstr: *const i32) -> AmxResult<usize> {
         let table = extended_table()?;
-        let size = StrSize::from_table(table);
+        let size = StrSize::try_from_table(table).ok_or(AmxError::NotFound)?;
 
         let mut length = 0;
         let code = size(cstr, &raw mut length);
@@ -159,7 +159,8 @@ impl AmxOmpExt for Amx {
 
     fn swap16(&self, value: &mut u16) -> AmxResult<()> {
         let table = extended_table()?;
-        let code = Swap16::from_table(table)(&raw mut *value);
+        let swap = Swap16::try_from_table(table).ok_or(AmxError::NotFound)?;
+        let code = swap(&raw mut *value);
         if code > 0 {
             return Err(AmxError::from(code));
         }
@@ -168,7 +169,8 @@ impl AmxOmpExt for Amx {
 
     fn swap32(&self, value: &mut u32) -> AmxResult<()> {
         let table = extended_table()?;
-        let code = Swap32::from_table(table)(&raw mut *value);
+        let swap = Swap32::try_from_table(table).ok_or(AmxError::NotFound)?;
+        let code = swap(&raw mut *value);
         if code > 0 {
             return Err(AmxError::from(code));
         }
@@ -177,7 +179,8 @@ impl AmxOmpExt for Amx {
 
     fn swap64(&self, value: &mut u64) -> AmxResult<()> {
         let table = extended_table()?;
-        let code = Swap64::from_table(table)(&raw mut *value);
+        let swap = Swap64::try_from_table(table).ok_or(AmxError::NotFound)?;
+        let code = swap(&raw mut *value);
         if code > 0 {
             return Err(AmxError::from(code));
         }

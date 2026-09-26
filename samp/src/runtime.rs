@@ -441,6 +441,13 @@ impl Runtime {
         Runtime::try_get().is_some_and(|rt| rt.inner().plugin.is_some())
     }
 
+    /// [`Self::plugin_cast`] without the panic, for a caller the server does not
+    /// order: a native another plugin may call before this one has loaded.
+    #[inline]
+    pub fn try_plugin_cast<T: SampPlugin>() -> Option<NonNull<T>> {
+        Runtime::try_get()?.inner().plugin.map(NonNull::cast)
+    }
+
     #[inline]
     pub fn plugin_cast<T: SampPlugin>() -> NonNull<T> {
         let rt = Runtime::get();

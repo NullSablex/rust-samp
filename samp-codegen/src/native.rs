@@ -182,14 +182,10 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let native_generated = quote! {
         #vis extern "C" fn #native_name(amx: *mut samp::raw::types::AMX, args: *mut i32) -> i32 {
-            let amx_ident = samp::amx::AmxIdent::from(amx);
-
-            let amx = match samp::amx::get(amx_ident) {
-                Some(amx) => amx,
-                None => {
-                    samp::amx::add(amx);  // For GDK
-                    samp::amx::get(amx_ident).expect("AMX not found after insertion")
-                }
+            // Resolved without panicking: this runs before `catch_unwind`, where
+            // a panic would cross into the server and end its process.
+            let Some(amx) = samp::interlayer::native_amx(amx) else {
+                return 0;
             };
 
             let mut args = samp::args::Args::new(amx, args);
@@ -326,7 +322,9 @@ fn gen_plugin_binding(has_self: bool) -> proc_macro2::TokenStream {
             // main-thread job asking for the plugin underneath this call is
             // refused instead of aliasing it.
             let _plugin_frame = samp::plugin::NativeFrame::enter();
-            let mut plugin = samp::plugin::get::<Self>();
+            let Some(mut plugin) = samp::plugin::try_get::<Self>() else {
+                return 0;
+            };
         }
     } else {
         proc_macro2::TokenStream::new()
@@ -410,18 +408,19 @@ fn gen_reg_native(
     native_name: &Ident,
     amx_name: &str,
 ) -> proc_macro2::TokenStream {
+    // `NativeName::parse` already rejected a name with a NUL byte, so this
+    // conversion cannot fail; the fallback only keeps the macro panic-free.
+    let c_name = std::ffi::CString::new(amx_name)
+        .map(|name| proc_macro2::Literal::c_string(&name))
+        .unwrap_or_else(|_| proc_macro2::Literal::c_string(c""));
+
     quote! {
         #vis fn #reg_name() -> samp::raw::types::AMX_NATIVE_INFO {
             samp::raw::types::AMX_NATIVE_INFO {
-                // Intentional leak: the native name must live forever
-                // since the server holds a reference to the pointer.
-                // `unwrap` here is unreachable — `#amx_name` was already validated
-                // against null bytes at proc-macro time (see `NativeName::parse`).
-                name: Box::leak(
-                    std::ffi::CString::new(#amx_name)
-                        .unwrap()
-                        .into_boxed_c_str()
-                ).as_ptr() as *mut std::os::raw::c_char,
+                // A C string literal: `'static`, in the binary, with nothing to
+                // allocate, leak or unwrap. The server keeps the pointer for as
+                // long as the plugin is loaded, which a literal outlives.
+                name: #c_name.as_ptr() as *mut std::os::raw::c_char,
                 func: Self::#native_name,
             }
         }

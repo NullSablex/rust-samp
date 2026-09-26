@@ -271,6 +271,15 @@ pub fn get<T: SampPlugin + 'static>() -> NonNull<T> {
     Runtime::plugin_cast()
 }
 
+/// What `#[native]` uses to reach the plugin: `None` instead of a panic when
+/// there is no plugin yet, since a native can be called by another plugin
+/// outside the order the server keeps.
+#[doc(hidden)]
+#[must_use]
+pub fn try_get<T: SampPlugin + 'static>() -> Option<NonNull<T>> {
+    Runtime::try_plugin_cast()
+}
+
 // ---------------------------------------------------------------------------
 // Reaching the plugin from outside a native
 // ---------------------------------------------------------------------------

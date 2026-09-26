@@ -22,6 +22,7 @@ use samp_sdk::args::Args;
 use samp_sdk::raw::types::AMX;
 
 use crate::amx::AmxIdent;
+use crate::macros::sdk_warn;
 use crate::runtime::Runtime;
 
 // Detour machinery is x86/x86_64-only (retour supports no other arch, and
@@ -168,9 +169,13 @@ fn install_exec_hook(fn_table: usize) {
         return;
     }
 
-    // `Exec::from_table` panics on a null table; guarded above. The returned
-    // safe `fn` coerces to the `unsafe extern "C" fn` the detour expects.
-    let target: ExecFn = Exec::from_table(fn_table);
+    // The returned safe `fn` coerces to the `unsafe extern "C" fn` the detour
+    // expects. A table without `amx_Exec` leaves nothing to hook.
+    let Some(exec) = Exec::try_from_table(fn_table) else {
+        sdk_warn!("the AMX function table has no amx_Exec; #[event] handlers will not fire");
+        return;
+    };
+    let target: ExecFn = exec;
 
     // SAFETY: `target` is the server's real `amx_Exec`; retour builds a
     // trampoline that preserves the original code. `exec_detour` never unwinds
@@ -178,7 +183,7 @@ fn install_exec_hook(fn_table: usize) {
     let detour = match unsafe { GenericDetour::new(target, exec_detour) } {
         Ok(detour) => detour,
         Err(err) => {
-            log::warn!("[rust-samp] failed to build amx_Exec detour: {err}; events will not fire");
+            sdk_warn!("failed to build amx_Exec detour: {err}; events will not fire");
             return;
         }
     };
@@ -190,7 +195,7 @@ fn install_exec_hook(fn_table: usize) {
     // SAFETY: enabling rewrites the target prologue; retour keeps the original
     // reachable via the trampoline used by `call`.
     if let Err(err) = unsafe { cell.0.enable() } {
-        log::warn!("[rust-samp] failed to enable amx_Exec detour: {err}; events will not fire");
+        sdk_warn!("failed to enable amx_Exec detour: {err}; events will not fire");
     }
 }
 
