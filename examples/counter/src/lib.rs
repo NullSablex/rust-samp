@@ -829,3 +829,34 @@ initialize_plugin!(
         };
     }
 );
+
+// ---------------------------------------------------------------------------
+// Keeping the include honest
+// ---------------------------------------------------------------------------
+
+// `initialize_plugin!` also emits `pawn_native_decls()`, which needs no server.
+// That makes the shipped `counter.inc` checkable in `cargo test`: rename a
+// native or change an argument's type and this test names what drifted.
+//
+// A plugin whose include is generated can write it from here instead, with
+// `samp::pawn_include::render("counter", &pawn_native_decls())`.
+#[cfg(test)]
+mod include_tests {
+    #[test]
+    fn the_shipped_include_matches_the_natives() {
+        let findings = samp::pawn_include::compare_file_with(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/counter.inc"),
+            &super::pawn_native_decls(),
+        )
+        .expect("counter.inc is shipped next to Cargo.toml");
+
+        assert!(
+            findings.is_empty(),
+            "counter.inc no longer matches the natives:\n{}",
+            findings
+                .iter()
+                .map(|f| format!("  {f}\n"))
+                .collect::<String>()
+        );
+    }
+}

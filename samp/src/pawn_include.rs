@@ -318,17 +318,29 @@ pub fn parse(source: &str) -> Vec<Declaration> {
 /// churn between runs.
 #[must_use]
 pub fn compare(include_source: &str) -> Vec<Divergence> {
-    compare_declarations(&parse(include_source), &registered_declarations())
+    compare_with(include_source, &crate::plugin::native_decls())
 }
 
-/// What the plugin registered, as declarations.
+/// Renders an include from a name and declarations, no server involved.
 ///
-/// `#[native]` renders a `raw` native commented out, since its arity is not in
-/// the Rust signature. The name is still registered, so it is read back here and
-/// marked [`Declaration::shape_known`] `false` — its presence is compared, its
-/// shape is not.
-fn registered_declarations() -> Vec<Declaration> {
-    crate::plugin::native_decls()
+/// The counterpart of [`compare_with`] for generating rather than checking: a
+/// plugin can write its `.inc` from a test, instead of starting a server with
+/// `SAMP_PAWN_INCLUDE` set.
+#[must_use]
+pub fn render(plugin_name: &str, decls: &[&str]) -> String {
+    crate::plugin::render_include(plugin_name, decls)
+}
+
+/// Reads the declarations `#[native]` derived, as produced by the
+/// `pawn_native_decls()` the plugin macro generates.
+///
+/// A `raw` native comes rendered commented out, its arity not being in the Rust
+/// signature. The name is still registered, so it is read back here and marked
+/// [`Declaration::shape_known`] `false` — its presence is compared, its shape is
+/// not.
+#[must_use]
+pub fn registered(decls: &[&str]) -> Vec<Declaration> {
+    decls
         .iter()
         .filter_map(|decl| {
             let (source, shape_known) = match decl.trim_start().strip_prefix("//") {
@@ -340,6 +352,26 @@ fn registered_declarations() -> Vec<Declaration> {
             Some(parsed)
         })
         .collect()
+}
+
+/// Compares an include with declarations in hand, no server involved.
+///
+/// This is the form a CI job wants: pass the `pawn_native_decls()` the plugin
+/// macro generates and the check runs in `cargo test`.
+#[must_use]
+pub fn compare_with(include_source: &str, decls: &[&str]) -> Vec<Divergence> {
+    compare_declarations(&parse(include_source), &registered(decls))
+}
+
+/// Reads `path` and compares it with declarations in hand.
+///
+/// # Errors
+/// Propagates the [`std::io::Error`] when the file cannot be read.
+pub fn compare_file_with(
+    path: impl AsRef<Path>,
+    decls: &[&str],
+) -> std::io::Result<Vec<Divergence>> {
+    Ok(compare_with(&std::fs::read_to_string(path)?, decls))
 }
 
 /// Reads `path` and compares it with the registered natives.

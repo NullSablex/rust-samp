@@ -30,6 +30,16 @@ for the full directory.
   file worth checking, being the one edited by hand.
 - The check runs after `on_load` rather than from the entry point, so it reaches
   a logger the plugin installs there.
+- **The whole check runs in `cargo test`, with no server.** `initialize_plugin!`
+  now also emits `pawn_native_decls()`, the declarations `#[native]` derived,
+  available without a loaded plugin. `pawn_include::compare_with` and
+  `compare_file_with` take them, so a plugin guards its include in CI:
+  `assert!(compare_file_with("include/p.inc", &pawn_native_decls())?.is_empty())`.
+  `pawn_include::render` writes an include from the same place, for a plugin that
+  generates rather than maintains one, replacing the server run with
+  `SAMP_PAWN_INCLUDE` set.
+- `pawn_include::registered` exposes the parsed registered side, for tooling that
+  wants the declarations rather than the divergences.
 - `samp::pawn_include::parse` reads `native` declarations out of any Pawn source,
   skipping commented-out ones and handling declarations spread over several
   lines; `compare_declarations` compares two parsed lists with no server behind
@@ -43,7 +53,11 @@ for the full directory.
   `sizeof(...)`, varargs, commented-out declarations and each kind of
   divergence, aliases and `raw` natives, plus the stable ordering the CI output
   depends on.
-- Validated against `email_samp` on a live open.mp server, over both of its
+- The `counter` example ships a `counter.inc` and a test that compares it with
+  its natives, so the derivation itself is covered in CI: an argument added to a
+  native fails the example's test.
+- Validated against `email_samp` both ways: in `cargo test` over its `.inc.in`
+  template and its alias variant, and on a live open.mp server, over both of its
   hand-written includes (the original and the open.mp-styled alias variant, 34
   natives each, all `raw` or alias-declared): both report a match, and an
   include edited to rename one native and change another's arity and tag reports

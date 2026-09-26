@@ -300,7 +300,34 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         gen_omp_entry_point(&plugin, &cargo_meta, &natives, &native_decls, &events)
     };
 
+    // Also emitted outside the entry points, so a plain `cargo test` can
+    // compare the declarations with a hand-written include without a server.
+    let decls_accessor = quote! {
+        /// Pawn declaration of every native this plugin registers, as
+        /// `#[native]` derived it from the Rust signature.
+        ///
+        /// Available without a server, which is what lets a test compare a
+        /// hand-written include with the natives behind it:
+        ///
+        /// ```ignore
+        /// #[test]
+        /// fn the_include_matches_the_natives() {
+        ///     let findings = samp::pawn_include::compare_file_with(
+        ///         "include/my_plugin.inc",
+        ///         &pawn_native_decls(),
+        ///     )
+        ///     .unwrap();
+        ///     assert!(findings.is_empty(), "{findings:#?}");
+        /// }
+        /// ```
+        #[must_use]
+        pub fn pawn_native_decls() -> Vec<&'static str> {
+            vec![#native_decls]
+        }
+    };
+
     let generated = quote! {
+        #decls_accessor
         #samp_entry_points
         #omp_entry_point
     };

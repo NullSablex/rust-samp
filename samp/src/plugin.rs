@@ -430,7 +430,7 @@ pub fn convert_return_value<T: AmxCell<'static>>(value: T) -> i32 {
 #[must_use]
 pub fn pawn_include() -> String {
     let rt = Runtime::get();
-    render_pawn_include(rt.plugin_name(), rt.native_decls())
+    render_include(rt.plugin_name(), rt.native_decls())
 }
 
 /// The Pawn declaration of every registered native, as `#[native]` derived it.
@@ -441,7 +441,10 @@ pub(crate) fn native_decls() -> Vec<&'static str> {
 }
 
 /// Renders the include from a name and a list of declarations.
-fn render_pawn_include(name: &str, decls: &[&str]) -> String {
+///
+/// Public through [`crate::pawn_include::render`], which is where it is
+/// documented; kept here next to the rest of the include plumbing.
+pub(crate) fn render_include(name: &str, decls: &[&str]) -> String {
     // A crate name may carry characters Pawn does not accept in an identifier
     // (`email-samp`), so the include guard uses a sanitized form.
     let guard: String = name
@@ -489,11 +492,11 @@ pub(crate) fn write_pawn_include_if_requested() {
 
 #[cfg(test)]
 mod pawn_include_tests {
-    use super::render_pawn_include;
+    use super::render_include;
 
     #[test]
     fn header_names_the_plugin_and_declarations_follow() {
-        let out = render_pawn_include("counter", &["native Counter_Get(&out);"]);
+        let out = render_include("counter", &["native Counter_Get(&out);"]);
         assert!(out.contains("signatures of counter"));
         assert!(out.ends_with("native Counter_Get(&out);\n"));
     }
@@ -502,14 +505,14 @@ mod pawn_include_tests {
     fn include_guard_drops_characters_pawn_rejects() {
         // `email-samp` would produce `_email-samp_included`, which the Pawn
         // preprocessor reads as a subtraction.
-        let out = render_pawn_include("email-samp", &[]);
+        let out = render_include("email-samp", &[]);
         assert!(out.contains("#define _email_samp_included"));
         assert!(!out.contains("email-samp_included"));
     }
 
     #[test]
     fn a_plugin_without_natives_still_produces_a_valid_include() {
-        let out = render_pawn_include("hello", &[]);
+        let out = render_include("hello", &[]);
         assert!(out.contains("#if defined _hello_included"));
     }
 }

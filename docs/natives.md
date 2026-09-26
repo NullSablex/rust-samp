@@ -350,7 +350,35 @@ Three things a real include does are understood rather than flagged:
   works as well as pointing it at the output, and is usually what you want: the
   template is the file edited by hand.
 
-The same comparison is available programmatically, which is what a CI job wants:
+### In `cargo test`, without a server
+
+`initialize_plugin!` also emits `pawn_native_decls()`, which needs no server, so
+the whole check runs as an ordinary test — which is where a CI job wants it:
+
+```rust
+#[test]
+fn the_include_matches_the_natives() {
+    let findings = samp::pawn_include::compare_file_with(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/include/my_plugin.inc"),
+        &pawn_native_decls(),
+    )
+    .unwrap();
+
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+```
+
+The `counter` example ships one, next to the `counter.inc` it guards.
+
+A plugin whose include is generated can write it from the same place, instead of
+starting a server with `SAMP_PAWN_INCLUDE` set:
+
+```rust
+std::fs::write("include/my_plugin.inc",
+    samp::pawn_include::render("my_plugin", &pawn_native_decls()))?;
+```
+
+Inside a running plugin the same comparison is one call:
 
 ```rust
 for finding in samp::pawn_include::compare_file("include/my_plugin.inc")? {
