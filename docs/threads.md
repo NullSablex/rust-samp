@@ -48,6 +48,55 @@ is the same shape every threaded SA-MP plugin uses.
 unloaded while the work is in flight. Handling it here is what keeps the job
 from reaching a dead VM.
 
+## Reaching the plugin's state
+
+The result of background work usually has to land somewhere in the plugin, and a
+worker thread cannot put it there: the plugin lives on the main thread and is not
+`Sync`. `post_with` hands the job `&mut T` at the moment it runs:
+
+```rust
+samp::mainthread::post_with::<MyPlugin>(move |plugin| {
+    plugin.delivered += 1;
+});
+```
+
+`T` is the type `initialize_plugin!` creates. Naming another logs a warning and
+skips the job, rather than reinterpreting the plugin's bytes.
+
+The usual shape is both: record the result, then tell the script. Those are two
+steps for a reason — while the closure holds `&mut T`, a `public` that re-entered
+one of this plugin's natives would take a second `&mut` to the same plugin.
+`post_with_amx` splits them, running what the closure returns after the borrow
+has ended:
+
+```rust
+samp::mainthread::post_with_amx::<MyPlugin, _>(ident, move |plugin| {
+    plugin.delivered += 1;
+    let total = plugin.delivered;
+
+    // Runs next, with no borrow of the plugin alive.
+    move |amx: &Amx| {
+        let _ = exec_public!(amx, "OnMailSent", total);
+    }
+});
+```
+
+The job is dropped, quietly, if the script was unloaded before it ran.
+
+If a native does run while a job holds the plugin, the SDK says so once in the
+log — it cannot refuse, because the native still has to answer the script, but it
+will not let the aliasing pass unmentioned.
+
+Outside the queue, the same access is `samp::plugin::with_instance`:
+
+```rust
+let total = samp::plugin::with_instance::<MyPlugin, _>(|plugin| plugin.delivered);
+```
+
+It returns `None`, with a warning naming the reason, when the plugin cannot be
+lent out: the wrong `T`, no plugin yet, a borrow already alive, or a call from
+inside a native — where `&mut self` is already in scope and is what to use.
+
 ## Draining
 
 Queued jobs run from the same place as `SampPlugin::on_tick`, so the plugin
@@ -88,3 +137,6 @@ It is not an async runtime. There is no executor, no `await`, no timer wheel —
 just a queue that crosses the thread boundary. Pair it with whatever you already
 use (`std::thread`, a thread pool, a Tokio runtime living inside the plugin) and
 use `post` only for the final hop back.
+
+It is also not a way to share the plugin. `with_instance` lends it for the length
+of one closure, on one thread; there is no handle to keep, and nothing to lock.

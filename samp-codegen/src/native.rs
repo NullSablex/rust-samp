@@ -211,7 +211,13 @@ fn gen_args_parsing(
 /// Associated functions call directly via `Self::name(...)`.
 fn gen_plugin_binding(has_self: bool) -> proc_macro2::TokenStream {
     if has_self {
-        quote!(let mut plugin = samp::plugin::get::<Self>();)
+        quote! {
+            // Marks the frame so the SDK can tell that `&mut self` is out: a
+            // main-thread job asking for the plugin underneath this call is
+            // refused instead of aliasing it.
+            let _plugin_frame = samp::plugin::NativeFrame::enter();
+            let mut plugin = samp::plugin::get::<Self>();
+        }
     } else {
         proc_macro2::TokenStream::new()
     }

@@ -752,6 +752,17 @@ struct LoggerState {
     next_archive_index: u32,
 }
 
+/// Maps a `log` level onto the server's own classification.
+#[cfg(not(feature = "samp-only"))]
+fn server_log_level(level: log::Level) -> samp_sdk::omp::LogLevel {
+    match level {
+        log::Level::Error => samp_sdk::omp::LogLevel::Error,
+        log::Level::Warn => samp_sdk::omp::LogLevel::Warning,
+        log::Level::Info => samp_sdk::omp::LogLevel::Message,
+        log::Level::Debug | log::Level::Trace => samp_sdk::omp::LogLevel::Debug,
+    }
+}
+
 impl Log for LoggerImpl {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.level() <= u8_to_level(LEVEL.load(Ordering::Relaxed))
@@ -771,6 +782,11 @@ impl Log for LoggerImpl {
             .unwrap_or_else(|_| String::from("0000-00-00 00:00:00"));
 
         // Forward to the server's own log honouring `server_format`.
+        //
+        // With a level, where the server has them: open.mp classifies each line
+        // and a warning routed through the plain log would arrive as a message,
+        // losing exactly the severity that makes it worth reading. SA-MP's
+        // `logprintf` has no levels, and the fallback handles that.
         if self.also_to_server {
             let server_line = apply_format(
                 &self.server_format,
@@ -779,6 +795,10 @@ impl Log for LoggerImpl {
                 level,
                 &message,
             );
+
+            #[cfg(not(feature = "samp-only"))]
+            Runtime::get().log_level(server_log_level(record.level()), server_line);
+            #[cfg(feature = "samp-only")]
             Runtime::get().log(server_line);
         }
 

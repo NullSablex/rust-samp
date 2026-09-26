@@ -10,6 +10,24 @@ for the full directory.
 
 #### Added
 
+- **A main-thread job can reach the plugin.** `mainthread::post_with::<T>` hands
+  the job `&mut T` when it runs, which is where the result of background work
+  usually has to land. Until now the closure took no parameters and there was no
+  route to plugin state from a worker thread, so a plugin doing I/O had to keep a
+  channel of its own — the limitation `email_samp` ran into while adopting the
+  queue.
+- `mainthread::post_with_amx::<T, _>(script, job)` for the shape that shows up
+  every time: record the result in the plugin, then tell the script. What the
+  closure returns runs after the plugin borrow has ended, so calling a `public`
+  from there is safe, and the job is dropped quietly when the script was
+  unloaded meanwhile.
+- `plugin::with_instance::<T, _>` reaches the plugin from anywhere on the main
+  thread, which is what the hidden `plugin::get` never safely allowed. It returns
+  `None`, naming the reason in the log, when `T` is not the plugin's type, when
+  there is no plugin, when a borrow is already alive, and when called from inside
+  a native — where `&mut self` is in scope and is what to use.
+- `plugin::is_borrowed` reports whether a borrow is alive, for a plugin deciding
+  between reaching for state and deferring.
 - **`samp::pawn_include` — drift checking for a hand-written include.** The
   generated include from 3.6.0 cannot drift, but a plugin that keeps its `.inc`
   by hand — for the default values, `sizeof(dest)`, varargs and documentation a
@@ -47,8 +65,24 @@ for the full directory.
   (`a_players`, `a_mysql`, `YSF`, `foreach`, ~550 declarations): every
   declaration read, and every one inside a comment block correctly left out.
 
+#### Fixed
+
+- **The turnkey logger lost the severity of every line on the server's side.**
+  It routed through the plain log, which open.mp classifies as a message, so a
+  `warn!` arrived as `[Info]`. It now maps the level, so warnings and errors
+  arrive as warnings and errors; SA-MP's `logprintf` has no levels and is
+  unaffected.
+
 #### Tests
 
+- The plugin cannot be aliased: a nested borrow, a borrow from inside a native
+  and a wrong `T` are each refused rather than served, the borrow is released
+  even when the closure panics, and Miri sees no aliasing in any of it.
+- Validated end to end on three servers — open.mp on Linux, open.mp on Windows
+  under Wine (MSVC ABI), and SA-MP on Linux — with the `counter` example's async
+  native rewritten onto `post_with_amx`: the job writes plugin state, the script
+  hears back afterwards, and deliberately calling a `public` from inside the
+  borrow produces the warning.
 - 13 unit tests over the parser and the comparison, covering defaults,
   `sizeof(...)`, varargs, commented-out declarations and each kind of
   divergence, aliases and `raw` natives, plus the stable ordering the CI output
@@ -67,6 +101,9 @@ for the full directory.
 
 #### Added
 
+- `#[native]` marks its frame with `samp::plugin::NativeFrame`, so the SDK can
+  tell that `&mut self` is out and refuse a second borrow from a main-thread job
+  instead of aliasing it.
 - `initialize_plugin!` emits `pawn_native_decls()` next to the entry points: the
   Pawn declaration of every registered native, as a plain function, available
   without a server. It is what lets `samp::pawn_include` compare a hand-written

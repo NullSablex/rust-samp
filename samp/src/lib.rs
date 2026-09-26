@@ -67,6 +67,8 @@ pub mod omp_amx;
 pub mod pawn_include;
 pub mod plugin;
 pub(crate) mod runtime;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use samp_codegen::{event, initialize_plugin, native};
 

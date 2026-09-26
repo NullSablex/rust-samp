@@ -37,6 +37,9 @@ static RUNTIME: AtomicPtr<Runtime> = AtomicPtr::new(std::ptr::null_mut());
 
 struct RuntimeInner {
     plugin: Option<NonNull<dyn SampPlugin + 'static>>,
+    /// Concrete type of `plugin`, so a caller naming `T` can be told it named
+    /// the wrong one instead of reinterpreting the bytes.
+    plugin_type: Option<std::any::TypeId>,
     /// Set by `samp::plugin::enable_tick` / `enable_tick_with`. `None`
     /// means the tick is disabled on both servers (the default).
     tick_config: Option<TickConfig>,
@@ -115,6 +118,7 @@ impl Runtime {
     pub fn initialize() -> &'static Runtime {
         let inner = RuntimeInner {
             plugin: None,
+            plugin_type: None,
             tick_config: None,
             last_tick_at: None,
             server_exports: std::ptr::null(),
@@ -318,7 +322,9 @@ impl Runtime {
         T: SampPlugin + 'static,
     {
         let boxed = Box::new(plugin);
-        self.inner().plugin = NonNull::new(Box::into_raw(boxed));
+        let inner = self.inner();
+        inner.plugin_type = Some(std::any::TypeId::of::<T>());
+        inner.plugin = NonNull::new(Box::into_raw(boxed));
     }
 
     pub fn set_server_exports(&self, exports: *const usize) {
@@ -400,6 +406,29 @@ impl Runtime {
                 .expect("Runtime::plugin() called before set_plugin()")
                 .as_mut()
         }
+    }
+
+    /// The plugin as `&mut T`, or `None` when no plugin is set or `T` is not the
+    /// type it was created as.
+    ///
+    /// The caller is responsible for there being no other borrow alive; that is
+    /// what [`crate::plugin::with_instance`] establishes before calling here.
+    #[inline]
+    pub fn plugin_as<T: SampPlugin + 'static>() -> Option<&'static mut T> {
+        let inner = Runtime::get().inner();
+        if inner.plugin_type != Some(std::any::TypeId::of::<T>()) {
+            return None;
+        }
+        inner
+            .plugin
+            .map(|ptr| unsafe { &mut *ptr.cast::<T>().as_ptr() })
+    }
+
+    /// The name of the concrete plugin type, for a diagnostic that says which
+    /// type was expected. Empty before the plugin is set.
+    #[inline]
+    pub fn plugin_is_set() -> bool {
+        Runtime::try_get().is_some_and(|rt| rt.inner().plugin.is_some())
     }
 
     #[inline]

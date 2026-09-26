@@ -29,6 +29,9 @@ struct Counter {
     count: i32,
     max: i32,
     ticks: u32,
+    /// Background jobs that have reported back. Written from the main thread by
+    /// the job itself, which is the point of `post_with_amx`.
+    finished_jobs: u32,
 }
 
 impl SampPlugin for Counter {
@@ -380,12 +383,18 @@ impl Counter {
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(delay));
 
-            samp::mainthread::post(move || {
-                let Some(amx) = samp::amx::get(ident) else {
-                    // The script was unloaded while the work was running.
-                    return;
-                };
-                let _ = exec_public!(amx, "OnCounterWorkDone", delay_ms);
+            // Back on the main thread with the plugin in hand: record the
+            // result, then answer the script. What the closure returns runs
+            // after the plugin borrow ends, which is why calling a `public`
+            // from there is allowed — from inside the closure it would not be.
+            samp::mainthread::post_with_amx::<Self, _>(ident, move |plugin| {
+                plugin.finished_jobs += 1;
+                let total = plugin.finished_jobs;
+
+                move |amx: &Amx| {
+                    info!("async work done ({total} so far)");
+                    let _ = exec_public!(amx, "OnCounterWorkDone", delay_ms);
+                }
             });
         });
 
@@ -826,6 +835,7 @@ initialize_plugin!(
             count: 0,
             max: 100,
             ticks: 0,
+            finished_jobs: 0,
         };
     }
 );

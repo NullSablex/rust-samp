@@ -93,6 +93,96 @@ where
     }
 }
 
+/// Queues `job` to run on the main thread with the plugin instance.
+///
+/// The plugin's own state is where the result of background work usually has to
+/// land, and a worker thread cannot reach it: the plugin is not `Sync`, and only
+/// the main thread may touch it. This posts the job and hands it `&mut T` at the
+/// moment it runs.
+///
+/// ```rust,no_run
+/// # use samp::prelude::*;
+/// # struct Mailer { sent: u32 }
+/// # impl SampPlugin for Mailer {}
+/// # fn example() {
+/// std::thread::spawn(move || {
+///     let delivered = true; // ... the slow work ...
+///
+///     samp::mainthread::post_with::<Mailer>(move |plugin| {
+///         if delivered {
+///             plugin.sent += 1;
+///         }
+///     });
+/// });
+/// # }
+/// ```
+///
+/// `T` must be the type `initialize_plugin!` creates; naming another logs a
+/// warning and skips the job, rather than reinterpreting the plugin's bytes.
+///
+/// **Do not call into Pawn from inside the closure.** A `public` that re-enters
+/// one of this plugin's natives would take a second `&mut` to the same plugin.
+/// Collect what to send, let the closure end, and send it after — or use
+/// [`post_with_amx`], which is that shape already.
+pub fn post_with<T>(job: impl FnOnce(&mut T) + Send + 'static)
+where
+    T: crate::plugin::SampPlugin + 'static,
+{
+    post(move || {
+        crate::plugin::with_instance::<T, _>(job);
+    });
+}
+
+/// Queues `job` to run on the main thread with the plugin and a resolved
+/// [`Amx`], in that order.
+///
+/// The common shape of background work coming back: record the result in the
+/// plugin, then tell the script. The closure returns what to do with the script,
+/// and the SDK runs it after the plugin borrow has ended, so calling a `public`
+/// from there is safe.
+///
+/// ```rust,no_run
+/// # use samp::prelude::*;
+/// # use samp::exec_public;
+/// # struct Mailer { sent: u32 }
+/// # impl SampPlugin for Mailer {}
+/// # fn example(script: samp::amx::AmxIdent) {
+/// samp::mainthread::post_with_amx::<Mailer, _>(script, |plugin| {
+///     plugin.sent += 1;
+///     let total = plugin.sent;
+///
+///     // Runs next, with no borrow of the plugin alive.
+///     move |amx: &Amx| {
+///         let _ = exec_public!(amx, "OnMailSent", total);
+///     }
+/// });
+/// # }
+/// ```
+///
+/// The job is skipped, quietly, if the script was unloaded before it ran: that
+/// is the normal end of a gamemode restart, not a fault.
+pub fn post_with_amx<T, R>(
+    script: crate::amx::AmxIdent,
+    job: impl FnOnce(&mut T) -> R + Send + 'static,
+) where
+    T: crate::plugin::SampPlugin + 'static,
+    R: FnOnce(&samp_sdk::amx::Amx),
+{
+    post(move || {
+        // Resolved first: with the script gone there is nothing to report, so
+        // the plugin is not disturbed either.
+        if crate::amx::get(script).is_none() {
+            return;
+        }
+        let Some(reply) = crate::plugin::with_instance::<T, _>(job) else {
+            return;
+        };
+        if let Some(amx) = crate::amx::get(script) {
+            reply(amx);
+        }
+    });
+}
+
 /// Number of jobs waiting to run.
 #[must_use]
 pub fn pending() -> usize {
@@ -129,16 +219,20 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Arc, Mutex as StdMutex};
 
-    /// The queue is process-wide, so the tests take turns on it.
-    static TEST_LOCK: StdMutex<()> = StdMutex::new(());
+    use crate::test_support::{TestPlugin, exclusive, value};
 
+    /// A second plugin type, to check that naming it reaches nothing.
+    struct OtherPlugin;
+    impl crate::plugin::SampPlugin for OtherPlugin {}
+
+    /// Leaves the queue empty, so a test starts from a known state.
     fn drain_quietly() {
         run_pending();
     }
 
     #[test]
     fn jobs_run_in_the_order_they_were_posted() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = exclusive();
         drain_quietly();
 
         let seen = Arc::new(StdMutex::new(Vec::new()));
@@ -153,7 +247,7 @@ mod tests {
 
     #[test]
     fn pending_counts_and_draining_clears() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = exclusive();
         drain_quietly();
 
         post(|| {});
@@ -167,7 +261,7 @@ mod tests {
 
     #[test]
     fn a_job_posted_while_draining_waits_for_the_next_drain() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = exclusive();
         drain_quietly();
 
         let runs = Arc::new(AtomicUsize::new(0));
@@ -187,7 +281,7 @@ mod tests {
 
     #[test]
     fn a_panicking_job_does_not_stop_the_ones_after_it() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = exclusive();
         drain_quietly();
 
         let ran = Arc::new(AtomicUsize::new(0));
@@ -210,8 +304,60 @@ mod tests {
     }
 
     #[test]
+    fn a_job_reaches_the_plugin_from_a_worker_thread() {
+        let _g = exclusive();
+        drain_quietly();
+
+        let before = value();
+
+        std::thread::spawn(|| {
+            post_with::<TestPlugin>(|plugin| plugin.value += 5);
+        })
+        .join()
+        .unwrap();
+
+        assert_eq!(run_pending(), 1);
+        assert_eq!(value(), before + 5);
+    }
+
+    #[test]
+    fn a_job_naming_the_wrong_plugin_type_is_skipped() {
+        let _g = exclusive();
+        drain_quietly();
+
+        let before = value();
+        post_with::<OtherPlugin>(|_| unreachable!("must not run"));
+
+        assert_eq!(run_pending(), 1, "the job ran and refused itself");
+        assert_eq!(value(), before, "the plugin was left alone");
+    }
+
+    #[test]
+    fn a_reply_to_a_script_that_went_away_is_dropped() {
+        let _g = exclusive();
+        drain_quietly();
+
+        let before = value();
+        // An ident no AMX was ever registered under: the script is gone.
+        let gone =
+            crate::amx::AmxIdent::from(std::ptr::without_provenance_mut(0xDEAD_BEEF_u32 as _));
+
+        post_with_amx::<TestPlugin, _>(gone, |plugin| {
+            plugin.value += 1;
+            |_amx: &samp_sdk::amx::Amx| unreachable!("there is no script to answer")
+        });
+
+        assert_eq!(run_pending(), 1);
+        assert_eq!(
+            value(),
+            before,
+            "the plugin is not disturbed when there is nothing to report to"
+        );
+    }
+
+    #[test]
     fn a_worker_thread_can_post() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = exclusive();
         drain_quietly();
 
         let ran = Arc::new(AtomicUsize::new(0));
