@@ -63,6 +63,15 @@ for the full directory.
   include edited to rename one native and change another's arity and tag reports
   exactly those four divergences.
 
+### `rust-samp-codegen` (lib `samp_codegen`) — unreleased
+
+#### Added
+
+- `initialize_plugin!` emits `pawn_native_decls()` next to the entry points: the
+  Pawn declaration of every registered native, as a plain function, available
+  without a server. It is what lets `samp::pawn_include` compare a hand-written
+  include with the natives behind it from a test.
+
 ## [v3.6.0] — 2026/09/25
 
 Correctness release, in two parts, plus the whole open.mp interface layer.
