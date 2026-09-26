@@ -142,6 +142,20 @@ pub(crate) fn get() -> &'static Encoding {
     unsafe { &*DEFAULT_ENCODING.load(Ordering::Acquire) }
 }
 
+/// The encoding every AMX string conversion currently uses.
+///
+/// A plugin that lets the server owner choose the encoding needs to be able to
+/// report back which one is in force — in a diagnostics native, or in the line
+/// it logs at startup.
+///
+/// ```rust
+/// assert_eq!(samp_sdk::encoding::current().name(), "windows-1252");
+/// ```
+#[must_use]
+pub fn current() -> &'static Encoding {
+    get()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

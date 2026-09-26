@@ -109,6 +109,14 @@ for the full directory.
   without a server. It is what lets `samp::pawn_include` compare a hand-written
   include with the natives behind it from a test.
 
+### `rust-samp-sdk` (lib `samp_sdk`) — unreleased
+
+#### Added
+
+- `encoding::current()` returns the encoding in force. A plugin that lets the
+  server owner choose one could set it but not read it back, so it could not
+  report which encoding it was using.
+
 ## [v3.6.0] — 2026/09/25
 
 Correctness release, in two parts, plus the whole open.mp interface layer.

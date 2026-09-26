@@ -57,6 +57,13 @@ reporting, since the alternative is running in the wrong encoding silently.
 Aliases do not always say what they look like: `cyrillic` is ISO-8859-5, **not**
 Windows-1251.
 
+`samp::encoding::current()` reads back what is in force, for the startup line or
+a diagnostics native:
+
+```rust
+info!("encoding: {}", samp::encoding::current().name());
+```
+
 [labels]: https://encoding.spec.whatwg.org/#names-and-labels
 
 ## Knowing when a character was lost
