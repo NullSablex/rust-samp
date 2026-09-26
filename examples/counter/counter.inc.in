@@ -1,5 +1,5 @@
 /*
- * counter v1.1.0 — a stateful example plugin for SA-MP and open.mp.
+ * counter v{{VERSION}} — a stateful example plugin for SA-MP and open.mp.
  *
  * GENERATED from counter.inc.in — do not edit counter.inc by hand.
  *
@@ -7,12 +7,12 @@
  * every `native` line comes from the Rust signature, so it cannot drift.
  */
 
-#if defined _counter_included
+#if defined {{GUARD}}
     #endinput
 #endif
-#define _counter_included
+#define {{GUARD}}
 
-#define COUNTER_VERSION "1.1.0"
+#define COUNTER_VERSION "{{VERSION}}"
 
 
 // ---------------------------------------------------------------------------
@@ -28,27 +28,23 @@ forward OnCounterWorkDone(delay);
 // ---------------------------------------------------------------------------
 
 // Adds one. Returns the new value, or -1 when already at the maximum.
-native Counter_Increment();
+{{NATIVE:Counter_Increment}}
 
 // Takes one away. Returns the new value, or -1 when already at zero.
-native Counter_Decrement();
+{{NATIVE:Counter_Decrement}}
 
 // Back to zero.
-native Counter_Reset();
+{{NATIVE:Counter_Reset}}
 
 // Reads the current value into `out`.
-native bool:Counter_Get(&out);
+{{NATIVE:Counter_Get}}
 
 // The open.mp-styled spelling of the same native, for a script that prefers it.
-native bool:Counter_Read(&out) = Counter_Get;
+{{NATIVE:Counter_Get as Counter_Read}}
 
 
 // ---------------------------------------------------------------------------
 // Everything else
 // ---------------------------------------------------------------------------
 
-native bool:Counter_SetMax(max = 100);
-native bool:Counter_IsAtMax();
-native bool:Counter_WorkAsync(delay_ms);
-native Counter_NotifyScore(playerid);
-native Counter_ListNatives(limit = 10);
+{{NATIVES}}

@@ -306,6 +306,126 @@ commented out, because its arity is not in the signature:
 
 Argument names come from the Rust parameters, with a leading `_` stripped.
 
+### Saying what the signature cannot
+
+Pawn declarations carry things no Rust signature has a place for: a default
+value, a length argument that measures an array, varargs. `#[native]` takes them,
+so the declaration stays derived instead of hand-written:
+
+```rust
+#[native(name = "Email_Status", default(account = 0), sizeof(dest_len = dest))]
+fn status(&mut self, _amx: &Amx, account: i32, dest: UnsizedBuffer, dest_len: usize)
+    -> AmxResult<bool> { /* ... */ }
+
+#[native(name = "Email_Send", raw, args = "account = 0, const to[], {Float,_}:...")]
+fn send(&mut self, _amx: &Amx, args: Args) -> bool { /* ... */ }
+```
+
+```pawn
+native bool:Email_Status(account = 0, dest[], dest_len = sizeof(dest));
+native bool:Email_Send(account = 0, const to[], {Float,_}:...);
+```
+
+| In `#[native(...)]` | Effect |
+| ------------------- | ------ |
+| `default(arg = 0)` | `arg = 0`. A string literal is taken verbatim, so `default(name = "\"\"")` gives `name = ""` |
+| `sizeof(len = dest)` | `len = sizeof(dest)`, Pawn's way of passing a buffer's size |
+| `varargs` | closes the list with `{Float,_}:...` |
+| `args = "..."` | the argument list, written out — the only way to declare a `raw` native |
+
+`default` and `sizeof` naming an argument the function does not have is a compile
+error: it means a rename on the Rust side that the attribute did not follow, and
+the include would come out wrong.
+
+## Generating from a template
+
+A fully generated include has no room for documentation; one kept by hand drifts.
+A template is both: the prose, the sections, the constants and the callback
+documentation stay written by hand, and every `native` line is filled in from the
+Rust signature.
+
+```pawn
+// counter v{{VERSION}} — generated from counter.inc.in
+
+#if defined {{GUARD}}
+    #endinput
+#endif
+#define {{GUARD}}
+
+// Called once a Counter_WorkAsync job has finished.
+forward OnCounterWorkDone(delay);
+
+// Adds one. Returns the new value, or -1 when already at the maximum.
+{{NATIVE:Counter_Increment}}
+
+// The open.mp-styled spelling of the same native.
+{{NATIVE:Counter_Get as Counter_Read}}
+
+{{NATIVES}}
+```
+
+| Placeholder | Becomes |
+| ----------- | ------- |
+| `{{NATIVES}}` | every declaration not placed individually, in registration order |
+| `{{NATIVE:Name}}` | that one declaration |
+| `{{NATIVE:Name as Alias}}` | `native Alias(…) = Name;` — the same native under another name |
+| `{{PLUGIN}}` | the plugin's crate name |
+| `{{GUARD}}` | `_<plugin>_included` |
+| `{{VERSION}}` | the plugin crate's version, unless you pass your own |
+| anything else | what you supplied with `.var("NAME", value)` |
+
+A registered native that no placeholder emits is an **error**, not a silent
+omission — that is the drift this exists to prevent. So are an unknown
+placeholder, a `{{NATIVE:...}}` naming a native that does not exist, and a `{{`
+that never closes. All of them come back at once, so one run names everything.
+
+### From a test
+
+```rust
+#[test]
+fn the_shipped_include_is_the_rendered_template() {
+    let rendered = samp::pawn_include::Template::new(
+        include_str!("../counter.inc.in"),
+        &pawn_native_decls(),
+    )
+    .render()
+    .unwrap();
+
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/counter.inc");
+    if std::env::var_os("UPDATE_INCLUDE").is_some() {
+        std::fs::write(path, &rendered).unwrap();
+        return;
+    }
+    assert_eq!(std::fs::read_to_string(path).unwrap(), rendered);
+}
+```
+
+The include is committed, CI checks it is current, and `UPDATE_INCLUDE=1 cargo
+test` regenerates it. The `counter` example works exactly this way.
+
+### Without writing any code
+
+Start the server once with the template and the output named:
+
+```sh
+SAMP_PAWN_INCLUDE_TEMPLATE=include/my_plugin.inc.in \
+SAMP_PAWN_INCLUDE=include/my_plugin.inc \
+SAMP_PAWN_VAR_RELEASED=2026-09-26 \
+./omp-server
+```
+
+`SAMP_PAWN_VAR_<NAME>` supplies `{{<NAME>}}`. Because the environment belongs to
+the whole process, and a server may have several Rust plugins loaded, a value may
+name the plugin it is for — otherwise they overwrite each other's file:
+
+```sh
+SAMP_PAWN_INCLUDE="counter=counter.inc,email_samp=email.inc" ./omp-server
+```
+
+A bare path applies to whichever plugin reads it, which is what a single-plugin
+setup wants. This selector works for `SAMP_PAWN_INCLUDE`,
+`SAMP_PAWN_INCLUDE_TEMPLATE` and `SAMP_PAWN_INCLUDE_CHECK`.
+
 ## Checking a hand-written include
 
 A generated include cannot drift. One kept by hand can, and plugins keep theirs
@@ -346,9 +466,10 @@ Three things a real include does are understood rather than flagged:
 - **`raw` natives.** They parse their own arguments, so `#[native]` cannot
   derive a shape and the include is the only place it is written down. Presence
   is compared, shape is not.
-- **Templates.** Pointing the check at the `.inc.in` a build script renders
-  works as well as pointing it at the output, and is usually what you want: the
-  template is the file edited by hand.
+- **Templates.** A template is checked as what it renders to, so pointing the
+  check at the `.inc.in` works as well as pointing it at the output — and is
+  usually what you want, the template being the file edited by hand. A template
+  that will not render is reported here too.
 
 ### In `cargo test`, without a server
 

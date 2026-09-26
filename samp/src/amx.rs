@@ -21,6 +21,42 @@ pub fn get<'a>(ident: AmxIdent) -> Option<&'a Amx> {
         .map(|(_, v)| v)
 }
 
+/// Every script the server has loaded, as identities.
+///
+/// A plugin that has to reach all of them — announcing something to the
+/// gamemode and each filterscript, say — has no other way to enumerate them;
+/// [`get`] only answers about a script whose ident is already in hand.
+///
+/// Identities are returned, not `&Amx`, because the list changes as the server
+/// loads and unloads scripts: resolve each one with [`get`] at the moment you
+/// use it, and a `None` is a script that went away in between.
+///
+/// ```rust,no_run
+/// # use samp::exec_public;
+/// for script in samp::amx::loaded() {
+///     if let Some(amx) = samp::amx::get(script) {
+///         let _ = exec_public!(amx, "OnPluginReady");
+///     }
+/// }
+/// ```
+#[must_use]
+pub fn loaded() -> Vec<AmxIdent> {
+    Runtime::get()
+        .amx_list()
+        .iter()
+        .map(|(ident, _)| *ident)
+        .collect()
+}
+
+/// How many scripts are loaded.
+///
+/// Cheaper than [`loaded`] when the count is all that is wanted, such as a
+/// diagnostics native.
+#[must_use]
+pub fn count() -> usize {
+    Runtime::get().amx_list().len()
+}
+
 /// Registers a freshly received `AMX*` in the global runtime.
 ///
 /// Called by the `interlayer` in `AmxLoad`. Plugins normally do not invoke

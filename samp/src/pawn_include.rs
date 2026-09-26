@@ -86,6 +86,9 @@ pub enum Divergence {
         include: String,
         plugin: String,
     },
+    /// The include is a template that does not render — checked here because a
+    /// template that cannot be rendered cannot be compared either.
+    Template { problem: String },
     /// One argument is declared differently: a tag, a `&`, or a `[]`.
     ArgumentShape {
         native: String,
@@ -149,6 +152,7 @@ impl fmt::Display for Divergence {
                     shown(include)
                 )
             }
+            Self::Template { problem } => write!(f, "{problem}"),
             Self::ArgumentShape {
                 native,
                 position,
@@ -360,7 +364,26 @@ pub fn registered(decls: &[&str]) -> Vec<Declaration> {
 /// macro generates and the check runs in `cargo test`.
 #[must_use]
 pub fn compare_with(include_source: &str, decls: &[&str]) -> Vec<Divergence> {
-    compare_declarations(&parse(include_source), &registered(decls))
+    // A template is checked as what it renders to: its declarations come from
+    // the same place, so the comparison is about the hand-written ones around
+    // them — and a template that will not render is worth hearing about here too.
+    let rendered = if include_source.contains("{{") {
+        match Template::new(include_source, decls).render() {
+            Ok(rendered) => rendered,
+            Err(errors) => {
+                return errors
+                    .into_iter()
+                    .map(|e| Divergence::Template {
+                        problem: e.to_string(),
+                    })
+                    .collect();
+            }
+        }
+    } else {
+        include_source.to_string()
+    };
+
+    compare_declarations(&parse(&rendered), &registered(decls))
 }
 
 /// Reads `path` and compares it with declarations in hand.
@@ -472,6 +495,77 @@ pub fn compare_declarations(
     findings
 }
 
+/// Reads a path from `var`, honouring a per-plugin selector.
+///
+/// The environment belongs to the whole process, and a server can have several
+/// Rust plugins loaded, each with its own include — pointed at one path, they
+/// would overwrite each other's file. So a value may name the plugin it is for:
+///
+/// ```text
+/// SAMP_PAWN_INCLUDE=counter.inc                     # whichever plugin reads it
+/// SAMP_PAWN_INCLUDE=counter=counter.inc,email_samp=email.inc
+/// ```
+///
+/// A bare path applies to every plugin, which is what a single-plugin setup
+/// wants. With selectors, a plugin not named takes nothing.
+pub(crate) fn path_for_plugin(var: &str) -> Option<std::ffi::OsString> {
+    let value = std::env::var_os(var)?;
+    let text = value.to_string_lossy();
+
+    // A Windows path (`C:\...`) has no `=`; a selector always does.
+    if !text.contains('=') {
+        return Some(value);
+    }
+
+    let plugin = crate::runtime::Runtime::try_get().map_or("plugin", |rt| rt.plugin_name());
+    for entry in text.split(',') {
+        if let Some((name, path)) = entry.split_once('=')
+            && name.trim() == plugin
+        {
+            return Some(std::ffi::OsString::from(path.trim()));
+        }
+    }
+    None
+}
+
+/// Renders `template` into `out`, for the `SAMP_PAWN_INCLUDE_TEMPLATE` path.
+///
+/// Values for placeholders beyond the built-in ones come from the environment:
+/// `SAMP_PAWN_VAR_RELEASED=2026-09-26` supplies `{{RELEASED}}`. That keeps the
+/// generation usable with no code at all — start the server once with the two
+/// variables set — while a plugin that wants more control uses [`Template`]
+/// from a test.
+///
+/// Every failure is logged and otherwise ignored: producing a development
+/// artifact must never take the server down.
+pub(crate) fn write_from_template(template: &std::ffi::OsStr, out: &std::ffi::OsStr) {
+    let shown = template.to_string_lossy().into_owned();
+
+    let source = match std::fs::read_to_string(template) {
+        Ok(source) => source,
+        Err(e) => {
+            crate::macros::sdk_warn!("could not read {shown}: {e}");
+            return;
+        }
+    };
+
+    let decls = crate::plugin::native_decls();
+    let mut rendering = Template::new(&source, &decls);
+    for (key, value) in std::env::vars() {
+        if let Some(name) = key.strip_prefix("SAMP_PAWN_VAR_") {
+            rendering = rendering.var(name, value);
+        }
+    }
+
+    match rendering.write(out) {
+        Ok(()) => crate::macros::sdk_info!(
+            "Pawn include written to {} from {shown}",
+            out.to_string_lossy()
+        ),
+        Err(e) => crate::macros::sdk_warn!("{shown}: {e}"),
+    }
+}
+
 /// Runs the comparison when `SAMP_PAWN_INCLUDE_CHECK` names an include.
 ///
 /// Called by the SDK right after `on_load`, not from the entry point: the check
@@ -482,7 +576,7 @@ pub fn compare_declarations(
 /// reported and otherwise ignored, since a development check must never take a
 /// server down.
 pub(crate) fn check_if_requested() {
-    let Some(path) = std::env::var_os("SAMP_PAWN_INCLUDE_CHECK") else {
+    let Some(path) = path_for_plugin("SAMP_PAWN_INCLUDE_CHECK") else {
         return;
     };
     let shown = path.to_string_lossy().into_owned();
@@ -657,6 +751,203 @@ mod tests {
         assert!(compare_declarations(&parse(source), &parse(source)).is_empty());
     }
 
+    // -----------------------------------------------------------------------
+    // Templates
+    // -----------------------------------------------------------------------
+
+    const DECLS: &[&str] = &[
+        "native Counter_Increment();",
+        "native bool:Counter_Get(&out);",
+        "// native Counter_Send(...); // raw native — fill in the arguments",
+    ];
+
+    #[test]
+    fn the_prose_stays_and_the_declarations_are_filled_in() {
+        let template = "\
+// My plugin v{{VERSION}}
+#if defined {{GUARD}}
+    #endinput
+#endif
+#define {{GUARD}}
+
+// Adds one.
+{{NATIVE:Counter_Increment}}
+
+{{NATIVES}}
+";
+        let out = Template::new(template, DECLS)
+            .plugin_name("counter")
+            .var("VERSION", "1.2.3")
+            .render()
+            .expect("the template places every native");
+
+        assert!(out.contains("// My plugin v1.2.3"));
+        assert!(out.contains("#define _counter_included"));
+        // Placed by name, under its own comment, and not repeated by {{NATIVES}}.
+        assert_eq!(out.matches("native Counter_Increment();").count(), 1);
+        assert!(out.contains("native bool:Counter_Get(&out);"));
+    }
+
+    #[test]
+    fn a_native_can_be_placed_under_another_name() {
+        let out = Template::new("{{NATIVE:Counter_Get as Counter_Read}}\n{{NATIVES}}", DECLS)
+            .render()
+            .unwrap();
+
+        assert!(out.contains("native bool:Counter_Read(&out) = Counter_Get;"));
+        assert!(
+            !out.contains("native bool:Counter_Get(&out);"),
+            "the alias replaces the original, it does not add to it"
+        );
+    }
+
+    #[test]
+    fn a_raw_native_can_be_placed_by_name() {
+        // Its rendered form is commented out, so a template that only wants the
+        // hand-written line places it and writes the arguments itself.
+        let out = Template::new("{{NATIVES}}", DECLS).render().unwrap();
+        assert!(out.contains("// native Counter_Send(...);"));
+    }
+
+    #[test]
+    fn a_native_the_template_forgets_is_an_error() {
+        let errors = Template::new("{{NATIVE:Counter_Increment}}", DECLS)
+            .render()
+            .expect_err("two natives are left out");
+
+        assert!(errors.contains(&TemplateError::NativeNotPlaced {
+            native: "Counter_Get".into()
+        }));
+        assert!(errors[0].to_string().contains("{{NATIVES}}"));
+    }
+
+    #[test]
+    fn a_placeholder_with_nothing_behind_it_is_an_error() {
+        let errors = Template::new("{{RELEASED}}{{NATIVES}}", DECLS)
+            .render()
+            .expect_err("RELEASED was never supplied");
+
+        assert_eq!(
+            errors,
+            vec![TemplateError::UnknownPlaceholder {
+                name: "RELEASED".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn naming_a_native_that_does_not_exist_is_an_error() {
+        let errors = Template::new("{{NATIVE:Counter_Gone}}{{NATIVES}}", DECLS)
+            .render()
+            .expect_err("no such native");
+
+        assert!(errors.contains(&TemplateError::UnknownNative {
+            native: "Counter_Gone".into()
+        }));
+    }
+
+    #[test]
+    fn an_unclosed_placeholder_is_an_error() {
+        let errors = Template::new("{{NATIVES}} and then {{OOPS", DECLS)
+            .render()
+            .expect_err("the second placeholder never closes");
+
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, TemplateError::UnclosedPlaceholder { .. }))
+        );
+    }
+
+    #[test]
+    fn version_comes_from_the_plugin_unless_the_caller_says_otherwise() {
+        // The version is in every include header, so the SDK fills it in from
+        // the plugin crate; passing one takes precedence.
+        let out = Template::new("v{{VERSION}}\n{{NATIVES}}", DECLS)
+            .var("VERSION", "9.9.9")
+            .render()
+            .unwrap();
+
+        assert!(out.starts_with("v9.9.9"));
+    }
+
+    #[test]
+    fn the_last_value_for_a_name_wins() {
+        let out = Template::new("{{V}}{{NATIVES}}", DECLS)
+            .var("V", "first")
+            .var("V", "second")
+            .render()
+            .unwrap();
+
+        assert!(out.starts_with("second"));
+    }
+
+    #[test]
+    fn checking_a_template_compares_what_it_renders_to() {
+        // The template's own declarations cannot drift; a line written by hand
+        // beside them still can.
+        let shaped: &[&str] = &[
+            "native Counter_Increment();",
+            "native bool:Counter_Get(&out);",
+        ];
+        assert!(compare_with("{{NATIVES}}", shaped).is_empty());
+
+        let with_a_stale_line = "{{NATIVES}}\nnative Counter_Removed(a);";
+        assert_eq!(
+            compare_with(with_a_stale_line, shaped),
+            vec![Divergence::NotRegistered {
+                native: "Counter_Removed".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_raw_native_left_commented_out_is_still_reported_as_missing() {
+        // `{{NATIVES}}` emits it as `#[native]` rendered it — commented out —
+        // so the include does not declare it. Give the native an `args = "…"`
+        // in its attribute, or write the line in the template.
+        assert_eq!(
+            compare_with("{{NATIVES}}", DECLS),
+            vec![Divergence::MissingFromInclude {
+                native: "Counter_Send".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_template_that_will_not_render_is_reported_by_the_check() {
+        let findings = compare_with("{{NOPE}}{{NATIVES}}", DECLS);
+        assert!(matches!(findings.as_slice(), [Divergence::Template { .. }]));
+        assert!(findings[0].to_string().contains("NOPE"));
+    }
+
+    #[test]
+    fn an_env_path_can_name_the_plugin_it_is_for() {
+        // Several Rust plugins on one server read the same variable, so a value
+        // may say which plugin each path is for. A bare path is for everyone.
+        const VAR: &str = "SAMP_PAWN_INCLUDE_TEST_PATH";
+        let _fixture = crate::test_support::exclusive();
+
+        // SAFETY: the fixture's lock keeps this the only test touching the
+        // environment, and the variable is this test's own.
+        unsafe { std::env::set_var(VAR, "plain.inc") };
+        assert_eq!(path_for_plugin(VAR).unwrap(), "plain.inc");
+
+        unsafe { std::env::set_var(VAR, "counter=counter.inc, other=other.inc") };
+        let plugin = crate::runtime::Runtime::try_get().map_or("plugin", |rt| rt.plugin_name());
+        assert_eq!(
+            path_for_plugin(VAR),
+            None,
+            "the test plugin ({plugin}) is not named, so it takes nothing"
+        );
+
+        unsafe { std::env::set_var(VAR, format!("{plugin}=mine.inc,other=other.inc")) };
+        assert_eq!(path_for_plugin(VAR).unwrap(), "mine.inc");
+
+        unsafe { std::env::remove_var(VAR) };
+        assert_eq!(path_for_plugin(VAR), None);
+    }
+
     #[test]
     fn findings_come_back_in_a_stable_order() {
         let registered = parse("native Zeta();\nnative Alpha();");
@@ -670,4 +961,315 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["Alpha", "Zeta"]);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Generating from a template
+// ---------------------------------------------------------------------------
+
+/// Why a template could not be rendered.
+///
+/// Each variant is a mistake that would otherwise ship as a broken include, so
+/// rendering reports it instead of guessing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplateError {
+    /// `{{SOMETHING}}` with no value behind it.
+    UnknownPlaceholder { name: String },
+    /// `{{NATIVE:Name}}` naming a native the plugin does not register.
+    UnknownNative { native: String },
+    /// A registered native that no placeholder emits, with no `{{NATIVES}}` to
+    /// collect it: it would be missing from the include.
+    NativeNotPlaced { native: String },
+    /// A `{{` with no `}}` after it.
+    UnclosedPlaceholder { at: usize },
+}
+
+impl fmt::Display for TemplateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownPlaceholder { name } => {
+                write!(
+                    f,
+                    "{{{{{name}}}}} has no value; pass it with .var(\"{name}\", …)"
+                )
+            }
+            Self::UnknownNative { native } => {
+                write!(
+                    f,
+                    "{{{{NATIVE:{native}}}}} names a native this plugin does not register"
+                )
+            }
+            Self::NativeNotPlaced { native } => write!(
+                f,
+                "{native} is registered but the template never places it; \
+                 name it with {{{{NATIVE:{native}}}}} or add {{{{NATIVES}}}}"
+            ),
+            Self::UnclosedPlaceholder { at } => {
+                write!(
+                    f,
+                    "a placeholder opened at byte {at} is never closed with }}}}"
+                )
+            }
+        }
+    }
+}
+
+/// A Pawn include written by hand, with the declarations filled in.
+///
+/// The prose, the sections, the constants and the callback documentation stay in
+/// the template, where they belong; every `native` line comes from the Rust
+/// signature, so it cannot drift. This is the middle ground between generating
+/// the whole file — which throws the documentation away — and maintaining it by
+/// hand, which drifts.
+///
+/// Placeholders, all written `{{NAME}}`:
+///
+/// | Placeholder | Becomes |
+/// | ----------- | ------- |
+/// | `{{NATIVES}}` | every declaration not placed individually, in registration order |
+/// | `{{NATIVE:Name}}` | that one declaration |
+/// | `{{NATIVE:Name as Alias}}` | `native Alias(…) = Name;`, the aliased form |
+/// | `{{PLUGIN}}` | the plugin's crate name |
+/// | `{{GUARD}}` | `_<plugin>_included`, the usual include guard symbol |
+/// | anything else | what [`Template::var`] supplied, or an error |
+///
+/// ```rust,no_run
+/// # fn pawn_native_decls() -> Vec<&'static str> { vec![] }
+/// # fn example() -> std::io::Result<()> {
+/// let template = std::fs::read_to_string("include/my_plugin.inc.in")?;
+///
+/// samp::pawn_include::Template::new(&template, &pawn_native_decls())
+///     .var("VERSION", env!("CARGO_PKG_VERSION"))
+///     .write("include/my_plugin.inc")
+///     .expect("the template and the natives agree");
+/// # Ok(())
+/// # }
+/// ```
+///
+/// A native the template never places is an error, not a silent omission: that
+/// is the drift this exists to prevent.
+pub struct Template<'a> {
+    source: &'a str,
+    /// Each declaration as `#[native]` rendered it, paired with the native's
+    /// name. Kept side by side so a placeholder naming one and `{{NATIVES}}`
+    /// collecting the rest agree on which is which.
+    natives: Vec<(String, String)>,
+    vars: Vec<(String, String)>,
+    plugin_name: String,
+}
+
+impl<'a> Template<'a> {
+    /// Takes the template's text and the declarations to place into it, as
+    /// `pawn_native_decls()` produces them.
+    #[must_use]
+    pub fn new(source: &'a str, decls: &[&str]) -> Self {
+        let natives = decls
+            .iter()
+            .map(|decl| {
+                // A `raw` native comes rendered commented out; its name is still
+                // in there, and placing it by name is how a template gives it
+                // the argument list the signature does not have.
+                let body = decl.trim_start().trim_start_matches("//").trim_start();
+                let name = parse(body)
+                    .first()
+                    .map(|d| d.name.clone())
+                    .unwrap_or_default();
+                ((*decl).to_string(), name)
+            })
+            .collect();
+
+        Self {
+            source,
+            natives,
+            vars: Vec::new(),
+            plugin_name: String::new(),
+        }
+    }
+
+    /// Supplies one `{{NAME}}`. The last value for a name wins.
+    #[must_use]
+    pub fn var(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.vars.push((name.into(), value.into()));
+        self
+    }
+
+    /// Names the plugin, for `{{PLUGIN}}` and `{{GUARD}}`.
+    ///
+    /// Defaults to the name the plugin registered, which is its crate name.
+    #[must_use]
+    pub fn plugin_name(mut self, name: impl Into<String>) -> Self {
+        self.plugin_name = name.into();
+        self
+    }
+
+    /// Renders the include.
+    ///
+    /// # Errors
+    /// Returns every [`TemplateError`] found, in the order they were met, so one
+    /// pass names all of them rather than one per run.
+    pub fn render(&self) -> Result<String, Vec<TemplateError>> {
+        let mut out = String::with_capacity(self.source.len() + 256);
+        let mut errors = Vec::new();
+        let mut placed: Vec<usize> = Vec::new();
+        let mut rest = self.source;
+        let mut consumed = 0usize;
+
+        while let Some(open) = rest.find("{{") {
+            out.push_str(&rest[..open]);
+            let after = &rest[open + 2..];
+
+            let Some(close) = after.find("}}") else {
+                errors.push(TemplateError::UnclosedPlaceholder {
+                    at: consumed + open,
+                });
+                break;
+            };
+
+            let name = after[..close].trim();
+            match self.expand(name, &mut placed) {
+                Ok(text) => out.push_str(&text),
+                Err(e) => errors.push(e),
+            }
+
+            consumed += open + 2 + close + 2;
+            rest = &after[close + 2..];
+        }
+
+        if errors.is_empty() {
+            out.push_str(rest);
+        }
+
+        // Everything not placed by name goes where `{{NATIVES}}` asked for it,
+        // and if nothing did, its absence is the error worth reporting.
+        for (i, (_, name)) in self.natives.iter().enumerate() {
+            if !placed.contains(&i) {
+                errors.push(TemplateError::NativeNotPlaced {
+                    native: name.clone(),
+                });
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(out)
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Renders and writes the include to `path`.
+    ///
+    /// # Errors
+    /// The template's own errors, or the [`std::io::Error`] from writing.
+    pub fn write(&self, path: impl AsRef<Path>) -> Result<(), WriteError> {
+        let rendered = self.render().map_err(WriteError::Template)?;
+        std::fs::write(path, rendered).map_err(WriteError::Io)
+    }
+
+    /// Expands one placeholder, recording which declarations it consumed.
+    fn expand(&self, name: &str, placed: &mut Vec<usize>) -> Result<String, TemplateError> {
+        if name == "NATIVES" {
+            let mut lines = Vec::new();
+            for (i, (decl, _)) in self.natives.iter().enumerate() {
+                if !placed.contains(&i) {
+                    placed.push(i);
+                    lines.push(decl.clone());
+                }
+            }
+            return Ok(lines.join("\n"));
+        }
+
+        if let Some(spec) = name.strip_prefix("NATIVE:") {
+            let (native, alias) = match spec.split_once(" as ") {
+                Some((native, alias)) => (native.trim(), Some(alias.trim())),
+                None => (spec.trim(), None),
+            };
+            let Some(i) = self.natives.iter().position(|(_, name)| name == native) else {
+                return Err(TemplateError::UnknownNative {
+                    native: native.to_string(),
+                });
+            };
+            if !placed.contains(&i) {
+                placed.push(i);
+            }
+            return Ok(match alias {
+                Some(alias) => alias_line(&self.natives[i].0, native, alias),
+                None => self.natives[i].0.clone(),
+            });
+        }
+
+        if name == "PLUGIN" {
+            return Ok(self.name());
+        }
+        // `{{VERSION}}` is the plugin crate's version unless the caller
+        // supplied one: it is in every include header, and the SDK knows it.
+        if name == "VERSION"
+            && !self.vars.iter().any(|(key, _)| key == "VERSION")
+            && let Some(rt) = crate::runtime::Runtime::try_get()
+        {
+            return Ok(rt.plugin_version().to_string());
+        }
+        if name == "GUARD" {
+            return Ok(guard_symbol(&self.name()));
+        }
+
+        self.vars
+            .iter()
+            .rev()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
+            .ok_or_else(|| TemplateError::UnknownPlaceholder {
+                name: name.to_string(),
+            })
+    }
+
+    fn name(&self) -> String {
+        if self.plugin_name.is_empty() {
+            crate::runtime::Runtime::try_get()
+                .map_or_else(|| String::from("plugin"), |rt| rt.plugin_name().to_string())
+        } else {
+            self.plugin_name.clone()
+        }
+    }
+}
+
+/// A template that could not be rendered, or could not be written.
+#[derive(Debug)]
+pub enum WriteError {
+    Template(Vec<TemplateError>),
+    Io(std::io::Error),
+}
+
+impl fmt::Display for WriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Template(errors) => {
+                writeln!(f, "the template could not be rendered:")?;
+                for e in errors {
+                    writeln!(f, "  {e}")?;
+                }
+                Ok(())
+            }
+            Self::Io(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for WriteError {}
+
+/// Turns a declaration into its aliased form: `native Alias(…) = original;`.
+fn alias_line(decl: &str, native: &str, alias: &str) -> String {
+    let renamed = decl.replacen(native, alias, 1);
+    match renamed.rfind(';') {
+        Some(at) => format!("{} = {native};", &renamed[..at]),
+        None => renamed,
+    }
+}
+
+/// The include guard a plugin name produces, with what Pawn rejects replaced.
+fn guard_symbol(plugin_name: &str) -> String {
+    let body: String = plugin_name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    format!("_{body}_included")
 }

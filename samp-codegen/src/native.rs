@@ -24,18 +24,53 @@ use syn::{
 use crate::INC_PREFIX;
 use crate::NATIVE_PREFIX;
 use crate::REG_PREFIX;
-use crate::pawn_decl::native_decl;
+use crate::pawn_decl::{Shape, argument_names, native_decl};
+
+/// One `arg = value` inside `default(...)` or `sizeof(...)`.
+///
+/// The value is written as Pawn will read it: a literal goes through as it is,
+/// and a string literal is taken verbatim, which is how a Pawn string default
+/// (`greeting = ""`) or an expression is expressed.
+fn parse_pair(input: ParseStream) -> SynResult<(String, String)> {
+    let arg: Ident = input.parse()?;
+    let _: Token![=] = input.parse()?;
+
+    let value = if input.peek(LitStr) {
+        input.parse::<LitStr>()?.value()
+    } else if input.peek(syn::Lit) {
+        let lit: syn::Lit = input.parse()?;
+        match lit {
+            syn::Lit::Int(v) => v.base10_digits().to_string(),
+            syn::Lit::Float(v) => v.base10_digits().to_string(),
+            syn::Lit::Bool(v) => v.value.to_string(),
+            other => {
+                return Err(Error::new(
+                    other.span(),
+                    "expected a number, a bool or a string with the Pawn text",
+                ));
+            }
+        }
+    } else {
+        // An identifier, which is what `sizeof(len = dest)` uses.
+        input.parse::<Ident>()?.to_string()
+    };
+
+    Ok((arg.to_string(), value))
+}
 
 /// Args of `#[native(...)]`: `name = "..."` (Pawn name) and optional `raw`.
 struct NativeName {
     pub name: String,
     pub raw: bool,
+    /// What the Rust signature cannot say about the Pawn declaration.
+    pub shape: Shape,
 }
 
 impl Parse for NativeName {
     fn parse(input: ParseStream) -> SynResult<Self> {
         let mut name = String::new();
         let mut raw = false;
+        let mut shape = Shape::default();
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -56,6 +91,24 @@ impl Parse for NativeName {
                 name = value;
             } else if ident == "raw" {
                 raw = true;
+            } else if ident == "varargs" {
+                shape.varargs = true;
+            } else if ident == "args" {
+                let _: Token![=] = input.parse()?;
+                let list: LitStr = input.parse()?;
+                shape.arguments = Some(list.value());
+            } else if ident == "default" || ident == "sizeof" {
+                // `default(account = 0, greeting = "\"\"")`, `sizeof(len = dest)`
+                let body;
+                syn::parenthesized!(body in input);
+                let pairs = body.parse_terminated(parse_pair, Token![,])?;
+                for (arg, value) in pairs {
+                    if ident == "default" {
+                        shape.defaults.push((arg, value));
+                    } else {
+                        shape.sizeofs.push((arg, value));
+                    }
+                }
             } else {
                 return Err(Error::new(
                     ident.span(),
@@ -66,7 +119,7 @@ impl Parse for NativeName {
             let _: Option<Token![,]> = input.parse()?;
         }
 
-        Ok(NativeName { name, raw })
+        Ok(NativeName { name, raw, shape })
     }
 }
 
@@ -120,7 +173,22 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let reg_native = gen_reg_native(vis, &reg_name, &native_name, amx_name);
-    let decl = native_decl(&origin_fn, amx_name, native.raw, skip_count);
+    // A `default(...)` or `sizeof(...)` naming an argument the function does not
+    // have is a rename the attribute did not follow: the include would come out
+    // wrong, so it is a compile error rather than a surprise at load.
+    let unknown = native
+        .shape
+        .unknown_arguments(&argument_names(&origin_fn, skip_count));
+    if let Some(arg) = unknown.first() {
+        return Error::new(
+            origin_fn.sig.ident.span(),
+            format!("`{arg}` is not an argument of this native"),
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let decl = native_decl(&origin_fn, amx_name, native.raw, skip_count, &native.shape);
     let inc_decl = quote! {
         #[doc(hidden)]
         #vis fn #inc_name() -> &'static str {

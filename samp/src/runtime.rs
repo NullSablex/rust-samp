@@ -62,6 +62,9 @@ struct RuntimeInner {
     /// Name of the plugin crate (`CARGO_PKG_NAME` of the crate that invoked
     /// `initialize_plugin!`), used to name the generated Pawn include.
     plugin_name: &'static str,
+    /// `CARGO_PKG_VERSION` of the crate that invoked `initialize_plugin!`, for
+    /// `{{VERSION}}` in a Pawn include template.
+    plugin_version: &'static str,
     /// Pawn declaration of every registered native, in the order the plugin
     /// listed them. Feeds [`crate::plugin::pawn_include`]; empty until the
     /// entry point stores them.
@@ -131,6 +134,7 @@ impl Runtime {
             #[cfg(not(feature = "samp-only"))]
             pawn_event_handler: None,
             plugin_name: "plugin",
+            plugin_version: "0.0.0",
             native_decls: Vec::new(),
             #[cfg(not(feature = "samp-only"))]
             omp_natives: Vec::new(),
@@ -581,6 +585,16 @@ impl Runtime {
 
     /// Pawn declaration of every registered native.
     #[must_use]
+    /// Version of the plugin crate, as `initialize_plugin!` recorded it.
+    pub fn plugin_version(&self) -> &'static str {
+        self.inner().plugin_version
+    }
+
+    /// Records the plugin crate's version. Called once from the entry points.
+    pub fn set_plugin_version(&self, version: &'static str) {
+        self.inner().plugin_version = version;
+    }
+
     pub fn native_decls(&self) -> &[&'static str] {
         &self.inner().native_decls
     }

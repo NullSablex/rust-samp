@@ -79,15 +79,97 @@ fn unwrap_result(ty: &Type) -> Option<String> {
     }
 }
 
+/// What a Rust signature cannot say about the Pawn declaration, taken from
+/// `#[native(...)]`.
+///
+/// Every field is optional, and an empty `Shape` reproduces the derivation as it
+/// always was.
+#[derive(Default)]
+pub struct Shape {
+    /// `default(account = 0)` — the value a script may omit the argument for.
+    pub defaults: Vec<(String, String)>,
+    /// `sizeof(dest_len = dest)` — the length argument that defaults to the
+    /// size of an array argument, which is how Pawn passes buffer sizes.
+    pub sizeofs: Vec<(String, String)>,
+    /// `varargs` — the declaration ends in `{Float,_}:...`.
+    pub varargs: bool,
+    /// `args = "..."` — the argument list, written out. The only way to declare
+    /// a `raw` native, and an escape hatch for anything the derivation cannot
+    /// express.
+    pub arguments: Option<String>,
+}
+
+impl Shape {
+    /// Applies whatever was declared for `name` to its rendered argument.
+    fn apply(&self, name: &str, mut rendered: String) -> String {
+        if let Some((_, array)) = self.sizeofs.iter().find(|(arg, _)| arg == name) {
+            rendered.push_str(&format!(" = sizeof({array})"));
+        } else if let Some((_, value)) = self.defaults.iter().find(|(arg, _)| arg == name) {
+            rendered.push_str(&format!(" = {value}"));
+        }
+        rendered
+    }
+
+    /// Argument names named in the attribute that the function does not have —
+    /// a rename on the Rust side that the attribute did not follow.
+    pub fn unknown_arguments(&self, present: &[String]) -> Vec<String> {
+        self.defaults
+            .iter()
+            .chain(self.sizeofs.iter())
+            .map(|(arg, _)| arg)
+            .filter(|arg| !present.contains(arg))
+            .cloned()
+            .collect()
+    }
+}
+
+/// Names of the arguments a native takes, as Pawn will see them.
+///
+/// Used to check that `default(...)` and `sizeof(...)` name arguments that exist.
+pub fn argument_names(origin_fn: &ItemFn, skip_count: usize) -> Vec<String> {
+    origin_fn
+        .sig
+        .inputs
+        .iter()
+        .skip(skip_count)
+        .filter_map(|arg| match arg {
+            FnArg::Typed(pat_type) => match &*pat_type.pat {
+                Pat::Ident(pat_ident) => Some(
+                    pat_ident
+                        .ident
+                        .to_string()
+                        .trim_start_matches('_')
+                        .to_string(),
+                ),
+                _ => None,
+            },
+            FnArg::Receiver(_) => None,
+        })
+        .collect()
+}
+
 /// Builds the `native ...;` line for a function marked with `#[native]`.
 ///
 /// `raw` natives take the argument list untyped, so their arity cannot be
-/// derived; they come back commented out, for the author to fill in.
-pub fn native_decl(origin_fn: &ItemFn, amx_name: &str, raw: bool, skip_count: usize) -> String {
+/// derived; they come back commented out, for the author to fill in — except
+/// for what `#[native(...)]` states explicitly, which is emitted as declared.
+pub fn native_decl(
+    origin_fn: &ItemFn,
+    amx_name: &str,
+    raw: bool,
+    skip_count: usize,
+    shape: &Shape,
+) -> String {
     let ret_tag = match &origin_fn.sig.output {
         ReturnType::Default => "",
         ReturnType::Type(_, ty) => unwrap_result(ty).map_or("", |t| tag_of(&t)),
     };
+
+    // An explicit list wins over the derivation: it is the only way to declare a
+    // `raw` native, whose arity is not in the signature.
+    if let Some(list) = &shape.arguments {
+        return format!("native {ret_tag}{amx_name}({list});");
+    }
 
     if raw {
         return format!(
@@ -95,23 +177,23 @@ pub fn native_decl(origin_fn: &ItemFn, amx_name: &str, raw: bool, skip_count: us
         );
     }
 
-    let args: Vec<String> = origin_fn
-        .sig
-        .inputs
-        .iter()
-        .skip(skip_count)
-        .filter_map(|arg| match arg {
-            FnArg::Typed(pat_type) => {
-                let Pat::Ident(pat_ident) = &*pat_type.pat else {
-                    return None;
-                };
-                let name = pat_ident.ident.to_string();
-                let name = name.trim_start_matches('_');
-                Some(arg_decl(&pat_type.ty, name))
-            }
-            FnArg::Receiver(_) => None,
-        })
-        .collect();
+    let mut args = Vec::new();
+    for arg in origin_fn.sig.inputs.iter().skip(skip_count) {
+        let FnArg::Typed(pat_type) = arg else {
+            continue;
+        };
+        let Pat::Ident(pat_ident) = &*pat_type.pat else {
+            continue;
+        };
+        let name = pat_ident.ident.to_string();
+        let name = name.trim_start_matches('_').to_string();
+
+        args.push(shape.apply(&name, arg_decl(&pat_type.ty, &name)));
+    }
+
+    if shape.varargs {
+        args.push("{Float,_}:...".to_string());
+    }
 
     format!("native {ret_tag}{amx_name}({});", args.join(", "))
 }
@@ -122,7 +204,11 @@ mod tests {
     use syn::parse_quote;
 
     fn decl(f: ItemFn, name: &str) -> String {
-        native_decl(&f, name, false, 2)
+        native_decl(&f, name, false, 2, &Shape::default())
+    }
+
+    fn shaped(f: ItemFn, name: &str, shape: &Shape) -> String {
+        native_decl(&f, name, false, 2, shape)
     }
 
     #[test]
@@ -170,7 +256,106 @@ mod tests {
         let f: ItemFn = parse_quote! {
             fn f(_amx: &Amx, id: i32) -> AmxResult<i32> { }
         };
-        assert_eq!(native_decl(&f, "Ping", false, 1), "native Ping(id);");
+        assert_eq!(
+            native_decl(&f, "Ping", false, 1, &Shape::default()),
+            "native Ping(id);"
+        );
+    }
+
+    #[test]
+    fn a_default_lands_on_the_named_argument() {
+        let f: ItemFn = parse_quote! {
+            fn f(&mut self, _amx: &Amx, account: i32, name: &AmxString) -> AmxResult<bool> { }
+        };
+        let shape = Shape {
+            defaults: vec![
+                ("account".into(), "0".into()),
+                ("name".into(), "\"\"".into()),
+            ],
+            ..Shape::default()
+        };
+        assert_eq!(
+            shaped(f, "Status", &shape),
+            "native bool:Status(account = 0, const name[] = \"\");"
+        );
+    }
+
+    #[test]
+    fn a_sizeof_names_the_array_it_measures() {
+        let f: ItemFn = parse_quote! {
+            fn f(&mut self, _amx: &Amx, dest: UnsizedBuffer, dest_len: usize) -> AmxResult<bool> { }
+        };
+        let shape = Shape {
+            sizeofs: vec![("dest_len".into(), "dest".into())],
+            ..Shape::default()
+        };
+        assert_eq!(
+            shaped(f, "Read", &shape),
+            "native bool:Read(dest[], dest_len = sizeof(dest));"
+        );
+    }
+
+    #[test]
+    fn a_sizeof_wins_over_a_default_for_the_same_argument() {
+        let f: ItemFn = parse_quote! {
+            fn f(&mut self, _amx: &Amx, dest: UnsizedBuffer, len: usize) -> AmxResult<bool> { }
+        };
+        let shape = Shape {
+            defaults: vec![("len".into(), "16".into())],
+            sizeofs: vec![("len".into(), "dest".into())],
+            ..Shape::default()
+        };
+        assert_eq!(
+            shaped(f, "Read", &shape),
+            "native bool:Read(dest[], len = sizeof(dest));"
+        );
+    }
+
+    #[test]
+    fn varargs_close_the_argument_list() {
+        let f: ItemFn = parse_quote! {
+            fn f(&mut self, _amx: &Amx, format: &AmxString) -> AmxResult<bool> { }
+        };
+        let shape = Shape {
+            varargs: true,
+            ..Shape::default()
+        };
+        assert_eq!(
+            shaped(f, "Printf", &shape),
+            "native bool:Printf(const format[], {Float,_}:...);"
+        );
+    }
+
+    #[test]
+    fn an_explicit_list_declares_a_raw_native() {
+        // A `raw` native parses its own arguments, so only the author can say
+        // what they are — and then the declaration is generated like any other.
+        let f: ItemFn = parse_quote! {
+            fn f(&mut self, _amx: &Amx, args: Args) -> bool { }
+        };
+        let shape = Shape {
+            arguments: Some("account = 0, const to[], {Float,_}:...".into()),
+            ..Shape::default()
+        };
+        assert_eq!(
+            native_decl(&f, "Send", true, 2, &shape),
+            "native bool:Send(account = 0, const to[], {Float,_}:...);"
+        );
+    }
+
+    #[test]
+    fn an_attribute_naming_an_argument_that_does_not_exist_is_reported() {
+        let f: ItemFn = parse_quote! {
+            fn f(&mut self, _amx: &Amx, account: i32) -> AmxResult<bool> { }
+        };
+        let shape = Shape {
+            defaults: vec![("acount".into(), "0".into())],
+            ..Shape::default()
+        };
+        assert_eq!(
+            shape.unknown_arguments(&argument_names(&f, 2)),
+            vec!["acount".to_string()]
+        );
     }
 
     #[test]
@@ -194,7 +379,9 @@ mod tests {
         let f: ItemFn = parse_quote! {
             fn f(&mut self, _amx: &Amx, args: Args) -> AmxResult<i32> { }
         };
-        assert!(native_decl(&f, "Raw", true, 2).starts_with("// native Raw(...);"));
+        assert!(
+            native_decl(&f, "Raw", true, 2, &Shape::default()).starts_with("// native Raw(...);")
+        );
     }
 
     #[test]

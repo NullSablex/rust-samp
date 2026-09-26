@@ -65,6 +65,32 @@ for the full directory.
   (`a_players`, `a_mysql`, `YSF`, `foreach`, ~550 declarations): every
   declaration read, and every one inside a comment block correctly left out.
 
+- **Generating the include from a template.** A generated include has no room
+  for documentation and a hand-written one drifts; a template is both.
+  `pawn_include::Template` fills `{{NATIVES}}`, `{{NATIVE:Name}}` and
+  `{{NATIVE:Name as Alias}}` from the derived declarations, while the prose, the
+  sections, the constants and the callback documentation stay written by hand.
+  `{{PLUGIN}}`, `{{GUARD}}` and `{{VERSION}}` come from the plugin, anything else
+  from `.var(name, value)`. A registered native the template never places is an
+  error, as are an unknown placeholder, a `{{NATIVE:…}}` that names nothing and an
+  unclosed `{{` — all reported at once.
+- `SAMP_PAWN_INCLUDE_TEMPLATE` renders a template at load with no code at all,
+  with `SAMP_PAWN_VAR_<NAME>` supplying `{{<NAME>}}`. Because the environment
+  belongs to the process and a server may load several Rust plugins, these
+  variables now accept `plugin=path` entries, so two plugins pointed at one
+  variable no longer overwrite each other's include; a bare path still applies to
+  whichever plugin reads it.
+- The include check renders a template before comparing, so it can be pointed at
+  the `.inc.in` — and a template that will not render is reported there too.
+- `#[native]` takes what a Rust signature cannot say: `default(account = 0)`,
+  `sizeof(dest_len = dest)`, `varargs`, and `args = "…"` for the argument list
+  written out — the only way to declare a `raw` native. Naming an argument the
+  function does not have is a compile error, since it means a rename the
+  attribute did not follow.
+- `amx::loaded()` and `amx::count()` enumerate the loaded scripts. A plugin with
+  something to announce to the gamemode and every filterscript had no way to
+  reach them: `amx::get` only answers about an ident already in hand.
+
 #### Fixed
 
 - **The turnkey logger lost the severity of every line on the server's side.**
@@ -75,6 +101,15 @@ for the full directory.
 
 #### Tests
 
+- 16 tests over the template engine: the prose kept, a native placed once
+  whether by name or by `{{NATIVES}}`, aliasing, every error reported at once,
+  the per-plugin env selector, and a template checked as what it renders to.
+- The `counter` example is generated from a `counter.inc.in` that carries prose,
+  sections, a `forward` and an alias; the committed `counter.inc` is asserted to
+  be exactly what the template renders (`UPDATE_INCLUDE=1` rewrites it). The
+  result compiles under the open.mp Pawn compiler with no warnings, and a script
+  calling the alias, the defaulted `Counter_SetMax()` and the async native runs
+  on a live server.
 - The plugin cannot be aliased: a nested borrow, a borrow from inside a native
   and a wrong `T` are each refused rather than served, the borrow is released
   even when the closure panics, and Miri sees no aliasing in any of it.
@@ -101,6 +136,11 @@ for the full directory.
 
 #### Added
 
+- `#[native]` takes `default(...)`, `sizeof(...)`, `varargs` and `args = "…"`,
+  which shape the Pawn declaration it derives; an argument named that the
+  function does not have is a compile error.
+- `initialize_plugin!` records the plugin crate's version, for `{{VERSION}}` in
+  an include template.
 - `#[native]` marks its frame with `samp::plugin::NativeFrame`, so the SDK can
   tell that `&mut self` is out and refuse a second borrow from a main-thread job
   instead of aliasing it.
@@ -116,6 +156,8 @@ for the full directory.
 - `encoding::current()` returns the encoding in force. A plugin that lets the
   server owner choose one could set it but not read it back, so it could not
   report which encoding it was using.
+- `amx::loaded()` and `amx::count()` in `samp` (see that crate's entry) build on
+  the registry this crate exposes.
 
 ## [v3.6.0] — 2026/09/25
 

@@ -260,6 +260,13 @@ pub fn store_native_decls(plugin_name: &'static str, decls: Vec<&'static str>) {
     Runtime::get().set_native_decls(plugin_name, decls);
 }
 
+/// Stores the plugin crate's version, for `{{VERSION}}` in an include template.
+///
+/// Emitted by the entry points next to [`store_native_decls`].
+pub fn store_plugin_version(version: &'static str) {
+    Runtime::get().set_plugin_version(version);
+}
+
 /// Writes the generated Pawn include when `SAMP_PAWN_INCLUDE` names a path.
 ///
 /// Emitted by the entry points right after [`store_native_decls`], as a step of

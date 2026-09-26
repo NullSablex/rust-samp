@@ -336,7 +336,7 @@ impl Counter {
     /// Returns the count, or `-1` when the extended AMX table is not available
     /// — which is every SA-MP server and every legacy plugin, since only a
     /// native Open Multiplayer component gets the 52-entry table.
-    #[native(name = "Counter_ListNatives")]
+    #[native(name = "Counter_ListNatives", default(limit = 10))]
     fn list_natives(&mut self, amx: &Amx, limit: i32) -> AmxResult<i32> {
         use samp::omp_amx::AmxOmpExt;
 
@@ -443,7 +443,11 @@ impl Counter {
     }
 
     /// Sets the maximum value of the counter.
-    #[native(name = "Counter_SetMax")]
+    ///
+    /// `default(max = 100)` puts the default in the generated declaration, so a
+    /// script may call `Counter_SetMax()` — something the Rust signature has no
+    /// way to say.
+    #[native(name = "Counter_SetMax", default(max = 100))]
     fn set_max(&mut self, _amx: &Amx, max: i32) -> bool {
         if max <= 0 {
             return false;
@@ -852,6 +856,44 @@ initialize_plugin!(
 // `samp::pawn_include::render("counter", &pawn_native_decls())`.
 #[cfg(test)]
 mod include_tests {
+    /// Renders `counter.inc.in` with the declarations `#[native]` derived.
+    fn render() -> String {
+        let template = include_str!("../counter.inc.in");
+
+        samp::pawn_include::Template::new(template, &super::pawn_native_decls())
+            .plugin_name("counter")
+            .var("VERSION", env!("CARGO_PKG_VERSION"))
+            .render()
+            .unwrap_or_else(|errors| {
+                panic!(
+                    "counter.inc.in does not agree with the natives:\n{}",
+                    errors
+                        .iter()
+                        .map(|e| format!("  {e}\n"))
+                        .collect::<String>()
+                )
+            })
+    }
+
+    /// The shipped include is the rendered template. Run with `UPDATE_INCLUDE=1`
+    /// to write it instead of checking it, which is how it is regenerated.
+    #[test]
+    fn the_shipped_include_is_the_rendered_template() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/counter.inc");
+        let rendered = render();
+
+        if std::env::var_os("UPDATE_INCLUDE").is_some() {
+            std::fs::write(path, &rendered).expect("counter.inc is writable");
+            return;
+        }
+
+        let shipped = std::fs::read_to_string(path).expect("counter.inc is shipped");
+        assert_eq!(
+            shipped, rendered,
+            "counter.inc is stale — regenerate it with UPDATE_INCLUDE=1 cargo test"
+        );
+    }
+
     #[test]
     fn the_shipped_include_matches_the_natives() {
         let findings = samp::pawn_include::compare_file_with(

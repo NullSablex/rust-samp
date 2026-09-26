@@ -603,9 +603,17 @@ pub fn write_pawn_include(path: impl AsRef<std::path::Path>) -> std::io::Result<
 /// and either mode. A failure is logged and otherwise ignored: producing a
 /// development artifact must never take the server down.
 pub(crate) fn write_pawn_include_if_requested() {
-    let Some(path) = std::env::var_os("SAMP_PAWN_INCLUDE") else {
+    let Some(path) = crate::pawn_include::path_for_plugin("SAMP_PAWN_INCLUDE") else {
         return;
     };
+
+    // With a template, the include is that template with the declarations
+    // filled in; without one, it is the plain generated file.
+    if let Some(template) = crate::pawn_include::path_for_plugin("SAMP_PAWN_INCLUDE_TEMPLATE") {
+        crate::pawn_include::write_from_template(&template, &path);
+        return;
+    }
+
     match write_pawn_include(&path) {
         Ok(()) => crate::macros::sdk_info!("Pawn include written to {}", path.to_string_lossy()),
         Err(e) => crate::macros::sdk_warn!(
