@@ -825,6 +825,12 @@ initialize_plugin!(
         Counter::on_player_connect,
         Counter::on_player_text,
     ],
+    // The Pawn callbacks this plugin calls. Nothing in the Rust code says what
+    // they are — `exec_public!` takes a name at the call site — so they are
+    // declared once here and the include forwards them from `{{CALLBACKS}}`.
+    callbacks: [
+        "OnCounterWorkDone(delay)",
+    ],
     {
         samp::plugin::enable_tick();
 
@@ -861,6 +867,7 @@ mod include_tests {
         let template = include_str!("../counter.inc.in");
 
         samp::pawn_include::Template::new(template, &super::pawn_native_decls())
+            .callbacks(&super::pawn_callback_decls())
             .plugin_name("counter")
             .var("VERSION", env!("CARGO_PKG_VERSION"))
             .render()
@@ -894,17 +901,26 @@ mod include_tests {
         );
     }
 
+    /// Every callback the plugin calls is forwarded by the include: a script
+    /// implementing one as `public` that the include forgot would never be
+    /// called, and nothing would say why.
     #[test]
-    fn the_shipped_include_matches_the_natives() {
-        let findings = samp::pawn_include::compare_file_with(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/counter.inc"),
-            &super::pawn_native_decls(),
-        )
-        .expect("counter.inc is shipped next to Cargo.toml");
+    fn every_callback_is_forwarded() {
+        let findings =
+            samp::pawn_include::missing_forwards(&render(), &super::pawn_callback_decls());
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    /// The rendered include declares every native and nothing else — the same
+    /// check a plugin with a hand-written include runs, here over what the
+    /// template produced. Compared in memory, so only one test touches the file.
+    #[test]
+    fn the_rendered_include_matches_the_natives() {
+        let findings = samp::pawn_include::compare_with(&render(), &super::pawn_native_decls());
 
         assert!(
             findings.is_empty(),
-            "counter.inc no longer matches the natives:\n{}",
+            "the rendered include no longer matches the natives:\n{}",
             findings
                 .iter()
                 .map(|f| format!("  {f}\n"))

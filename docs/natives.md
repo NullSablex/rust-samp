@@ -369,6 +369,7 @@ forward OnCounterWorkDone(delay);
 | `{{NATIVES}}` | every declaration not placed individually, in registration order |
 | `{{NATIVE:Name}}` | that one declaration |
 | `{{NATIVE:Name as Alias}}` | `native Alias(…) = Name;` — the same native under another name |
+| `{{CALLBACKS}}` | a `forward` for each callback the plugin declared it calls |
 | `{{PLUGIN}}` | the plugin's crate name |
 | `{{GUARD}}` | `_<plugin>_included` |
 | `{{VERSION}}` | the plugin crate's version, unless you pass your own |
@@ -376,8 +377,47 @@ forward OnCounterWorkDone(delay);
 
 A registered native that no placeholder emits is an **error**, not a silent
 omission — that is the drift this exists to prevent. So are an unknown
-placeholder, a `{{NATIVE:...}}` naming a native that does not exist, and a `{{`
-that never closes. All of them come back at once, so one run names everything.
+placeholder, a `{{NATIVE:...}}` naming a native that does not exist, the same
+declaration placed twice (Pawn rejects the second as an already defined symbol),
+and a `{{` that never closes. All of them come back at once, so one run names
+everything.
+
+Everything else in the file is yours and is left alone: a `stock` helper, a
+`#define` shorthand, constants, `#pragma library`. Only declarations are
+generated.
+
+### Callbacks
+
+A script implements a plugin's callbacks as `public`, and the include is where
+they are `forward`ed. Nothing in the Rust code says what they are —
+`exec_public!` takes the name at the call site — so they are declared once, in
+`initialize_plugin!`:
+
+```rust
+initialize_plugin!(
+    natives: [ /* ... */ ],
+    callbacks: [
+        "OnCounterWorkDone(delay)",
+    ],
+    { /* ... */ }
+);
+```
+
+`{{CALLBACKS}}` turns each into `forward OnCounterWorkDone(delay);`, and
+`pawn_include::missing_forwards` reports any the include does not forward — a
+`public` a script implements for a callback the include forgot is simply never
+called, with nothing to say why:
+
+```rust
+#[test]
+fn every_callback_is_forwarded() {
+    let findings = samp::pawn_include::missing_forwards(&rendered, &pawn_callback_decls());
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+```
+
+A `forward` written by hand in the template counts: what matters is that the
+callback is declared somewhere in the include, not where.
 
 ### From a test
 
@@ -388,6 +428,7 @@ fn the_shipped_include_is_the_rendered_template() {
         include_str!("../counter.inc.in"),
         &pawn_native_decls(),
     )
+    .callbacks(&pawn_callback_decls())
     .render()
     .unwrap();
 

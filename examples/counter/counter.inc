@@ -22,6 +22,11 @@
 // Called on the main thread once a Counter_WorkAsync job has finished.
 forward OnCounterWorkDone(delay);
 
+// Declares a callback in one line — `Counter::OnCounterWorkDone(delay) { ... }`
+// is the usual forward/public pair. Hand-written Pawn like this stays in the
+// template; only the declarations are generated.
+#define Counter::%0(%1) forward %0(%1); public %0(%1)
+
 
 // ---------------------------------------------------------------------------
 // Reading and changing the counter

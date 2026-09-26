@@ -260,6 +260,14 @@ pub fn store_native_decls(plugin_name: &'static str, decls: Vec<&'static str>) {
     Runtime::get().set_native_decls(plugin_name, decls);
 }
 
+/// Stores the Pawn callbacks the plugin says it calls, for `{{CALLBACKS}}` in an
+/// include template and for the include check.
+///
+/// Emitted by the entry points next to [`store_native_decls`].
+pub fn store_callback_decls(decls: Vec<&'static str>) {
+    Runtime::get().set_callback_decls(decls);
+}
+
 /// Stores the plugin crate's version, for `{{VERSION}}` in an include template.
 ///
 /// Emitted by the entry points next to [`store_native_decls`].

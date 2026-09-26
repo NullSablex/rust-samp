@@ -171,6 +171,10 @@ struct InitPlugin {
     natives_list: Option<Punctuated<Path, Token![,]>>,
     /// Optional `events: [...]` list of `#[event]` handlers to register.
     events_list: Option<Punctuated<Path, Token![,]>>,
+    /// Optional `callbacks: ["OnThing(a, b)", ...]`: the Pawn callbacks this
+    /// plugin calls. Only the include needs them — a script has to `forward`
+    /// what it implements, and nothing in the Rust code says what those are.
+    callbacks: Option<Punctuated<LitStr, Token![,]>>,
     constructor: Constructor,
     /// Explicit UID in the macro (`uid: 0x...`). Overrides Cargo.toml and the automatic fallback.
     explicit_uid: Option<Expr>,
@@ -184,6 +188,7 @@ impl Parse for InitPlugin {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut natives_list = None;
         let mut events_list = None;
+        let mut callbacks = None;
         let mut default_type: Option<Path> = None;
         let mut explicit_uid: Option<Expr> = None;
         let mut explicit_name: Option<LitStr> = None;
@@ -214,6 +219,14 @@ impl Parse for InitPlugin {
                         let content;
                         let _ = bracketed!(content in input);
                         events_list = Some(Punctuated::parse_terminated(&content)?);
+                        let _: Option<Token![,]> = input.parse()?;
+                    }
+                    "callbacks" => {
+                        let _: Ident = input.parse()?;
+                        let _: Token![:] = input.parse()?;
+                        let content;
+                        let _ = bracketed!(content in input);
+                        callbacks = Some(Punctuated::parse_terminated(&content)?);
                         let _: Option<Token![,]> = input.parse()?;
                     }
                     "uid" => {
@@ -261,6 +274,7 @@ impl Parse for InitPlugin {
         Ok(InitPlugin {
             natives_list,
             events_list,
+            callbacks,
             constructor,
             explicit_uid,
             explicit_name,
@@ -277,10 +291,22 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
     let plugin = parse_macro_input!(input as InitPlugin);
 
     let natives = gen_natives_list(&plugin);
+    let callback_decls: proc_macro2::TokenStream = plugin
+        .callbacks
+        .iter()
+        .flatten()
+        .map(|lit| quote!(#lit,))
+        .collect();
     let native_decls = gen_native_decls_list(&plugin);
     let events = gen_events_list(&plugin);
     let supports_body = gen_samp_constructor(&plugin.constructor);
-    let samp_entry_points = gen_samp_entry_points(&natives, &native_decls, &events, &supports_body);
+    let samp_entry_points = gen_samp_entry_points(
+        &natives,
+        &native_decls,
+        &callback_decls,
+        &events,
+        &supports_body,
+    );
 
     // Native Open Multiplayer entry point.
     //
@@ -297,7 +323,14 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
     let omp_entry_point = if samp_only {
         quote! {}
     } else {
-        gen_omp_entry_point(&plugin, &cargo_meta, &natives, &native_decls, &events)
+        gen_omp_entry_point(
+            &plugin,
+            &cargo_meta,
+            &natives,
+            &native_decls,
+            &callback_decls,
+            &events,
+        )
     };
 
     // Also emitted outside the entry points, so a plain `cargo test` can
@@ -323,6 +356,17 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         #[must_use]
         pub fn pawn_native_decls() -> Vec<&'static str> {
             vec![#native_decls]
+        }
+
+        /// The Pawn callbacks this plugin calls, as `initialize_plugin!` lists
+        /// them in `callbacks: [...]`.
+        ///
+        /// A script has to `forward` what it implements, and nothing in the Rust
+        /// code says what those callbacks are — so they are declared once, here,
+        /// and the include gets them from `{{CALLBACKS}}`.
+        #[must_use]
+        pub fn pawn_callback_decls() -> Vec<&'static str> {
+            vec![#callback_decls]
         }
     };
 
@@ -414,6 +458,7 @@ fn gen_samp_constructor(constructor: &Constructor) -> proc_macro2::TokenStream {
 fn gen_samp_entry_points(
     natives: &proc_macro2::TokenStream,
     native_decls: &proc_macro2::TokenStream,
+    callback_decls: &proc_macro2::TokenStream,
     events: &proc_macro2::TokenStream,
     supports_body: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -424,6 +469,7 @@ fn gen_samp_entry_points(
             samp::interlayer::register_events(vec![#events]);
             samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
             samp::interlayer::store_plugin_version(env!("CARGO_PKG_VERSION"));
+            samp::interlayer::store_callback_decls(vec![#callback_decls]);
             samp::interlayer::emit_pawn_include_if_requested();
             return 1;
         }
@@ -527,6 +573,7 @@ fn gen_omp_entry_point(
     cargo_meta: &SampMetadata,
     natives: &proc_macro2::TokenStream,
     native_decls: &proc_macro2::TokenStream,
+    callback_decls: &proc_macro2::TokenStream,
     events: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let uid_expr = resolve_uid_expr(plugin, cargo_meta);
@@ -748,6 +795,7 @@ fn gen_omp_entry_point(
                 samp::interlayer::register_events(vec![#events]);
                 samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
             samp::interlayer::store_plugin_version(env!("CARGO_PKG_VERSION"));
+            samp::interlayer::store_callback_decls(vec![#callback_decls]);
                 samp::interlayer::emit_pawn_include_if_requested();
                 let component = Box::new(OmpComponent::new(&VTABLE, &UID_VTABLE, #uid_expr));
                 Box::into_raw(component)

@@ -86,6 +86,9 @@ pub enum Divergence {
         include: String,
         plugin: String,
     },
+    /// A callback the plugin calls that the include does not `forward`: a script
+    /// implementing it as `public` would not be called.
+    CallbackNotForwarded { callback: String },
     /// The include is a template that does not render — checked here because a
     /// template that cannot be rendered cannot be compared either.
     Template { problem: String },
@@ -152,6 +155,11 @@ impl fmt::Display for Divergence {
                     shown(include)
                 )
             }
+            Self::CallbackNotForwarded { callback } => write!(
+                f,
+                "{callback} is called by the plugin but the include does not forward it; \
+                 a script implementing it as `public` would never be called"
+            ),
             Self::Template { problem } => write!(f, "{problem}"),
             Self::ArgumentShape {
                 native,
@@ -261,12 +269,17 @@ fn parse_argument(text: &str) -> Option<Argument> {
 /// size expressions, varargs, and declarations spread over several lines.
 #[must_use]
 pub fn parse(source: &str) -> Vec<Declaration> {
+    parse_declarations(source, "native ")
+}
+
+/// Reads every declaration introduced by `keyword` (`native ` or `forward `).
+fn parse_declarations(source: &str, keyword: &str) -> Vec<Declaration> {
     let cleaned = without_comments(source);
     let mut declarations = Vec::new();
     let mut rest = cleaned.as_str();
 
-    while let Some(start) = rest.find("native ") {
-        rest = &rest[start + "native ".len()..];
+    while let Some(start) = rest.find(keyword) {
+        rest = &rest[start + keyword.len()..];
         let Some(open) = rest.find('(') else { break };
         let Some(close) = rest.find(')') else { break };
         if close < open {
@@ -313,6 +326,16 @@ pub fn parse(source: &str) -> Vec<Declaration> {
         rest = &rest[close + 1 + tail_len..];
     }
     declarations
+}
+
+/// Every `forward` declaration in `source`.
+///
+/// A script implements a plugin's callbacks as `public`, and the include is
+/// where they are `forward`ed. Parsed the same way natives are, so the same
+/// tolerance applies: comments, defaults and several lines.
+#[must_use]
+pub fn parse_forwards(source: &str) -> Vec<Declaration> {
+    parse_declarations(source, "forward ")
 }
 
 /// Compares an include's text with the natives this plugin registered.
@@ -383,7 +406,43 @@ pub fn compare_with(include_source: &str, decls: &[&str]) -> Vec<Divergence> {
         include_source.to_string()
     };
 
-    compare_declarations(&parse(&rendered), &registered(decls))
+    let mut findings = compare_declarations(&parse(&rendered), &registered(decls));
+    findings.extend(missing_forwards(
+        &rendered,
+        &crate::runtime::Runtime::try_get()
+            .map(|rt| rt.callback_decls().to_vec())
+            .unwrap_or_default(),
+    ));
+    findings
+}
+
+/// Callbacks the plugin calls that the include does not `forward`.
+///
+/// The names are compared, not the arguments: a callback's signature lives in
+/// the declaration the plugin wrote, and a script may legitimately forward it
+/// with its own argument names.
+#[must_use]
+pub fn missing_forwards(include_source: &str, callbacks: &[&str]) -> Vec<Divergence> {
+    let forwarded = parse_forwards(include_source);
+    let mut missing: Vec<String> = callbacks
+        .iter()
+        .filter_map(|declared| {
+            let name = declared
+                .trim()
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            (!name.is_empty() && !forwarded.iter().any(|f| f.name == name)).then_some(name)
+        })
+        .collect();
+    missing.sort();
+
+    missing
+        .into_iter()
+        .map(|callback| Divergence::CallbackNotForwarded { callback })
+        .collect()
 }
 
 /// Reads `path` and compares it with declarations in hand.
@@ -922,6 +981,85 @@ mod tests {
     }
 
     #[test]
+    fn callbacks_become_forwards() {
+        let out = Template::new("{{CALLBACKS}}\n{{NATIVES}}", DECLS)
+            .callbacks(&["OnCounterWorkDone(delay)", "OnCounterMax(value);"])
+            .render()
+            .unwrap();
+
+        assert!(out.contains("forward OnCounterWorkDone(delay);"));
+        // A trailing `;` in the declaration is not doubled.
+        assert!(out.contains("forward OnCounterMax(value);"));
+        assert!(!out.contains(";;"));
+    }
+
+    #[test]
+    fn a_callback_the_include_never_forwards_is_reported() {
+        // A script would implement it as `public` and never be called.
+        let include = "native Counter_Increment();\nforward OnCounterWorkDone(delay);";
+        let callbacks = ["OnCounterWorkDone(delay)", "OnCounterMax(value)"];
+
+        assert_eq!(
+            missing_forwards(include, &callbacks),
+            vec![Divergence::CallbackNotForwarded {
+                callback: "OnCounterMax".into()
+            }]
+        );
+        assert!(
+            missing_forwards(include, &callbacks)[0]
+                .to_string()
+                .contains("never be called")
+        );
+    }
+
+    #[test]
+    fn a_forward_is_read_like_a_native_declaration() {
+        let forwards = parse_forwards(
+            "// forward OnOld(a);\nforward OnCounterWorkDone(delay);\nnative Nope();",
+        );
+        let names: Vec<_> = forwards.into_iter().map(|f| f.name).collect();
+        assert_eq!(names, vec!["OnCounterWorkDone"]);
+    }
+
+    #[test]
+    fn stock_functions_and_macros_in_a_template_are_left_alone() {
+        // An include carries hand-written Pawn too — a `stock` helper, a macro
+        // shorthand. Neither is a declaration, and neither is drift.
+        let include = "\
+#define Counter::%0(%1) forward %0(%1); public %0(%1)
+stock Counter_Double(v) { return v * 2; }
+native Counter_Increment();
+";
+        let names: Vec<_> = parse(include).into_iter().map(|d| d.name).collect();
+        assert_eq!(names, vec!["Counter_Increment"]);
+        assert!(compare_with(include, &["native Counter_Increment();"]).is_empty());
+    }
+
+    #[test]
+    fn placing_the_same_native_twice_is_an_error() {
+        let errors = Template::new(
+            "{{NATIVE:Counter_Increment}}{{NATIVE:Counter_Increment}}{{NATIVES}}",
+            DECLS,
+        )
+        .render()
+        .expect_err("Pawn would reject the second declaration");
+
+        assert!(errors.contains(&TemplateError::PlacedTwice {
+            native: "Counter_Increment".into()
+        }));
+    }
+
+    #[test]
+    fn an_alias_beside_the_original_is_not_a_duplicate() {
+        Template::new(
+            "{{NATIVE:Counter_Get}}{{NATIVE:Counter_Get as Counter_Read}}{{NATIVES}}",
+            DECLS,
+        )
+        .render()
+        .expect("two names, two declarations, no clash");
+    }
+
+    #[test]
     fn an_env_path_can_name_the_plugin_it_is_for() {
         // Several Rust plugins on one server read the same variable, so a value
         // may say which plugin each path is for. A bare path is for everyone.
@@ -982,6 +1120,9 @@ pub enum TemplateError {
     NativeNotPlaced { native: String },
     /// A `{{` with no `}}` after it.
     UnclosedPlaceholder { at: usize },
+    /// The same declaration emitted twice: Pawn rejects the second as a symbol
+    /// that is already defined.
+    PlacedTwice { native: String },
 }
 
 impl fmt::Display for TemplateError {
@@ -1003,6 +1144,11 @@ impl fmt::Display for TemplateError {
                 f,
                 "{native} is registered but the template never places it; \
                  name it with {{{{NATIVE:{native}}}}} or add {{{{NATIVES}}}}"
+            ),
+            Self::PlacedTwice { native } => write!(
+                f,
+                "{native} is placed twice; Pawn rejects the second declaration as \
+                 an already defined symbol"
             ),
             Self::UnclosedPlaceholder { at } => {
                 write!(
@@ -1050,6 +1196,8 @@ impl fmt::Display for TemplateError {
 /// is the drift this exists to prevent.
 pub struct Template<'a> {
     source: &'a str,
+    /// Callbacks the plugin says it calls, for `{{CALLBACKS}}`.
+    callbacks: Vec<String>,
     /// Each declaration as `#[native]` rendered it, paired with the native's
     /// name. Kept side by side so a placeholder naming one and `{{NATIVES}}`
     /// collecting the rest agree on which is which.
@@ -1081,6 +1229,14 @@ impl<'a> Template<'a> {
         Self {
             source,
             natives,
+            callbacks: crate::runtime::Runtime::try_get()
+                .map(|rt| {
+                    rt.callback_decls()
+                        .iter()
+                        .map(|c| (*c).to_string())
+                        .collect()
+                })
+                .unwrap_or_default(),
             vars: Vec::new(),
             plugin_name: String::new(),
         }
@@ -1090,6 +1246,16 @@ impl<'a> Template<'a> {
     #[must_use]
     pub fn var(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.vars.push((name.into(), value.into()));
+        self
+    }
+
+    /// The callbacks `{{CALLBACKS}}` should forward.
+    ///
+    /// Defaults to what `initialize_plugin!` declared in `callbacks: [...]`, so
+    /// this is for generating an include without a plugin loaded — from a test.
+    #[must_use]
+    pub fn callbacks(mut self, callbacks: &[&str]) -> Self {
+        self.callbacks = callbacks.iter().map(|c| (*c).to_string()).collect();
         self
     }
 
@@ -1111,6 +1277,7 @@ impl<'a> Template<'a> {
         let mut out = String::with_capacity(self.source.len() + 256);
         let mut errors = Vec::new();
         let mut placed: Vec<usize> = Vec::new();
+        let mut emitted: Vec<String> = Vec::new();
         let mut rest = self.source;
         let mut consumed = 0usize;
 
@@ -1127,7 +1294,20 @@ impl<'a> Template<'a> {
 
             let name = after[..close].trim();
             match self.expand(name, &mut placed) {
-                Ok(text) => out.push_str(&text),
+                Ok(text) => {
+                    // The same native under the same name twice is a Pawn error,
+                    // and the template is where it can still be caught.
+                    for declared in parse(&text) {
+                        if emitted.contains(&declared.name) {
+                            errors.push(TemplateError::PlacedTwice {
+                                native: declared.name.clone(),
+                            });
+                        } else {
+                            emitted.push(declared.name);
+                        }
+                    }
+                    out.push_str(&text);
+                }
                 Err(e) => errors.push(e),
             }
 
@@ -1197,6 +1377,14 @@ impl<'a> Template<'a> {
             });
         }
 
+        if name == "CALLBACKS" {
+            return Ok(self
+                .callbacks
+                .iter()
+                .map(|c| format!("forward {};", c.trim().trim_end_matches(';')))
+                .collect::<Vec<_>>()
+                .join("\n"));
+        }
         if name == "PLUGIN" {
             return Ok(self.name());
         }

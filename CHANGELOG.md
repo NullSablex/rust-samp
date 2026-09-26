@@ -74,6 +74,16 @@ for the full directory.
   from `.var(name, value)`. A registered native the template never places is an
   error, as are an unknown placeholder, a `{{NATIVE:…}}` that names nothing and an
   unclosed `{{` — all reported at once.
+- **Callbacks are declared once and forwarded by the include.** A script
+  implements a plugin's callbacks as `public`, and nothing in the Rust code says
+  what they are, since `exec_public!` takes the name at the call site.
+  `initialize_plugin!` takes `callbacks: ["OnThing(a, b)"]`, `{{CALLBACKS}}` turns
+  each into a `forward`, and `pawn_include::missing_forwards` reports one the
+  include never forwards — a `public` for a callback the include forgot is never
+  called, with nothing to say why. `pawn_include::parse_forwards` reads them back.
+- Placing the same declaration twice in a template is an error: Pawn rejects the
+  second as an already defined symbol, and the template is where it can still be
+  caught. An alias beside its original is two names, so it is not a duplicate.
 - `SAMP_PAWN_INCLUDE_TEMPLATE` renders a template at load with no code at all,
   with `SAMP_PAWN_VAR_<NAME>` supplying `{{<NAME>}}`. Because the environment
   belongs to the process and a server may load several Rust plugins, these
@@ -101,15 +111,17 @@ for the full directory.
 
 #### Tests
 
-- 16 tests over the template engine: the prose kept, a native placed once
+- 23 tests over the template engine: the prose kept, a native placed once
   whether by name or by `{{NATIVES}}`, aliasing, every error reported at once,
   the per-plugin env selector, and a template checked as what it renders to.
 - The `counter` example is generated from a `counter.inc.in` that carries prose,
-  sections, a `forward` and an alias; the committed `counter.inc` is asserted to
+  sections, a generated `forward`, a hand-written `#define` shorthand and an
+  alias; the committed `counter.inc` is asserted to
   be exactly what the template renders (`UPDATE_INCLUDE=1` rewrites it). The
   result compiles under the open.mp Pawn compiler with no warnings, and a script
-  calling the alias, the defaulted `Counter_SetMax()` and the async native runs
-  on a live server.
+  implementing the callback through the template's shorthand, calling the alias
+  and the defaulted `Counter_SetMax()`, runs on a live server. The file the server
+  writes from the template at load is byte for byte the committed one.
 - The plugin cannot be aliased: a nested borrow, a borrow from inside a native
   and a wrong `T` are each refused rather than served, the borrow is released
   even when the closure panics, and Miri sees no aliasing in any of it.
