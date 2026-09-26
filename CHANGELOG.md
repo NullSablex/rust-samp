@@ -74,6 +74,15 @@ for the full directory.
   from `.var(name, value)`. A registered native the template never places is an
   error, as are an unknown placeholder, a `{{NATIVE:…}}` that names nothing and an
   unclosed `{{` — all reported at once.
+- **Documentation in Pawn's own format, written once.** Pawn documents a native
+  with a `/** */` block of XML tags — what the open.mp includes carry and what
+  `pawncc -r` reads into its report. `#[native]` now captures the Rust doc
+  comment, `pawn_include::pawndoc` renders it in that format, and a template
+  places it with `{{DOC:Name}}` or above every declaration with
+  `Template::with_docs()`. `@param`, `@returns`, `@remarks` and `@seealso` map to
+  the matching tags; a line already starting with `<` passes through, so the full
+  format — `<library>`, nested markup — is available; everything else is escaped,
+  so a doc mentioning `a < b` cannot break a tag.
 - **Callbacks are declared once and forwarded by the include.** A script
   implements a plugin's callbacks as `public`, and nothing in the Rust code says
   what they are, since `exec_public!` takes the name at the call site.
@@ -111,14 +120,21 @@ for the full directory.
 
 #### Tests
 
-- 23 tests over the template engine: the prose kept, a native placed once
+- The include parser was checked against the 38 includes the open.mp server
+  ships: 1068 native declarations and 117 forwards read, with no divergence from a
+  count of the declaration lines — the pawndoc `/** */` blocks and `///` lines
+  around them are handled.
+- 29 tests over the template engine and the documentation renderer: the prose kept, a native placed once
   whether by name or by `{{NATIVES}}`, aliasing, every error reported at once,
   the per-plugin env selector, and a template checked as what it renders to.
 - The `counter` example is generated from a `counter.inc.in` that carries prose,
   sections, a generated `forward`, a hand-written `#define` shorthand and an
   alias; the committed `counter.inc` is asserted to
   be exactly what the template renders (`UPDATE_INCLUDE=1` rewrites it). The
-  result compiles under the open.mp Pawn compiler with no warnings, and a script
+  result compiles under the open.mp Pawn compiler with no warnings — and with
+  `-r` the compiler reads the generated documentation into its XML report, next to
+  the official includes' own, which is what proves the format is really pawndoc.
+  A script
   implementing the callback through the template's shorthand, calling the alias
   and the defaulted `Counter_SetMax()`, runs on a live server. The file the server
   writes from the template at load is byte for byte the committed one.

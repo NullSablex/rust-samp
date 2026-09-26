@@ -980,6 +980,88 @@ mod tests {
         assert!(findings[0].to_string().contains("NOPE"));
     }
 
+    // -----------------------------------------------------------------------
+    // Pawn documentation comments
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_rust_doc_becomes_the_format_the_openmp_includes_use() {
+        let out = pawndoc(
+            "Set a player's position.\n\
+             @param playerid The ID of the player\n\
+             @param x The x coordinate\n\
+             @returns 1 on success, 0 otherwise.\n\
+             @remarks Removes the player from any vehicle.\n\
+             @seealso GetPlayerPos",
+        );
+
+        assert_eq!(
+            out,
+            "/**\n\
+             \x20* <summary>Set a player\'s position.</summary>\n\
+             \x20* <param name=\"playerid\">The ID of the player</param>\n\
+             \x20* <param name=\"x\">The x coordinate</param>\n\
+             \x20* <returns>1 on success, 0 otherwise.</returns>\n\
+             \x20* <remarks>Removes the player from any vehicle.</remarks>\n\
+             \x20* <seealso name=\"GetPlayerPos\" />\n\
+             \x20*/"
+        );
+    }
+
+    #[test]
+    fn pawndoc_written_by_hand_passes_through() {
+        // An author who wants the full format — <library>, nested markup —
+        // writes it, and it is not touched.
+        let out = pawndoc("<library>counter</library>\n<summary>Adds <em>one</em>.</summary>");
+        assert!(out.contains("<library>counter</library>"));
+        assert!(out.contains("<summary>Adds <em>one</em>.</summary>"));
+    }
+
+    #[test]
+    fn text_that_would_break_a_tag_is_escaped() {
+        let out = pawndoc("True when a < b && c > d.");
+        assert!(out.contains("a &lt; b &amp;&amp; c &gt; d"));
+    }
+
+    #[test]
+    fn an_undocumented_native_produces_no_comment() {
+        assert_eq!(pawndoc("   \n  "), "");
+    }
+
+    #[test]
+    fn a_long_summary_is_wrapped_as_written() {
+        let out = pawndoc("First line.\nSecond line.");
+        assert!(out.contains(" * <summary>\n *   First line.\n *   Second line.\n * </summary>"));
+    }
+
+    #[test]
+    fn docs_can_be_placed_on_their_own_or_above_each_declaration() {
+        let docs = ["Adds one.\n@returns The new value.", "", ""];
+
+        // On its own, for a template that lays out each native by hand.
+        let out = Template::new("{{DOC:Counter_Increment}}\n{{NATIVES}}", DECLS)
+            .docs(&docs)
+            .render()
+            .unwrap();
+        assert!(out.contains("<summary>Adds one.</summary>"));
+        assert!(out.contains("<returns>The new value.</returns>"));
+
+        // Or above every declaration at once.
+        let out = Template::new("{{NATIVES}}", DECLS)
+            .docs(&docs)
+            .with_docs()
+            .render()
+            .unwrap();
+        let at = out
+            .find("<summary>Adds one.</summary>")
+            .expect("documented");
+        let decl = out.find("native Counter_Increment();").expect("declared");
+        assert!(at < decl, "the documentation comes above the declaration");
+
+        // An undocumented native is just its declaration.
+        assert!(out.contains("native bool:Counter_Get(&out);"));
+    }
+
     #[test]
     fn callbacks_become_forwards() {
         let out = Template::new("{{CALLBACKS}}\n{{NATIVES}}", DECLS)
@@ -1198,6 +1280,10 @@ pub struct Template<'a> {
     source: &'a str,
     /// Callbacks the plugin says it calls, for `{{CALLBACKS}}`.
     callbacks: Vec<String>,
+    /// Doc comment of each native, aligned with `natives`.
+    docs: Vec<String>,
+    /// Whether a placed declaration is preceded by its documentation.
+    with_docs: bool,
     /// Each declaration as `#[native]` rendered it, paired with the native's
     /// name. Kept side by side so a placeholder naming one and `{{NATIVES}}`
     /// collecting the rest agree on which is which.
@@ -1228,6 +1314,10 @@ impl<'a> Template<'a> {
 
         Self {
             source,
+            docs: crate::runtime::Runtime::try_get()
+                .map(|rt| rt.native_docs().iter().map(|d| (*d).to_string()).collect())
+                .unwrap_or_default(),
+            with_docs: false,
             natives,
             callbacks: crate::runtime::Runtime::try_get()
                 .map(|rt| {
@@ -1246,6 +1336,28 @@ impl<'a> Template<'a> {
     #[must_use]
     pub fn var(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.vars.push((name.into(), value.into()));
+        self
+    }
+
+    /// The doc comment of each native, in the order the declarations came.
+    ///
+    /// Defaults to what `#[native]` captured from the Rust doc comments, so this
+    /// is for generating an include without a plugin loaded — from a test.
+    #[must_use]
+    pub fn docs(mut self, docs: &[&str]) -> Self {
+        self.docs = docs.iter().map(|d| (*d).to_string()).collect();
+        self
+    }
+
+    /// Puts each native's documentation above its declaration, as a Pawn
+    /// documentation comment.
+    ///
+    /// Off by default: a template that documents each native in its own prose
+    /// should not get a second copy. With it on, the documentation lives once,
+    /// next to the Rust code. `{{DOC:Name}}` places one on its own either way.
+    #[must_use]
+    pub fn with_docs(mut self) -> Self {
+        self.with_docs = true;
         self
     }
 
@@ -1349,13 +1461,15 @@ impl<'a> Template<'a> {
     fn expand(&self, name: &str, placed: &mut Vec<usize>) -> Result<String, TemplateError> {
         if name == "NATIVES" {
             let mut lines = Vec::new();
-            for (i, (decl, _)) in self.natives.iter().enumerate() {
+            for i in 0..self.natives.len() {
                 if !placed.contains(&i) {
                     placed.push(i);
-                    lines.push(decl.clone());
+                    lines.push(self.declaration(i, None));
                 }
             }
-            return Ok(lines.join("\n"));
+            // Documented declarations are blocks, so they read better separated.
+            let separator = if self.with_docs { "\n\n" } else { "\n" };
+            return Ok(lines.join(separator));
         }
 
         if let Some(spec) = name.strip_prefix("NATIVE:") {
@@ -1371,10 +1485,17 @@ impl<'a> Template<'a> {
             if !placed.contains(&i) {
                 placed.push(i);
             }
-            return Ok(match alias {
-                Some(alias) => alias_line(&self.natives[i].0, native, alias),
-                None => self.natives[i].0.clone(),
-            });
+            return Ok(self.declaration(i, alias));
+        }
+
+        if let Some(native) = name.strip_prefix("DOC:") {
+            let native = native.trim();
+            let Some(i) = self.natives.iter().position(|(_, name)| name == native) else {
+                return Err(TemplateError::UnknownNative {
+                    native: native.to_string(),
+                });
+            };
+            return Ok(pawndoc(self.docs.get(i).map_or("", String::as_str)));
         }
 
         if name == "CALLBACKS" {
@@ -1410,6 +1531,24 @@ impl<'a> Template<'a> {
             })
     }
 
+    /// Declaration `i`, under `alias` if given, with its documentation above it
+    /// when the template asked for documentation.
+    fn declaration(&self, i: usize, alias: Option<&str>) -> String {
+        let (decl, native) = &self.natives[i];
+        let line = match alias {
+            Some(alias) => alias_line(decl, native, alias),
+            None => decl.clone(),
+        };
+
+        if !self.with_docs {
+            return line;
+        }
+        match pawndoc(self.docs.get(i).map_or("", String::as_str)) {
+            doc if doc.is_empty() => line,
+            doc => format!("{doc}\n{line}"),
+        }
+    }
+
     fn name(&self) -> String {
         if self.plugin_name.is_empty() {
             crate::runtime::Runtime::try_get()
@@ -1443,6 +1582,98 @@ impl fmt::Display for WriteError {
 }
 
 impl std::error::Error for WriteError {}
+
+/// Renders a Rust doc comment as a Pawn documentation comment.
+///
+/// Pawn's own documentation format — what the open.mp includes use and what
+/// `pawncc -r` reads — is a `/** */` block of XML tags:
+///
+/// ```text
+/// /**
+///  * <summary>Set a player's position.</summary>
+///  * <param name="playerid">The ID of the player</param>
+///  * <returns>1 on success, 0 otherwise.</returns>
+///  */
+/// ```
+///
+/// The mapping from the Rust side stays close to how one writes Rust docs:
+///
+/// - the text becomes `<summary>`;
+/// - `@param name text` becomes `<param name="name">text</param>`;
+/// - `@returns`, `@remarks` and `@seealso` become those tags;
+/// - a line already starting with `<` passes through untouched, so an author who
+///   wants full pawndoc — `<library>`, `<em>`, nested markup — just writes it.
+///
+/// Text that is not passed through has `&`, `<` and `>` escaped, so a doc
+/// mentioning `a < b` cannot produce a broken tag.
+#[must_use]
+pub fn pawndoc(doc: &str) -> String {
+    if doc.trim().is_empty() {
+        return String::new();
+    }
+
+    fn escape(text: &str) -> String {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    }
+
+    let mut summary: Vec<String> = Vec::new();
+    let mut tagged: Vec<String> = Vec::new();
+
+    for line in doc.lines() {
+        let line = line.trim_end();
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with('<') {
+            tagged.push(trimmed.to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("@param ") {
+            let (name, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+            tagged.push(format!(
+                "<param name=\"{}\">{}</param>",
+                escape(name),
+                escape(text.trim())
+            ));
+        } else if let Some(rest) = trimmed.strip_prefix("@returns ") {
+            tagged.push(format!("<returns>{}</returns>", escape(rest.trim())));
+        } else if let Some(rest) = trimmed.strip_prefix("@remarks ") {
+            tagged.push(format!("<remarks>{}</remarks>", escape(rest.trim())));
+        } else if let Some(rest) = trimmed.strip_prefix("@seealso ") {
+            tagged.push(format!("<seealso name=\"{}\" />", escape(rest.trim())));
+        } else if !trimmed.is_empty() || !summary.is_empty() {
+            summary.push(escape(trimmed));
+        }
+    }
+
+    while summary.last().is_some_and(|l| l.is_empty()) {
+        summary.pop();
+    }
+
+    let mut body: Vec<String> = Vec::new();
+    if !summary.is_empty() {
+        // A one-line summary stays on one line, which is how the open.mp
+        // includes read; a longer one is wrapped as written.
+        if summary.len() == 1 {
+            body.push(format!("<summary>{}</summary>", summary[0]));
+        } else {
+            body.push("<summary>".to_string());
+            body.extend(summary.iter().map(|l| format!("  {l}")));
+            body.push("</summary>".to_string());
+        }
+    }
+    body.extend(tagged);
+
+    let mut out = String::from("/**\n");
+    for line in body {
+        if line.is_empty() {
+            out.push_str(" *\n");
+        } else {
+            out.push_str(&format!(" * {line}\n"));
+        }
+    }
+    out.push_str(" */");
+    out
+}
 
 /// Turns a declaration into its aliased form: `native Alias(…) = original;`.
 fn alias_line(decl: &str, native: &str, alias: &str) -> String {

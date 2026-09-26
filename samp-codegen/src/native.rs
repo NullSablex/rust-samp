@@ -21,10 +21,40 @@ use syn::{
     parse_macro_input,
 };
 
+use crate::DOC_PREFIX;
 use crate::INC_PREFIX;
 use crate::NATIVE_PREFIX;
 use crate::REG_PREFIX;
 use crate::pawn_decl::{Shape, argument_names, native_decl};
+
+/// The text of a function's `///` doc comment, lines joined by newlines.
+///
+/// Empty when undocumented. Leading spaces are dropped, since `///` leaves one.
+fn doc_comment(origin_fn: &ItemFn) -> String {
+    let mut lines: Vec<String> = Vec::new();
+
+    for attr in &origin_fn.attrs {
+        if !attr.path().is_ident("doc") {
+            continue;
+        }
+        if let syn::Meta::NameValue(nv) = &attr.meta
+            && let syn::Expr::Lit(lit) = &nv.value
+            && let syn::Lit::Str(text) = &lit.lit
+        {
+            lines.push(
+                text.value()
+                    .strip_prefix(' ')
+                    .unwrap_or(&text.value())
+                    .to_string(),
+            );
+        }
+    }
+
+    while lines.last().is_some_and(|l| l.trim().is_empty()) {
+        lines.pop();
+    }
+    lines.join("\n")
+}
 
 /// One `arg = value` inside `default(...)` or `sizeof(...)`.
 ///
@@ -135,6 +165,7 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
     let native_name = prepend(&origin_fn.sig.ident, NATIVE_PREFIX);
     let reg_name = prepend(&origin_fn.sig.ident, REG_PREFIX);
     let inc_name = prepend(&origin_fn.sig.ident, INC_PREFIX);
+    let doc_name = prepend(&origin_fn.sig.ident, DOC_PREFIX);
     let amx_name = &native.name;
 
     // `#[native]` accepts both methods (`fn foo(&mut self, _amx: &Amx, ...)`)
@@ -196,10 +227,21 @@ pub fn create_native(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
+    // The native's own doc comment, so the include can carry the documentation
+    // the plugin author already wrote instead of a second copy in the template.
+    let doc_text = doc_comment(&origin_fn);
+    let doc_fn = quote! {
+        #[doc(hidden)]
+        #vis fn #doc_name() -> &'static str {
+            #doc_text
+        }
+    };
+
     let generated = quote! {
         #origin_fn
         #reg_native
         #inc_decl
+        #doc_fn
         #native_generated
     };
 

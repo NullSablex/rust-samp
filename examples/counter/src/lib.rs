@@ -401,7 +401,10 @@ impl Counter {
         Ok(true)
     }
 
-    /// Increments the counter. Returns the new value, or -1 if already at the maximum.
+    /// Adds one to the counter.
+    ///
+    /// @returns The new value, or -1 when already at the maximum.
+    /// @seealso Counter_Decrement
     #[native(name = "Counter_Increment")]
     fn increment(&mut self, _amx: &Amx) -> i32 {
         if self.count >= self.max {
@@ -444,7 +447,9 @@ impl Counter {
 
     /// Sets the maximum value of the counter.
     ///
-    /// `default(max = 100)` puts the default in the generated declaration, so a
+    /// @param max The new maximum; the counter is clamped to it at once.
+    /// @returns True when accepted, false when max is not positive.
+    /// @remarks `default(max = 100)` puts the default in the declaration, so a
     /// script may call `Counter_SetMax()` — something the Rust signature has no
     /// way to say.
     #[native(name = "Counter_SetMax", default(max = 100))]
@@ -867,6 +872,7 @@ mod include_tests {
         let template = include_str!("../counter.inc.in");
 
         samp::pawn_include::Template::new(template, &super::pawn_native_decls())
+            .docs(&super::pawn_native_docs())
             .callbacks(&super::pawn_callback_decls())
             .plugin_name("counter")
             .var("VERSION", env!("CARGO_PKG_VERSION"))

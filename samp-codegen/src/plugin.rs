@@ -21,7 +21,7 @@ use syn::{
     parse_macro_input,
 };
 
-use crate::{EVENT_REG_PREFIX, INC_PREFIX, REG_PREFIX};
+use crate::{DOC_PREFIX, EVENT_REG_PREFIX, INC_PREFIX, REG_PREFIX};
 
 // ---------------------------------------------------------------------------
 // Helpers for automatic Open Multiplayer metadata resolution
@@ -298,11 +298,13 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         .map(|lit| quote!(#lit,))
         .collect();
     let native_decls = gen_native_decls_list(&plugin);
+    let native_docs = gen_native_docs_list(&plugin);
     let events = gen_events_list(&plugin);
     let supports_body = gen_samp_constructor(&plugin.constructor);
     let samp_entry_points = gen_samp_entry_points(
         &natives,
         &native_decls,
+        &native_docs,
         &callback_decls,
         &events,
         &supports_body,
@@ -328,6 +330,7 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
             &cargo_meta,
             &natives,
             &native_decls,
+            &native_docs,
             &callback_decls,
             &events,
         )
@@ -368,6 +371,16 @@ pub fn create_plugin(input: TokenStream) -> TokenStream {
         pub fn pawn_callback_decls() -> Vec<&'static str> {
             vec![#callback_decls]
         }
+
+        /// The doc comment of each native, in the same order as
+        /// `pawn_native_decls()`.
+        ///
+        /// An include template turns these into Pawn documentation comments, so
+        /// the documentation is written once, next to the code.
+        #[must_use]
+        pub fn pawn_native_docs() -> Vec<&'static str> {
+            vec![#native_docs]
+        }
     };
 
     let generated = quote! {
@@ -405,7 +418,18 @@ fn gen_natives_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
 
 /// Converts the same paths into `__samp_inc_*()` calls — each yields the
 /// native's Pawn declaration, used to write the `.inc` for the script side.
+/// Converts the `natives: [...]` paths into `__samp_doc_*()` calls, in the same
+/// order as the declarations, so index `i` of one matches index `i` of the other.
+fn gen_native_docs_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
+    gen_prefixed_calls(plugin, DOC_PREFIX)
+}
+
 fn gen_native_decls_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
+    gen_prefixed_calls(plugin, INC_PREFIX)
+}
+
+/// `path1(), path2(), ...` with each native's last segment prefixed.
+fn gen_prefixed_calls(plugin: &InitPlugin, prefix: &str) -> proc_macro2::TokenStream {
     plugin
         .natives_list
         .iter()
@@ -414,7 +438,7 @@ fn gen_native_decls_list(plugin: &InitPlugin) -> proc_macro2::TokenStream {
             let mut path = path.clone();
             if let Some(last_part) = path.segments.last_mut() {
                 let span = last_part.ident.span();
-                last_part.ident = Ident::new(&format!("{}{}", INC_PREFIX, last_part.ident), span);
+                last_part.ident = Ident::new(&format!("{prefix}{}", last_part.ident), span);
             }
             quote!(#path(),)
         })
@@ -458,6 +482,7 @@ fn gen_samp_constructor(constructor: &Constructor) -> proc_macro2::TokenStream {
 fn gen_samp_entry_points(
     natives: &proc_macro2::TokenStream,
     native_decls: &proc_macro2::TokenStream,
+    native_docs: &proc_macro2::TokenStream,
     callback_decls: &proc_macro2::TokenStream,
     events: &proc_macro2::TokenStream,
     supports_body: &proc_macro2::TokenStream,
@@ -470,6 +495,7 @@ fn gen_samp_entry_points(
             samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
             samp::interlayer::store_plugin_version(env!("CARGO_PKG_VERSION"));
             samp::interlayer::store_callback_decls(vec![#callback_decls]);
+            samp::interlayer::store_native_docs(vec![#native_docs]);
             samp::interlayer::emit_pawn_include_if_requested();
             return 1;
         }
@@ -573,6 +599,7 @@ fn gen_omp_entry_point(
     cargo_meta: &SampMetadata,
     natives: &proc_macro2::TokenStream,
     native_decls: &proc_macro2::TokenStream,
+    native_docs: &proc_macro2::TokenStream,
     callback_decls: &proc_macro2::TokenStream,
     events: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -796,6 +823,7 @@ fn gen_omp_entry_point(
                 samp::interlayer::store_native_decls(env!("CARGO_PKG_NAME"), vec![#native_decls]);
             samp::interlayer::store_plugin_version(env!("CARGO_PKG_VERSION"));
             samp::interlayer::store_callback_decls(vec![#callback_decls]);
+            samp::interlayer::store_native_docs(vec![#native_docs]);
                 samp::interlayer::emit_pawn_include_if_requested();
                 let component = Box::new(OmpComponent::new(&VTABLE, &UID_VTABLE, #uid_expr));
                 Box::into_raw(component)

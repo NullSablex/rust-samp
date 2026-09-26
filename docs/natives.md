@@ -369,6 +369,7 @@ forward OnCounterWorkDone(delay);
 | `{{NATIVES}}` | every declaration not placed individually, in registration order |
 | `{{NATIVE:Name}}` | that one declaration |
 | `{{NATIVE:Name as Alias}}` | `native Alias(…) = Name;` — the same native under another name |
+| `{{DOC:Name}}` | that native's documentation, as a Pawn documentation comment |
 | `{{CALLBACKS}}` | a `forward` for each callback the plugin declared it calls |
 | `{{PLUGIN}}` | the plugin's crate name |
 | `{{GUARD}}` | `_<plugin>_included` |
@@ -385,6 +386,55 @@ everything.
 Everything else in the file is yours and is left alone: a `stock` helper, a
 `#define` shorthand, constants, `#pragma library`. Only declarations are
 generated.
+
+### Documentation
+
+Pawn has its own documentation format — the one the open.mp includes use and
+`pawncc -r` reads into its XML report: a `/** */` block of XML tags. `#[native]`
+captures the Rust doc comment and the template renders it in that format, so the
+documentation is written once, next to the code:
+
+```rust
+/// Adds one to the counter.
+///
+/// @returns The new value, or -1 when already at the maximum.
+/// @seealso Counter_Decrement
+#[native(name = "Counter_Increment")]
+fn increment(&mut self, _amx: &Amx) -> i32 { /* ... */ }
+```
+
+```pawn
+{{DOC:Counter_Increment}}
+{{NATIVE:Counter_Increment}}
+```
+
+```pawn
+/**
+ * <summary>Adds one to the counter.</summary>
+ * <returns>The new value, or -1 when already at the maximum.</returns>
+ * <seealso name="Counter_Decrement" />
+ */
+native Counter_Increment();
+```
+
+| In the Rust doc | In the include |
+| --------------- | -------------- |
+| the text | `<summary>` |
+| `@param name text` | `<param name="name">text</param>` |
+| `@returns text` | `<returns>text</returns>` |
+| `@remarks text` | `<remarks>text</remarks>` |
+| `@seealso Name` | `<seealso name="Name" />` |
+| a line starting with `<` | passed through untouched |
+
+The passthrough is what makes the full format available: `<library>`, nested
+markup, anything pawndoc accepts, written as you want it. Text that is not passed
+through has `&`, `<` and `>` escaped, so a doc mentioning `a < b` cannot produce a
+broken tag.
+
+`{{DOC:Name}}` places one documentation block. `Template::with_docs()` puts every
+native's documentation above its declaration, including inside `{{NATIVES}}` —
+leave it off when the template documents each native in its own prose, or the
+include gets two copies.
 
 ### Callbacks
 

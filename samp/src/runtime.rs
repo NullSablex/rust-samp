@@ -67,6 +67,8 @@ struct RuntimeInner {
     plugin_version: &'static str,
     /// Pawn callbacks the plugin calls, as `initialize_plugin!` declared them.
     callback_decls: Vec<&'static str>,
+    /// Doc comment of each native, in the same order as `native_decls`.
+    native_docs: Vec<&'static str>,
     /// Pawn declaration of every registered native, in the order the plugin
     /// listed them. Feeds [`crate::plugin::pawn_include`]; empty until the
     /// entry point stores them.
@@ -138,6 +140,7 @@ impl Runtime {
             plugin_name: "plugin",
             plugin_version: "0.0.0",
             callback_decls: Vec::new(),
+            native_docs: Vec::new(),
             native_decls: Vec::new(),
             #[cfg(not(feature = "samp-only"))]
             omp_natives: Vec::new(),
@@ -596,6 +599,16 @@ impl Runtime {
     /// The Pawn callbacks the plugin declared it calls.
     pub fn callback_decls(&self) -> &[&'static str] {
         &self.inner().callback_decls
+    }
+
+    /// Doc comment of each native, aligned with [`Self::native_decls`].
+    pub fn native_docs(&self) -> &[&'static str] {
+        &self.inner().native_docs
+    }
+
+    /// Records those docs. Called once from the entry points.
+    pub fn set_native_docs(&self, docs: Vec<&'static str>) {
+        self.inner().native_docs = docs;
     }
 
     /// Records those callbacks. Called once from the entry points.

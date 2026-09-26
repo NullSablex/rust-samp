@@ -32,10 +32,18 @@ forward OnCounterWorkDone(delay);
 // Reading and changing the counter
 // ---------------------------------------------------------------------------
 
-// Adds one. Returns the new value, or -1 when already at the maximum.
+// Documentation written once, in the Rust doc comment, rendered here in Pawn's
+// own format — the one the open.mp includes use and `pawncc -r` reads.
+/**
+ * <summary>Adds one to the counter.</summary>
+ * <returns>The new value, or -1 when already at the maximum.</returns>
+ * <seealso name="Counter_Decrement" />
+ */
 native Counter_Increment();
 
-// Takes one away. Returns the new value, or -1 when already at zero.
+/**
+ * <summary>Decrements the counter. Returns the new value, or -1 if already zero.</summary>
+ */
 native Counter_Decrement();
 
 // Back to zero.

@@ -268,6 +268,13 @@ pub fn store_callback_decls(decls: Vec<&'static str>) {
     Runtime::get().set_callback_decls(decls);
 }
 
+/// Stores each native's doc comment, for `{{DOC:Name}}` in an include template.
+///
+/// Emitted by the entry points next to [`store_native_decls`], in the same order.
+pub fn store_native_docs(docs: Vec<&'static str>) {
+    Runtime::get().set_native_docs(docs);
+}
+
 /// Stores the plugin crate's version, for `{{VERSION}}` in an include template.
 ///
 /// Emitted by the entry points next to [`store_native_decls`].
