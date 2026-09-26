@@ -68,14 +68,23 @@ def find_server(explicit, env_var: str, candidates) -> pathlib.Path | None:
 # Reading the constants the SDK declares
 # --------------------------------------------------------------------------
 def rust_const(path: str, name: str, msvc: bool) -> int | None:
-    """Value of a `const NAME: usize` in `path`, for one ABI.
+    """Value of a slot constant in `path`, for one ABI.
 
-    Constants are cfg-gated in pairs; the one guarded by
+    Read from a `slots!` entry, which states both ABIs on one line. The older
+    form is still understood: constants cfg-gated in pairs, the one guarded by
     `#[cfg(target_env = "msvc")]` is the MSVC value and the one guarded by
     `#[cfg(not(...))]` is the Itanium value. An ungated constant answers for
     both.
     """
     source = (REPO / path).read_text()
+    # `slots! { NAME: usize = itanium, msvc; }` — the form the SDK uses now.
+    in_macro = re.search(
+        r"^\s*(?:pub(?:\([^)]*\))?\s+)?" + re.escape(name) + r"\s*:\s*\w+\s*=\s*(\d+)\s*,\s*(\d+)\s*;",
+        source,
+        re.M,
+    )
+    if in_macro:
+        return int(in_macro.group(2 if msvc else 1))
     pattern = re.compile(
         r'(?:#\[cfg\((?P<cfg>[^\]]*)\)\]\s*\n)?'
         r'(?:pub\s+)?const\s+' + re.escape(name) + r'\s*:\s*\w+\s*=\s*(?P<value>\d+)\s*;'
