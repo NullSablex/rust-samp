@@ -64,6 +64,7 @@ pub mod logger;
 pub(crate) mod macros;
 pub mod mainthread;
 pub mod omp_amx;
+pub mod pawn_include;
 pub mod plugin;
 pub(crate) mod runtime;
 

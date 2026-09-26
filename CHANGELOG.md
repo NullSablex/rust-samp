@@ -4,6 +4,36 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [Unreleased]
+
+### `rust-samp` (lib `samp`) — unreleased
+
+#### Added
+
+- **`samp::pawn_include` — drift checking for a hand-written include.** The
+  generated include from 3.6.0 cannot drift, but a plugin that keeps its `.inc`
+  by hand — for the default values, `sizeof(dest)`, varargs and documentation a
+  Rust signature cannot express — pays with silence when a native is renamed in
+  Rust and forgotten in the include. `compare_file(path)` reports what the two
+  sides disagree about: a native registered but not declared, declared but not
+  registered, a different argument count, a different return tag, or an argument
+  whose tag, `&` or `[]` changed. Setting `SAMP_PAWN_INCLUDE_CHECK` to a path
+  runs it at load and logs the findings, which is the shape a CI job wants.
+  Additions only the include can make are not divergences, and a declaration
+  ending in `...` stops arity checking, being open-ended by design.
+- `samp::pawn_include::parse` reads `native` declarations out of any Pawn source,
+  skipping commented-out ones and handling declarations spread over several
+  lines; `compare_declarations` compares two parsed lists with no server behind
+  either. Validated against four hand-written includes in the wild
+  (`a_players`, `a_mysql`, `YSF`, `foreach`, ~550 declarations): every
+  declaration read, and every one inside a comment block correctly left out.
+
+#### Tests
+
+- 10 unit tests over the parser and the comparison, covering defaults,
+  `sizeof(...)`, varargs, commented-out declarations and each kind of
+  divergence, plus the stable ordering the CI output depends on.
+
 ## [v3.6.0] — 2026/09/25
 
 Correctness release, in two parts, plus the whole open.mp interface layer.

@@ -306,6 +306,48 @@ commented out, because its arity is not in the signature:
 
 Argument names come from the Rust parameters, with a leading `_` stripped.
 
+## Checking a hand-written include
+
+A generated include cannot drift. One kept by hand can, and plugins keep theirs
+by hand for reasons the Rust signature cannot express: default values,
+`dest_len = sizeof(dest)`, varargs, documentation the script author reads. The
+cost is that a native renamed in Rust and forgotten in the `.inc` fails only
+when a script calls it.
+
+Point `SAMP_PAWN_INCLUDE_CHECK` at the include and the SDK compares it with the
+natives actually registered, at load:
+
+```sh
+SAMP_PAWN_INCLUDE_CHECK=include/my_plugin.inc ./omp-server
+```
+
+```
+[my_plugin] include/my_plugin.inc disagrees with the registered natives:
+[my_plugin]   MyPlugin_Reset is registered but missing from the include; a script calling it will not compile
+[my_plugin]   MyPlugin_Legacy is declared in the include but not registered; a script calling it fails at runtime
+[my_plugin]   MyPlugin_Status takes 3 argument(s), the include declares 2
+[my_plugin]   MyPlugin_Get returns bool:, the include declares untagged
+[my_plugin]   MyPlugin_Read argument 2 is &Float:arg, the include declares arg
+```
+
+Compared: the name, the return tag, the argument count, and each argument's
+tag, `&` and `[]`. Not compared, because only the include can state them:
+default values, size expressions, documentation, and varargs — a declaration
+ending in `...` is open-ended on purpose, so it may name fewer arguments than
+the native takes.
+
+The same comparison is available programmatically, which is what a CI job wants:
+
+```rust
+for finding in samp::pawn_include::compare_file("include/my_plugin.inc")? {
+    log::warn!("{finding}");
+}
+```
+
+`samp::pawn_include::parse` reads declarations out of any Pawn source — it skips
+commented-out ones, and handles declarations spread over several lines — and
+`compare_declarations` compares two parsed lists without a server behind either.
+
 ## Panic safety
 
 The generated wrapper invokes the native body inside

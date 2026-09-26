@@ -264,6 +264,7 @@ pub fn store_native_decls(plugin_name: &'static str, decls: Vec<&'static str>) {
 /// and the caller should be able to see both in the generated code.
 pub fn emit_pawn_include_if_requested() {
     crate::plugin::write_pawn_include_if_requested();
+    crate::pawn_include::check_if_requested();
 }
 
 /// Stores the list of natives for later use in `pawn_on_amx_load` (native Open Multiplayer mode).
