@@ -433,6 +433,13 @@ pub fn pawn_include() -> String {
     render_pawn_include(rt.plugin_name(), rt.native_decls())
 }
 
+/// The Pawn declaration of every registered native, as `#[native]` derived it.
+///
+/// A `raw` native appears commented out, its arity not being in the signature.
+pub(crate) fn native_decls() -> Vec<&'static str> {
+    Runtime::get().native_decls().to_vec()
+}
+
 /// Renders the include from a name and a list of declarations.
 fn render_pawn_include(name: &str, decls: &[&str]) -> String {
     // A crate name may carry characters Pawn does not accept in an identifier

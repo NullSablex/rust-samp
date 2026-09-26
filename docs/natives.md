@@ -336,6 +336,20 @@ default values, size expressions, documentation, and varargs — a declaration
 ending in `...` is open-ended on purpose, so it may name fewer arguments than
 the native takes.
 
+Three things a real include does are understood rather than flagged:
+
+- **Aliases.** `native Email_Close(account = 0) = email_close;` presents a name
+  the script calls, implemented by the registered native after the `=`. The
+  comparison follows the `=`, so an include that renames the whole surface —
+  an open.mp-styled variant next to the original, for instance — is not drift.
+  Divergences are reported under the name the include declares.
+- **`raw` natives.** They parse their own arguments, so `#[native]` cannot
+  derive a shape and the include is the only place it is written down. Presence
+  is compared, shape is not.
+- **Templates.** Pointing the check at the `.inc.in` a build script renders
+  works as well as pointing it at the output, and is usually what you want: the
+  template is the file edited by hand.
+
 The same comparison is available programmatically, which is what a CI job wants:
 
 ```rust

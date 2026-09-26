@@ -54,6 +54,15 @@ pub struct Declaration {
     pub arguments: Vec<Argument>,
     /// The list ends in `...`, so the argument count is open.
     pub variadic: bool,
+    /// The native this one is an alias of: `native Email_Close(...) = email_close;`
+    /// declares the name a script calls, implemented by the registered native
+    /// after the `=`. Comparison follows the `=`, so an include that renames the
+    /// whole surface is not reported as drift.
+    pub implemented_by: Option<String>,
+    /// Whether the argument list is known at all. A `raw` native registers its
+    /// name but parses its own arguments, so nothing but the name can be
+    /// compared; the include is the only place its shape is written down.
+    pub shape_known: bool,
 }
 
 /// Something the include and the plugin disagree about.
@@ -270,6 +279,18 @@ pub fn parse(source: &str) -> Vec<Declaration> {
             continue;
         }
 
+        // `native Alias(...) = real_name;` — everything up to the `;` after the
+        // argument list, which is where an alias is written.
+        let tail = &rest[close + 1..];
+        let tail = &tail[..tail.find(';').unwrap_or(0)];
+        let tail_len = tail.len();
+        let implemented_by = tail
+            .split_once('=')
+            .map(|(_, target)| target.trim().to_string())
+            .filter(|target| {
+                !target.is_empty() && target.chars().all(|c| c.is_alphanumeric() || c == '_')
+            });
+
         let list = &rest[open + 1..close];
         let variadic = list.contains("...");
         let arguments = split_arguments(list)
@@ -282,8 +303,10 @@ pub fn parse(source: &str) -> Vec<Declaration> {
             tag,
             arguments,
             variadic,
+            implemented_by,
+            shape_known: true,
         });
-        rest = &rest[close..];
+        rest = &rest[close + 1 + tail_len..];
     }
     declarations
 }
@@ -295,9 +318,28 @@ pub fn parse(source: &str) -> Vec<Declaration> {
 /// churn between runs.
 #[must_use]
 pub fn compare(include_source: &str) -> Vec<Divergence> {
-    let declared = parse(include_source);
-    let registered = parse(&crate::plugin::pawn_include());
-    compare_declarations(&declared, &registered)
+    compare_declarations(&parse(include_source), &registered_declarations())
+}
+
+/// What the plugin registered, as declarations.
+///
+/// `#[native]` renders a `raw` native commented out, since its arity is not in
+/// the Rust signature. The name is still registered, so it is read back here and
+/// marked [`Declaration::shape_known`] `false` — its presence is compared, its
+/// shape is not.
+fn registered_declarations() -> Vec<Declaration> {
+    crate::plugin::native_decls()
+        .iter()
+        .filter_map(|decl| {
+            let (source, shape_known) = match decl.trim_start().strip_prefix("//") {
+                Some(rest) => (rest.trim_start(), false),
+                None => (*decl, true),
+            };
+            let mut parsed = parse(source).into_iter().next()?;
+            parsed.shape_known = shape_known;
+            Some(parsed)
+        })
+        .collect()
 }
 
 /// Reads `path` and compares it with the registered natives.
@@ -315,11 +357,20 @@ pub fn compare_declarations(
     declared: &[Declaration],
     registered: &[Declaration],
 ) -> Vec<Divergence> {
+    // What the plugin registered is the name after an `=`, when there is one,
+    // and the declared name otherwise.
+    fn implementing(declaration: &Declaration) -> &str {
+        declaration
+            .implemented_by
+            .as_deref()
+            .unwrap_or(&declaration.name)
+    }
+
     let mut findings = Vec::new();
 
     let mut missing: Vec<&Declaration> = registered
         .iter()
-        .filter(|r| !declared.iter().any(|d| d.name == r.name))
+        .filter(|r| !declared.iter().any(|d| implementing(d) == r.name))
         .collect();
     missing.sort_by(|a, b| a.name.cmp(&b.name));
     findings.extend(missing.into_iter().map(|r| Divergence::MissingFromInclude {
@@ -328,7 +379,7 @@ pub fn compare_declarations(
 
     let mut extra: Vec<&Declaration> = declared
         .iter()
-        .filter(|d| !registered.iter().any(|r| r.name == d.name))
+        .filter(|d| !registered.iter().any(|r| r.name == implementing(d)))
         .collect();
     extra.sort_by(|a, b| a.name.cmp(&b.name));
     findings.extend(extra.into_iter().map(|d| Divergence::NotRegistered {
@@ -337,14 +388,24 @@ pub fn compare_declarations(
 
     let mut shared: Vec<(&Declaration, &Declaration)> = declared
         .iter()
-        .filter_map(|d| registered.iter().find(|r| r.name == d.name).map(|r| (d, r)))
+        .filter_map(|d| {
+            registered
+                .iter()
+                .find(|r| r.name == implementing(d))
+                .map(|r| (d, r))
+        })
         .collect();
     shared.sort_by(|a, b| a.0.name.cmp(&b.0.name));
 
     for (include, plugin) in shared {
+        // A raw native wrote down neither its arguments nor, reliably, more
+        // than its name: only the include states its shape.
+        if !plugin.shape_known {
+            continue;
+        }
         if include.tag != plugin.tag {
             findings.push(Divergence::ReturnTag {
-                native: plugin.name.clone(),
+                native: include.name.clone(),
                 include: include.tag.clone(),
                 plugin: plugin.tag.clone(),
             });
@@ -354,7 +415,7 @@ pub fn compare_declarations(
         // arguments it does name are compared.
         if !include.variadic && include.arguments.len() != plugin.arguments.len() {
             findings.push(Divergence::Arity {
-                native: plugin.name.clone(),
+                native: include.name.clone(),
                 include: include.arguments.len(),
                 plugin: plugin.arguments.len(),
             });
@@ -368,7 +429,7 @@ pub fn compare_declarations(
         {
             if declared_arg != registered_arg {
                 findings.push(Divergence::ArgumentShape {
-                    native: plugin.name.clone(),
+                    native: include.name.clone(),
                     position: position + 1,
                     include: declared_arg.clone(),
                     plugin: registered_arg.clone(),
@@ -381,9 +442,13 @@ pub fn compare_declarations(
 
 /// Runs the comparison when `SAMP_PAWN_INCLUDE_CHECK` names an include.
 ///
-/// Called by the SDK once the natives are known. Anything it finds is logged as
-/// a warning; a missing or unreadable file is reported once and otherwise
-/// ignored, since a development check must not take a server down.
+/// Called by the SDK right after `on_load`, not from the entry point: the check
+/// has nothing but log output to show, and under native open.mp a component's
+/// entry point runs before any logger exists, so anything logged there is lost.
+///
+/// Anything found is logged as a warning; a missing or unreadable file is
+/// reported and otherwise ignored, since a development check must never take a
+/// server down.
 pub(crate) fn check_if_requested() {
     let Some(path) = std::env::var_os("SAMP_PAWN_INCLUDE_CHECK") else {
         return;
@@ -507,6 +572,51 @@ mod tests {
             f,
             Divergence::ArgumentShape { native, position: 1, .. } if native == "Baz"
         )));
+    }
+
+    #[test]
+    fn a_raw_native_is_compared_by_name_only() {
+        // `raw` natives parse their own arguments, so the include is the only
+        // place their shape is written down: presence is checked, shape is not.
+        let mut registered = parse("native bool:email_send_to(...);");
+        registered[0].shape_known = false;
+        let declared = parse(
+            "native bool:email_send_to(const to[], const subject[], const body[], {Float,_}:...);",
+        );
+        assert!(compare_declarations(&declared, &registered).is_empty());
+
+        // Its absence from the include is still reported.
+        assert_eq!(
+            compare_declarations(&parse(""), &registered),
+            vec![Divergence::MissingFromInclude {
+                native: "email_send_to".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn an_alias_is_matched_by_what_implements_it() {
+        // An include may present the whole surface under other names, each
+        // aliasing the registered native; that is not drift.
+        let declared = parse("native bool:Email_Close(account = 0) = email_close;");
+        assert_eq!(declared[0].implemented_by.as_deref(), Some("email_close"));
+        assert!(
+            compare_declarations(&declared, &parse("native bool:email_close(account);")).is_empty()
+        );
+
+        // The shape is still compared, and reported under the declared name.
+        let findings = compare_declarations(
+            &declared,
+            &parse("native bool:email_close(account, force);"),
+        );
+        assert_eq!(
+            findings,
+            vec![Divergence::Arity {
+                native: "Email_Close".into(),
+                include: 1,
+                plugin: 2
+            }]
+        );
     }
 
     #[test]

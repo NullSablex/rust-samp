@@ -21,6 +21,15 @@ for the full directory.
   runs it at load and logs the findings, which is the shape a CI job wants.
   Additions only the include can make are not divergences, and a declaration
   ending in `...` stops arity checking, being open-ended by design.
+- The comparison understands three things a real include does. An **alias**
+  (`native Email_Close(account = 0) = email_close;`) is matched by the native
+  after the `=`, so an include presenting the whole surface under other names is
+  not drift. A **`raw` native** is compared by presence only, since it parses
+  its own arguments and the include is the only place its shape is written down.
+  A **template** (`plugin.inc.in`) checks like its output, which is usually the
+  file worth checking, being the one edited by hand.
+- The check runs after `on_load` rather than from the entry point, so it reaches
+  a logger the plugin installs there.
 - `samp::pawn_include::parse` reads `native` declarations out of any Pawn source,
   skipping commented-out ones and handling declarations spread over several
   lines; `compare_declarations` compares two parsed lists with no server behind
@@ -30,9 +39,15 @@ for the full directory.
 
 #### Tests
 
-- 10 unit tests over the parser and the comparison, covering defaults,
+- 13 unit tests over the parser and the comparison, covering defaults,
   `sizeof(...)`, varargs, commented-out declarations and each kind of
-  divergence, plus the stable ordering the CI output depends on.
+  divergence, aliases and `raw` natives, plus the stable ordering the CI output
+  depends on.
+- Validated against `email_samp` on a live open.mp server, over both of its
+  hand-written includes (the original and the open.mp-styled alias variant, 34
+  natives each, all `raw` or alias-declared): both report a match, and an
+  include edited to rename one native and change another's arity and tag reports
+  exactly those four divergences.
 
 ## [v3.6.0] — 2026/09/25
 

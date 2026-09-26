@@ -176,6 +176,9 @@ pub fn load(server_exports: *const usize) {
 
     rt.set_server_exports(server_exports);
     plugin.on_load();
+    // After `on_load`, because that is where a plugin installs its logger and
+    // the check has nothing but log output to show.
+    crate::pawn_include::check_if_requested();
 }
 
 pub fn unload() {
@@ -264,7 +267,6 @@ pub fn store_native_decls(plugin_name: &'static str, decls: Vec<&'static str>) {
 /// and the caller should be able to see both in the generated code.
 pub fn emit_pawn_include_if_requested() {
     crate::plugin::write_pawn_include_if_requested();
-    crate::pawn_include::check_if_requested();
 }
 
 /// Stores the list of natives for later use in `pawn_on_amx_load` (native Open Multiplayer mode).
@@ -287,6 +289,7 @@ pub fn omp_load(core: *mut ICore) {
     }
     Runtime::get().set_omp_core(core);
     Runtime::plugin().on_load();
+    crate::pawn_include::check_if_requested();
 }
 
 /// Called by the vtable's `on_init` handler.
