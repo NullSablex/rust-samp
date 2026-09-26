@@ -178,6 +178,23 @@ for the full directory.
   include edited to rename one native and change another's arity and tag reports
   exactly those four divergences.
 
+#### Changed
+
+- The `omp` module lost most of its repetition without changing what it does.
+  Per-ABI slot constants were a `#[cfg]` pair each (about 140 of them) and are
+  now one line in `slots!`; opaque handles went through `opaque!`; getters and
+  setters that were a signature around one `call_vtable!` are one line in
+  `virtual_fns!`; the `StringView` return that differs per ABI is one helper
+  instead of two hand-written copies. Two workarounds went with it: a helper
+  that pushed `u32` values through an `i32` setter with `as`, and a slot
+  constant with two names.
+- That this changed nothing was checked, not assumed: every non-inlined
+  function of the module was disassembled before and after, for both ABIs, and
+  compared. All matched except the two position getters, where the neutral
+  `Vector3` answer is now written only on the failure path instead of before the
+  call — same slot, same call, same stack cleanup. The `counter` example then
+  produced identical output on open.mp Linux and open.mp Windows.
+
 ### `rust-samp-codegen` (lib `samp_codegen`) — unreleased
 
 #### Added
@@ -203,6 +220,10 @@ for the full directory.
 
 #### Fixed
 
+- `OmpComponent`'s documentation was attached to a constant declared between
+  the doc comment and the struct, so the struct showed as undocumented. And
+  `player_name` said both ABIs return its `StringView` through a hidden pointer,
+  which is the MSVC half only — the code already did the right thing.
 - **An AMX function table the server left partly empty ended the server's
   process.** Every `Amx` call resolved its function through `Export::from_table`,
   which asserted on an empty slot — a panic on the path of every native, and a
@@ -215,8 +236,24 @@ for the full directory.
 - `Export::from_table`, in favour of `Export::try_from_table`, which returns
   `None` instead of panicking. The old method keeps its signature and behaviour,
   so nothing that calls it breaks.
+- The nine `omp::as_*_component` casts (`as_objects_component`,
+  `as_vehicles_component`, ...). Each took a component looked up by a UID
+  constant and cast it, and nothing tied the two together: looking up one
+  component and casting it to another compiled. `omp_query::<Component<I>>()`
+  takes the UID from the interface type instead. The casts keep working.
 
 #### Added
+
+- **`omp::Component<I>` and `omp::ComponentInterface`.** An interface handle
+  (`IObjectsComponent`, `IVehiclesComponent`, and the other seven) now declares
+  its UID, and `samp::plugin::omp_query::<Component<IObjectsComponent>>()`
+  returns it typed, with `Component::as_ptr` for the functions that take it.
+- `StringView::of(&str)` for a view to hand the server for one call,
+  `StringView::EMPTY`, and `StringView::to_owned_string` to copy one out;
+  `StringView::from_static` is now `const`. `Vector3::ZERO`.
+- Every public item of the `omp` submodules is re-exported at `omp::`, which
+  adds `Component`, `ComponentInterface`, `ServerComponent` and `NUM_AMX_FUNCS`
+  to what was already there.
 
 - `encoding::current()` returns the encoding in force. A plugin that lets the
   server owner choose one could set it but not read it back, so it could not

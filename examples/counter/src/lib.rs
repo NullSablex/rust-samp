@@ -103,9 +103,9 @@ impl SampPlugin for Counter {
 
         // Vehicles: query the component by UID, spawn one, read it back.
         if let Some(component) =
-            samp::plugin::omp_query_component(samp::omp::VEHICLES_COMPONENT_UID)
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IVehiclesComponent>>()
         {
-            let vehicles = unsafe { samp::omp::as_vehicles_component(component) };
+            let vehicles = component.as_ptr();
             let vehicle = unsafe {
                 samp::omp::create_vehicle(
                     vehicles,
@@ -153,14 +153,11 @@ impl SampPlugin for Counter {
         }
 
         // Objects and pickups, the same query-create-read shape.
-        if let Some(component) = samp::plugin::omp_query_component(samp::omp::OBJECTS_COMPONENT_UID)
+        if let Some(component) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IObjectsComponent>>()
         {
-            let objects = unsafe { samp::omp::as_objects_component(component) };
-            let zero = samp::omp::types::Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            };
+            let objects = component.as_ptr();
+            let zero = samp::omp::types::Vector3::ZERO;
             let object = unsafe {
                 samp::omp::create_object(
                     objects,
@@ -179,9 +176,10 @@ impl SampPlugin for Counter {
             });
         }
 
-        if let Some(component) = samp::plugin::omp_query_component(samp::omp::PICKUPS_COMPONENT_UID)
+        if let Some(component) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IPickupsComponent>>()
         {
-            let pickups = unsafe { samp::omp::as_pickups_component(component) };
+            let pickups = component.as_ptr();
             let pickup = unsafe {
                 samp::omp::create_pickup(
                     pickups,
@@ -202,10 +200,12 @@ impl SampPlugin for Counter {
         }
 
         // Text draws, gang zones and actors — same shape once more.
-        if let Some(c) = samp::plugin::omp_query_component(samp::omp::TEXTDRAWS_COMPONENT_UID) {
+        if let Some(c) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::ITextDrawsComponent>>()
+        {
             let td = unsafe {
                 samp::omp::create_textdraw(
-                    samp::omp::as_textdraws_component(c),
+                    c.as_ptr(),
                     samp::omp::types::Vector2 { x: 320.0, y: 240.0 },
                     "rust-samp",
                 )
@@ -215,10 +215,12 @@ impl SampPlugin for Counter {
             });
         }
 
-        if let Some(c) = samp::plugin::omp_query_component(samp::omp::GANGZONES_COMPONENT_UID) {
+        if let Some(c) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IGangZonesComponent>>()
+        {
             let zone = unsafe {
                 samp::omp::create_gangzone(
-                    samp::omp::as_gangzones_component(c),
+                    c.as_ptr(),
                     samp::omp::GangZonePos {
                         min: samp::omp::types::Vector2 { x: 0.0, y: 0.0 },
                         max: samp::omp::types::Vector2 { x: 100.0, y: 100.0 },
@@ -230,10 +232,12 @@ impl SampPlugin for Counter {
             });
         }
 
-        if let Some(c) = samp::plugin::omp_query_component(samp::omp::ACTORS_COMPONENT_UID) {
+        if let Some(c) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IActorsComponent>>()
+        {
             let actor = unsafe {
                 samp::omp::create_actor(
-                    samp::omp::as_actors_component(c),
+                    c.as_ptr(),
                     46,
                     samp::omp::types::Vector3 {
                         x: 2.0,
@@ -249,10 +253,12 @@ impl SampPlugin for Counter {
         }
 
         // Text labels, menus and spawn classes close the component sweep.
-        if let Some(c) = samp::plugin::omp_query_component(samp::omp::TEXTLABELS_COMPONENT_UID) {
+        if let Some(c) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::ITextLabelsComponent>>()
+        {
             let label = unsafe {
                 samp::omp::create_textlabel(
-                    samp::omp::as_textlabels_component(c),
+                    c.as_ptr(),
                     "rust-samp",
                     samp::omp::types::Colour::rgba(255, 255, 255, 255),
                     samp::omp::types::Vector3 {
@@ -270,10 +276,12 @@ impl SampPlugin for Counter {
             });
         }
 
-        if let Some(c) = samp::plugin::omp_query_component(samp::omp::MENUS_COMPONENT_UID) {
+        if let Some(c) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IMenusComponent>>()
+        {
             let menu = unsafe {
                 samp::omp::create_menu(
-                    samp::omp::as_menus_component(c),
+                    c.as_ptr(),
                     "menu",
                     samp::omp::types::Vector2 { x: 50.0, y: 180.0 },
                     1,
@@ -286,11 +294,13 @@ impl SampPlugin for Counter {
             });
         }
 
-        if let Some(c) = samp::plugin::omp_query_component(samp::omp::CLASSES_COMPONENT_UID) {
+        if let Some(c) =
+            samp::plugin::omp_query::<samp::omp::Component<samp::omp::IClassesComponent>>()
+        {
             let weapons = [samp::omp::WeaponSlot::default(); samp::omp::MAX_WEAPON_SLOTS];
             let class = unsafe {
                 samp::omp::create_class(
-                    samp::omp::as_classes_component(c),
+                    c.as_ptr(),
                     46,
                     0,
                     samp::omp::types::Vector3 {

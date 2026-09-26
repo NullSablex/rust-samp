@@ -74,10 +74,9 @@ type QueryComponentFn = unsafe extern "C" fn(*mut ServerComponentList, UID) -> *
 type QueryComponentFn =
     unsafe extern "thiscall" fn(*mut ServerComponentList, UID) -> *mut ServerComponent;
 
-#[cfg(not(target_env = "msvc"))]
-const COMPONENT_LIST_PREFIX_SLOTS: usize = 6;
-#[cfg(target_env = "msvc")]
-const COMPONENT_LIST_PREFIX_SLOTS: usize = 5;
+slots! {
+    COMPONENT_LIST_PREFIX_SLOTS: usize = 6, 5;
+}
 
 #[repr(C)]
 struct ServerComponentListVTable {
@@ -184,10 +183,9 @@ type GetAmxFunctionsFn =
 type GetAmxFunctionsFn =
     unsafe extern "thiscall" fn(*const ServerPawnComponent) -> *const AmxFunctionTable;
 
-#[cfg(not(target_env = "msvc"))]
-const PAWN_COMPONENT_PREFIX_SLOTS: usize = 18;
-#[cfg(target_env = "msvc")]
-const PAWN_COMPONENT_PREFIX_SLOTS: usize = 16;
+slots! {
+    PAWN_COMPONENT_PREFIX_SLOTS: usize = 18, 16;
+}
 
 #[repr(C)]
 struct ServerPawnComponentVTable {
@@ -331,6 +329,7 @@ pub unsafe fn get_amx_functions(pawn: *mut ServerComponent) -> usize {
 // ---------------------------------------------------------------------------
 
 use super::component_api::OmpComponentHandle;
+use super::vtable::slots;
 use std::ptr::NonNull;
 
 /// Typed wrapper for the Open Multiplayer server's `IPawnComponent`.

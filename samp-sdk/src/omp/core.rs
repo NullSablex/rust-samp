@@ -40,15 +40,14 @@
 //! equivalent to `printf(msg)` for the calling convention.
 
 use super::component::ICore;
+use super::vtable::slots;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
 
-/// Offset of the `ILogger` subobject inside `ICore`.
-#[cfg(target_env = "msvc")]
-const ILOGGER_OFFSET: isize = 56;
-
-#[cfg(not(target_env = "msvc"))]
-const ILOGGER_OFFSET: isize = 40;
+slots! {
+    /// Offset of the `ILogger` subobject inside `ICore`.
+    ILOGGER_OFFSET: isize = 40, 56;
+}
 
 /// Slot of the `printLn(fmt, ...)` function in the `ILogger` vtable.
 const SLOT_PRINTLN: usize = 0;

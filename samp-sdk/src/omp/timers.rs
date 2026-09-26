@@ -60,39 +60,31 @@
 use super::component_api::OmpComponentHandle;
 use super::server::{ServerComponent, query_component};
 use super::types::UID;
+use super::vtable::{opaque, slots};
 use std::ptr::NonNull;
 
 /// UID of the Open Multiplayer `Timers` component.
 pub const TIMERS_COMPONENT_UID: UID = 0x2ad8_124c_5ea2_57a3;
 
-/// Slot of `create(handler, interval, repeating)` in the `ITimersComponent` vtable.
-///
-/// Itanium carries two destructor slots plus `getUID()` in the primary vtable;
-/// MSVC has one destructor and keeps `getUID()` in a secondary vtable.
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_INTERVAL: usize = 18;
-
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_INTERVAL: usize = 17;
-
-/// Slot of `kill()` in the `ITimer` vtable (shifted by the extra Itanium
-/// destructor slot inherited from `IExtensible`).
-#[cfg(not(target_env = "msvc"))]
-const SLOT_TIMER_KILL: usize = 11;
-
-#[cfg(target_env = "msvc")]
-const SLOT_TIMER_KILL: usize = 10;
-
-/// Opaque pointer to the server's `ITimersComponent`.
-#[repr(C)]
-pub struct ITimersComponent {
-    _opaque: [u8; 0],
+slots! {
+    /// Slot of `create(handler, interval, repeating)` in the `ITimersComponent` vtable.
+    ///
+    /// Itanium carries two destructor slots plus `getUID()` in the primary vtable;
+    /// MSVC has one destructor and keeps `getUID()` in a secondary vtable.
+    SLOT_CREATE_INTERVAL: usize = 18, 17;
 }
 
-/// Opaque pointer to the server's `ITimer` — returned by `create_timer`.
-#[repr(C)]
-pub struct ITimer {
-    _opaque: [u8; 0],
+slots! {
+    /// Slot of `kill()` in the `ITimer` vtable (shifted by the extra Itanium
+    /// destructor slot inherited from `IExtensible`).
+    SLOT_TIMER_KILL: usize = 11, 10;
+}
+
+opaque! {
+    /// Opaque pointer to the server's `ITimersComponent`.
+    pub ITimersComponent;
+    /// Opaque pointer to the server's `ITimer` — returned by `create_timer`.
+    pub ITimer;
 }
 
 /// `TimerTimeOutHandler` vtable — Itanium ABI.

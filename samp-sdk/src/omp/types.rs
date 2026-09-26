@@ -63,13 +63,46 @@ pub struct StringView {
 }
 
 impl StringView {
-    /// Creates a `StringView` from a static `&str`.
+    /// The empty view: null data, zero length. What a hidden-pointer return
+    /// slot starts as, and what the server reads as "no text".
+    pub const EMPTY: Self = Self {
+        data: std::ptr::null(),
+        len: 0,
+    };
+
+    /// A view of `s` to hand the server for the length of one call.
+    ///
+    /// The view carries no lifetime, so it is the caller's to keep `s` alive
+    /// while the server reads it. Every interface that takes a `StringView`
+    /// copies what it keeps, so the duration of the call is enough.
     #[must_use]
-    pub fn from_static(s: &'static str) -> Self {
+    pub const fn of(s: &str) -> Self {
         Self {
             data: s.as_ptr(),
             len: s.len(),
         }
+    }
+
+    /// Creates a `StringView` from a static `&str`, which outlives any use.
+    #[must_use]
+    pub const fn from_static(s: &'static str) -> Self {
+        Self::of(s)
+    }
+
+    /// Copies the viewed bytes into a `String`.
+    ///
+    /// `None` when the view is empty, null, or not UTF-8 — the server's answer
+    /// for "no text" and a malformed one read the same to a caller.
+    ///
+    /// # Safety
+    /// A non-null `data` must point to `len` readable bytes.
+    #[must_use]
+    pub unsafe fn to_owned_string(self) -> Option<String> {
+        if self.data.is_null() || self.len == 0 {
+            return None;
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(self.data, self.len) };
+        std::str::from_utf8(bytes).ok().map(String::from)
     }
 
     /// Converts to `&str`. Safe only if the pointer is valid and UTF-8.
@@ -163,6 +196,16 @@ pub struct Vector3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+impl Vector3 {
+    /// The origin — also what a position accessor answers when the entity is
+    /// not there to ask.
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
 }
 
 /// 4D vector.

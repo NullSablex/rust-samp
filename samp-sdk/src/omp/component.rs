@@ -108,35 +108,23 @@
 
 #[allow(unused_imports)]
 use super::types::{ComponentType, SemanticVersion, StringView, UID};
+use super::vtable::{opaque, slots};
 
 // ---------------------------------------------------------------------------
 // Opaque types — pointers to server interfaces we do not implement
 // ---------------------------------------------------------------------------
 
-/// `ICore*` — opaque pointer to the Open Multiplayer server core.
-/// Received in `on_load`; use only for caching or future queries.
-#[repr(C)]
-pub struct ICore {
-    _opaque: [u8; 0],
-}
-
-/// `IComponentList*` — list of loaded components.
-/// Received in `on_init`; use to query other components.
-#[repr(C)]
-pub struct IComponentList {
-    _opaque: [u8; 0],
-}
-
-/// `ILogger*` — server logging interface.
-#[repr(C)]
-pub struct ILogger {
-    _opaque: [u8; 0],
-}
-
-/// `IEarlyConfig*` — configuration during initialization.
-#[repr(C)]
-pub struct IEarlyConfig {
-    _opaque: [u8; 0],
+opaque! {
+    /// `ICore*` — opaque pointer to the Open Multiplayer server core.
+    /// Received in `on_load`; use only for caching or future queries.
+    pub ICore;
+    /// `IComponentList*` — list of loaded components.
+    /// Received in `on_init`; use to query other components.
+    pub IComponentList;
+    /// `ILogger*` — server logging interface.
+    pub ILogger;
+    /// `IEarlyConfig*` — configuration during initialization.
+    pub IEarlyConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +276,13 @@ pub struct IUIDProviderVTable {
 // Object compatible with IComponent* — per-platform layout
 // ---------------------------------------------------------------------------
 
+slots! {
+    /// Bytes of `IExtensible`'s `miscExtensions` map. The server expects the
+    /// `IUIDProvider` vptr right after `IExtensible`: offset 40 on Itanium,
+    /// 56 on MSVC (4-byte vptr plus this), confirmed by disassembling the server.
+    MISC_EXT_SIZE: usize = 36, 52;
+}
+
 /// Rust object with a layout compatible with Open Multiplayer's `IComponent*`.
 ///
 /// The layout differs between Linux (GCC i686) and Windows MSVC i686 because
@@ -316,13 +311,6 @@ pub struct IUIDProviderVTable {
 /// offset 64: uid             (UID = u64)
 /// offset 72: plugin_ptr      (*mut ())
 /// ```
-// MSVC: server expects the IUIDProvider vptr at offset 56 (confirmed at runtime via disasm).
-// Total IExtensible = 4 (vptr) + 52 (_misc_ext) = 56 bytes.
-#[cfg(target_env = "msvc")]
-const MISC_EXT_SIZE: usize = 52;
-#[cfg(not(target_env = "msvc"))]
-const MISC_EXT_SIZE: usize = 36;
-
 #[repr(C)]
 pub struct OmpComponent {
     vtable: *const IComponentVTable,

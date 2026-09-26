@@ -22,71 +22,38 @@
 //! timer component sprang in v3.5.0, and `scripts/omp-vtable.py` reports it
 //! without anyone having to remember the rule.
 
+use super::component_api::ComponentInterface;
 use super::players::{ENTITY_OFFSET, SLOT_ENTITY_GET_POSITION};
 use super::server::ServerComponent;
 use super::types::{UID, Vector3};
-use super::vtable::call_vtable;
+use super::vtable::{call_vtable, opaque, slots, virtual_fns};
 
 /// UID of the Open Multiplayer `Vehicles` component.
 pub const VEHICLES_COMPONENT_UID: UID = 0x3f1f_62ee_9e22_ab19;
 
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_VEHICLE: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_VEHICLE: usize = 18;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_VEHICLE_SET_COLOUR: usize = 11;
-#[cfg(target_env = "msvc")]
-const SLOT_VEHICLE_SET_COLOUR: usize = 10;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_VEHICLE_SET_HEALTH: usize = 13;
-#[cfg(target_env = "msvc")]
-const SLOT_VEHICLE_SET_HEALTH: usize = 12;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_VEHICLE_GET_HEALTH: usize = 14;
-#[cfg(target_env = "msvc")]
-const SLOT_VEHICLE_GET_HEALTH: usize = 13;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_VEHICLE_GET_MODEL: usize = 57;
-#[cfg(target_env = "msvc")]
-const SLOT_VEHICLE_GET_MODEL: usize = 56;
-
-/// Slot of `IVehiclesComponent::getEventDispatcher()`.
-#[cfg(not(target_env = "msvc"))]
-const SLOT_VEHICLE_DISPATCHER: usize = 21;
-#[cfg(target_env = "msvc")]
-const SLOT_VEHICLE_DISPATCHER: usize = 19;
-
-/// Offset of the `IReadOnlyPool<IVehicle>` subobject inside the component.
-///
-/// Larger than the player pool's because `IVehiclesComponent` reaches it
-/// through `IComponent`, which carries an `IUIDProvider` of its own. From
-/// clang's record layout.
-#[cfg(not(target_env = "msvc"))]
-const VEHICLE_POOL_OFFSET: isize = 44;
-#[cfg(target_env = "msvc")]
-const VEHICLE_POOL_OFFSET: isize = 64;
-
-/// Opaque handle for the server's `IVehiclesComponent*`.
-#[repr(C)]
-pub struct IVehiclesComponent {
-    _opaque: [u8; 0],
+slots! {
+    SLOT_CREATE_VEHICLE: usize = 19, 18;
+    SLOT_VEHICLE_SET_COLOUR: usize = 11, 10;
+    SLOT_VEHICLE_SET_HEALTH: usize = 13, 12;
+    SLOT_VEHICLE_GET_HEALTH: usize = 14, 13;
+    SLOT_VEHICLE_GET_MODEL: usize = 57, 56;
+    /// Slot of `IVehiclesComponent::getEventDispatcher()`.
+    SLOT_VEHICLE_DISPATCHER: usize = 21, 19;
+    /// Offset of the `IReadOnlyPool<IVehicle>` subobject inside the component.
+    ///
+    /// Larger than the player pool's because `IVehiclesComponent` reaches it
+    /// through `IComponent`, which carries an `IUIDProvider` of its own. From
+    /// clang's record layout.
+    VEHICLE_POOL_OFFSET: isize = 44, 64;
 }
 
-/// Opaque handle for the server's `IVehicle*`.
-#[repr(C)]
-pub struct IVehicle {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IEventDispatcher<VehicleEventHandler>*`.
-#[repr(C)]
-pub struct IVehicleDispatcher {
-    _opaque: [u8; 0],
+opaque! {
+    /// Opaque handle for the server's `IVehiclesComponent*`.
+    pub IVehiclesComponent;
+    /// Opaque handle for the server's `IVehicle*`.
+    pub IVehicle;
+    /// Opaque handle for `IEventDispatcher<VehicleEventHandler>*`.
+    pub IVehicleDispatcher;
 }
 
 /// `VehicleEventHandler` vtable — Itanium ABI.
@@ -174,22 +141,13 @@ impl VehicleHandler {
     }
 }
 
-/// `IVehiclesComponent::getEventDispatcher()`.
-///
-/// # Safety
-/// `component` must be a live `IVehiclesComponent`.
-#[must_use]
-pub unsafe fn vehicle_event_dispatcher(
-    component: *mut IVehiclesComponent,
-) -> *mut IVehicleDispatcher {
-    call_vtable!(
-        component.cast::<u8>(),
-        0,
-        SLOT_VEHICLE_DISPATCHER,
-        () -> *mut IVehicleDispatcher,
-        (),
-        std::ptr::null_mut()
-    )
+virtual_fns! {
+    /// `IVehiclesComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IVehiclesComponent`.
+    #[must_use]
+    pub fn vehicle_event_dispatcher(component: IVehiclesComponent) -> *mut IVehicleDispatcher = [0, SLOT_VEHICLE_DISPATCHER] or std::ptr::null_mut();
 }
 
 /// Registers `handler` on the vehicle dispatcher (`addEventHandler`, slot [0]).
@@ -210,36 +168,20 @@ pub unsafe fn add_vehicle_handler(
     )
 }
 
-/// `IReadOnlyPool<IVehicle>::get(int)` — the vehicle with that id, or null.
-///
-/// # Safety
-/// `component` must be a live `IVehiclesComponent`.
-#[must_use]
-pub unsafe fn vehicle_by_id(component: *mut IVehiclesComponent, id: i32) -> *mut IVehicle {
-    call_vtable!(
-        component.cast::<u8>(),
-        VEHICLE_POOL_OFFSET,
-        super::players::SLOT_POOL_GET_PUB,
-        (i32) -> *mut IVehicle,
-        (id),
-        std::ptr::null_mut()
-    )
-}
+virtual_fns! {
+    /// `IReadOnlyPool<IVehicle>::get(int)` — the vehicle with that id, or null.
+    ///
+    /// # Safety
+    /// `component` must be a live `IVehiclesComponent`.
+    #[must_use]
+    pub fn vehicle_by_id(component: IVehiclesComponent, id: i32) -> *mut IVehicle = [VEHICLE_POOL_OFFSET, super::players::SLOT_POOL_GET] or std::ptr::null_mut();
 
-/// `IEntity::getID()` for a vehicle — the id Pawn scripts use.
-///
-/// # Safety
-/// See [`vehicle_model`].
-#[must_use]
-pub unsafe fn vehicle_id(vehicle: *mut IVehicle) -> i32 {
-    call_vtable!(
-        vehicle.cast::<u8>(),
-        ENTITY_OFFSET,
-        super::players::SLOT_ENTITY_GET_ID,
-        () -> i32,
-        (),
-        -1
-    )
+    /// `IEntity::getID()` for a vehicle — the id Pawn scripts use.
+    ///
+    /// # Safety
+    /// See [`vehicle_model`].
+    #[must_use]
+    pub fn vehicle_id(vehicle: IVehicle) -> i32 = [ENTITY_OFFSET, super::players::SLOT_ENTITY_GET_ID] or -1;
 }
 
 /// Casts a component handle obtained by UID into the vehicles component.
@@ -247,6 +189,10 @@ pub unsafe fn vehicle_id(vehicle: *mut IVehicle) -> i32 {
 /// # Safety
 /// `component` must be what `queryComponent(VEHICLES_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IVehiclesComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_vehicles_component(component: *mut ServerComponent) -> *mut IVehiclesComponent {
     component.cast::<IVehiclesComponent>()
 }
@@ -288,81 +234,48 @@ pub unsafe fn create_vehicle(
     )
 }
 
-/// Reads a `f32` getter that takes no arguments from the vehicle's vtable.
-unsafe fn vehicle_f32(vehicle: *mut IVehicle, slot: usize) -> f32 {
-    call_vtable!(vehicle.cast::<u8>(), 0, slot, () -> f32, (), 0.0)
+virtual_fns! {
+    /// `IVehicle::getModel()`.
+    ///
+    /// # Safety
+    /// `vehicle` must come from [`create_vehicle`] and still exist.
+    #[must_use]
+    pub fn vehicle_model(vehicle: IVehicle) -> i32 = [0, SLOT_VEHICLE_GET_MODEL] or 0;
+
+    /// `IVehicle::getHealth()`.
+    ///
+    /// # Safety
+    /// See [`vehicle_model`].
+    #[must_use]
+    pub fn vehicle_health(vehicle: IVehicle) -> f32 = [0, SLOT_VEHICLE_GET_HEALTH] or 0.0;
+
+    /// `IVehicle::setHealth(float)`.
+    ///
+    /// # Safety
+    /// See [`vehicle_model`].
+    pub fn vehicle_set_health(vehicle: IVehicle, health: f32) = [0, SLOT_VEHICLE_SET_HEALTH];
+
+    /// `IVehicle::setColour(int, int)`.
+    ///
+    /// # Safety
+    /// See [`vehicle_model`].
+    pub fn vehicle_set_colour(vehicle: IVehicle, colour1: i32, colour2: i32) = [0, SLOT_VEHICLE_SET_COLOUR];
+
+    /// `IEntity::getPosition()` for a vehicle.
+    ///
+    /// `IVehicle` carries the same `IEntity` subobject a player does, at the same
+    /// offset, so this is the player accessor with a different handle.
+    ///
+    /// # Safety
+    /// See [`vehicle_model`].
+    #[must_use]
+    pub fn vehicle_position(vehicle: IVehicle) -> Vector3 = [ENTITY_OFFSET, SLOT_ENTITY_GET_POSITION] or Vector3::ZERO;
 }
 
-/// `IVehicle::getModel()`.
-///
-/// # Safety
-/// `vehicle` must come from [`create_vehicle`] and still exist.
-#[must_use]
-pub unsafe fn vehicle_model(vehicle: *mut IVehicle) -> i32 {
-    call_vtable!(vehicle.cast::<u8>(), 0, SLOT_VEHICLE_GET_MODEL, () -> i32, (), 0)
-}
+// Each interface knows its own UID, so `omp_query::<Component<I>>()` finds it.
 
-/// `IVehicle::getHealth()`.
-///
-/// # Safety
-/// See [`vehicle_model`].
-#[must_use]
-pub unsafe fn vehicle_health(vehicle: *mut IVehicle) -> f32 {
-    unsafe { vehicle_f32(vehicle, SLOT_VEHICLE_GET_HEALTH) }
-}
-
-/// `IVehicle::setHealth(float)`.
-///
-/// # Safety
-/// See [`vehicle_model`].
-pub unsafe fn vehicle_set_health(vehicle: *mut IVehicle, health: f32) {
-    call_vtable!(
-        vehicle.cast::<u8>(),
-        0,
-        SLOT_VEHICLE_SET_HEALTH,
-        (f32) -> (),
-        (health),
-        ()
-    )
-}
-
-/// `IVehicle::setColour(int, int)`.
-///
-/// # Safety
-/// See [`vehicle_model`].
-pub unsafe fn vehicle_set_colour(vehicle: *mut IVehicle, colour1: i32, colour2: i32) {
-    call_vtable!(
-        vehicle.cast::<u8>(),
-        0,
-        SLOT_VEHICLE_SET_COLOUR,
-        (i32, i32) -> (),
-        (colour1, colour2),
-        ()
-    )
-}
-
-/// `IEntity::getPosition()` for a vehicle.
-///
-/// `IVehicle` carries the same `IEntity` subobject a player does, at the same
-/// offset, so this is the player accessor with a different handle.
-///
-/// # Safety
-/// See [`vehicle_model`].
-#[must_use]
-pub unsafe fn vehicle_position(vehicle: *mut IVehicle) -> Vector3 {
-    let zero = Vector3 {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-    };
-    call_vtable!(
-        vehicle.cast::<u8>(),
-        ENTITY_OFFSET,
-        SLOT_ENTITY_GET_POSITION,
-        () -> Vector3,
-        (),
-        zero
-    )
+impl ComponentInterface for IVehiclesComponent {
+    const UID: UID = VEHICLES_COMPONENT_UID;
 }
 
 #[cfg(test)]
@@ -398,11 +311,7 @@ mod tests {
 
     #[test]
     fn a_null_component_creates_nothing() {
-        let position = Vector3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let position = Vector3::ZERO;
         let vehicle =
             unsafe { create_vehicle(std::ptr::null_mut(), 411, position, 0.0, -1, -1, -1, false) };
         assert!(vehicle.is_null());

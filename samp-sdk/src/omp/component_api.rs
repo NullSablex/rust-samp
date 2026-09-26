@@ -15,6 +15,7 @@
 
 use super::server::ServerComponent;
 use super::types::{SemanticVersion, StringView, UID};
+use super::vtable::{call_vtable_small_struct, slots};
 use std::ptr::NonNull;
 
 /// Trait implemented by typed wrappers for Open Multiplayer components.
@@ -42,42 +43,74 @@ pub trait OmpComponentHandle: Sized + Copy {
     fn as_raw(&self) -> NonNull<ServerComponent>;
 }
 
-/// Slot of `componentName()` in the `IComponent` vtable.
+/// A server interface reachable as a component, and the UID that finds it.
 ///
-/// Itanium emits two destructor slots (D1 + D0) where MSVC emits a single
-/// scalar deleting one, which shifts every method after it by one. Both
-/// numbers are confirmed against the official `Timers.so` / `Timers.dll`.
-#[cfg(not(target_env = "msvc"))]
-const SLOT_COMPONENT_NAME: usize = 7;
+/// Implemented for the opaque interface handles (`IObjectsComponent`,
+/// `IVehiclesComponent`, ...). Tying the UID to the type is what [`Component`]
+/// builds on: the lookup and the cast cannot disagree.
+pub trait ComponentInterface {
+    /// The component's UID, as the server's headers declare it.
+    const UID: UID;
+}
 
-#[cfg(target_env = "msvc")]
-const SLOT_COMPONENT_NAME: usize = 6;
+/// A server component, typed by the interface it implements.
+///
+/// Query it with `samp::plugin::omp_query::<Component<IObjectsComponent>>()`
+/// and pass [`Component::as_ptr`] to the functions that take the interface. The
+/// UID comes from the type, so there is no way to look one component up and
+/// use it as another — which a separate UID constant and cast allowed.
+pub struct Component<I: ComponentInterface> {
+    ptr: NonNull<ServerComponent>,
+    interface: std::marker::PhantomData<*mut I>,
+}
 
-/// Slot of `componentVersion()` in the `IComponent` vtable (same shift as
-/// [`SLOT_COMPONENT_NAME`]).
-#[cfg(not(target_env = "msvc"))]
-const SLOT_COMPONENT_VERSION: usize = 9;
+impl<I: ComponentInterface> Component<I> {
+    /// The component as its interface, for the functions that take one.
+    #[must_use]
+    pub fn as_ptr(&self) -> *mut I {
+        self.ptr.as_ptr().cast::<I>()
+    }
+}
 
-#[cfg(target_env = "msvc")]
-const SLOT_COMPONENT_VERSION: usize = 8;
+// Written by hand: a derive would require `I: Clone`, and the interface types
+// are opaque handles that are never cloned themselves.
+impl<I: ComponentInterface> Clone for Component<I> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
 
-/// Signature of `componentName()`. The Itanium ABI returns the 8-byte
-/// `StringView` in registers; MSVC returns it through a hidden pointer.
-#[cfg(not(target_env = "msvc"))]
-type ComponentNameFn = unsafe extern "C" fn(*mut ServerComponent) -> StringView;
+impl<I: ComponentInterface> Copy for Component<I> {}
 
-#[cfg(target_env = "msvc")]
-type ComponentNameFn =
-    unsafe extern "thiscall" fn(*mut ServerComponent, *mut StringView) -> *mut StringView;
+impl<I: ComponentInterface> OmpComponentHandle for Component<I> {
+    const UID: UID = I::UID;
 
-/// Signature of `componentVersion()`. Same split as `componentName`: registers
-/// under Itanium, hidden pointer under MSVC.
-#[cfg(not(target_env = "msvc"))]
-type ComponentVersionFn = unsafe extern "C" fn(*mut ServerComponent) -> SemanticVersion;
+    unsafe fn from_raw(ptr: NonNull<ServerComponent>) -> Self {
+        Self {
+            ptr,
+            interface: std::marker::PhantomData,
+        }
+    }
 
-#[cfg(target_env = "msvc")]
-type ComponentVersionFn =
-    unsafe extern "thiscall" fn(*mut ServerComponent, *mut SemanticVersion) -> *mut SemanticVersion;
+    fn as_raw(&self) -> NonNull<ServerComponent> {
+        self.ptr
+    }
+}
+
+slots! {
+    /// Slot of `componentName()` in the `IComponent` vtable.
+    ///
+    /// Itanium emits two destructor slots (D1 + D0) where MSVC emits a single
+    /// scalar deleting one, which shifts every method after it by one. Both
+    /// numbers are confirmed against the official `Timers.so` / `Timers.dll`.
+    SLOT_COMPONENT_NAME: usize = 7, 6;
+}
+
+slots! {
+    /// Slot of `componentVersion()` in the `IComponent` vtable (same shift as
+    /// [`SLOT_COMPONENT_NAME`]).
+    SLOT_COMPONENT_VERSION: usize = 9, 8;
+}
 
 /// Reads the component name by calling `componentName()` ([`SLOT_COMPONENT_NAME`] of the `IComponent` vtable).
 ///
@@ -85,34 +118,10 @@ type ComponentVersionFn =
 /// `None` if the component or vtable are null, the slot is empty, the returned
 /// `StringView` is invalid, or the bytes are not valid UTF-8.
 pub fn component_name<T: OmpComponentHandle>(c: &T) -> Option<String> {
-    let raw = c.as_raw().as_ptr();
-    // The primary vtable (IComponent) is at offset 0 of the object.
-    let (_, slot) = unsafe {
-        super::vtable::secondary_call_target_ptr(raw.cast::<u8>(), 0, SLOT_COMPONENT_NAME)?
-    };
-    let f: ComponentNameFn = unsafe { std::mem::transmute(slot) };
-
-    // The Itanium ABI hands back a struct this small in EAX:EDX; MSVC writes it
-    // through a hidden pointer the caller supplies. Getting this backwards
-    // reads whatever the registers happened to hold — or crashes the server, as
-    // it did when the same mistake was made for `IPlayer::getName`.
-    #[cfg(not(target_env = "msvc"))]
-    let sv = unsafe { f(raw) };
-
-    #[cfg(target_env = "msvc")]
-    let sv = {
-        let mut sv = StringView {
-            data: std::ptr::null(),
-            len: 0,
-        };
-        unsafe { f(raw, &raw mut sv) };
-        sv
-    };
-    if sv.data.is_null() || sv.len == 0 {
-        return None;
-    }
-    let bytes = unsafe { std::slice::from_raw_parts(sv.data, sv.len) };
-    std::str::from_utf8(bytes).ok().map(String::from)
+    let raw = c.as_raw().as_ptr().cast::<u8>();
+    let view =
+        call_vtable_small_struct!(raw, 0, SLOT_COMPONENT_NAME, StringView, StringView::EMPTY)?;
+    unsafe { view.to_owned_string() }
 }
 
 /// Reads the component version by calling `componentVersion()` ([`SLOT_COMPONENT_VERSION`] of the `IComponent` vtable).
@@ -120,22 +129,14 @@ pub fn component_name<T: OmpComponentHandle>(c: &T) -> Option<String> {
 /// Official Open Multiplayer components return the server version (e.g. `1.5.8.3079`).
 /// `None` if the component or vtable are null or the slot is empty.
 pub fn component_version<T: OmpComponentHandle>(c: &T) -> Option<SemanticVersion> {
-    let raw = c.as_raw().as_ptr();
-    let (_, slot) = unsafe {
-        super::vtable::secondary_call_target_ptr(raw.cast::<u8>(), 0, SLOT_COMPONENT_VERSION)?
-    };
-    let f: ComponentVersionFn = unsafe { std::mem::transmute(slot) };
-
-    #[cfg(not(target_env = "msvc"))]
-    let version = unsafe { f(raw) };
-
-    #[cfg(target_env = "msvc")]
-    let version = {
-        let mut version = SemanticVersion::new(0, 0, 0);
-        unsafe { f(raw, &raw mut version) };
-        version
-    };
-    Some(version)
+    let raw = c.as_raw().as_ptr().cast::<u8>();
+    call_vtable_small_struct!(
+        raw,
+        0,
+        SLOT_COMPONENT_VERSION,
+        SemanticVersion,
+        SemanticVersion::new(0, 0, 0)
+    )
 }
 
 #[cfg(test)]

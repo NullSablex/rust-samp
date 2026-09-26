@@ -188,6 +188,151 @@ macro_rules! call_vtable {
 
 pub(crate) use call_vtable;
 
+/// Calls a no-argument virtual method returning a small struct — at most eight
+/// bytes, trivially copyable: a `StringView`, a `SemanticVersion`.
+///
+/// The two ABIs disagree on where such a value comes back. Itanium returns it in
+/// `EAX:EDX`; MSVC writes it through a hidden pointer the caller passes after
+/// `this`, and returns that pointer. Declaring it the wrong way round reads
+/// whatever the registers held — or crashes the server, as it did when
+/// `IPlayer::getName` was first written. This is that rule, written once.
+///
+/// `$empty` is the value the MSVC out-parameter starts as. `None` when the
+/// object, its vtable or the slot is null.
+///
+/// A struct larger than eight bytes (`Vector3`) comes back through a hidden
+/// pointer on both ABIs, which plain [`call_vtable!`] already handles by
+/// declaring the return type.
+macro_rules! call_vtable_small_struct {
+    ($ptr:expr, $offset:expr, $slot:expr, $ret:ty, $empty:expr) => {{
+        #[cfg(not(target_env = "msvc"))]
+        type VirtualFn = unsafe extern "C" fn(*mut u8) -> $ret;
+        #[cfg(target_env = "msvc")]
+        type VirtualFn = unsafe extern "thiscall" fn(*mut u8, *mut $ret) -> *mut $ret;
+
+        match unsafe { $crate::omp::vtable::secondary_call_target_ptr($ptr, $offset, $slot) } {
+            Some((this, f_ptr)) => {
+                let call: VirtualFn = unsafe { std::mem::transmute(f_ptr) };
+                #[cfg(not(target_env = "msvc"))]
+                let value = unsafe { call(this) };
+                #[cfg(target_env = "msvc")]
+                let value = {
+                    let mut out: $ret = $empty;
+                    unsafe { call(this, &raw mut out) };
+                    out
+                };
+                Some(value)
+            }
+            None => None,
+        }
+    }};
+}
+
+pub(crate) use call_vtable_small_struct;
+
+/// Declares constants whose value depends on the C++ ABI, one line each.
+///
+/// Slot indices and subobject offsets differ between Itanium (Linux) and MSVC
+/// (Windows), so every one of them used to be a pair of `#[cfg]`-gated
+/// declarations. This writes the pair from a single line, Itanium first:
+///
+/// ```ignore
+/// slots! {
+///     /// `IPlayer::kick()`.
+///     SLOT_PLAYER_KICK: usize = 6, 5;
+///     pub(crate) ENTITY_OFFSET: isize = 40, 56;
+/// }
+/// ```
+macro_rules! slots {
+    ($(
+        $(#[$meta:meta])*
+        $vis:vis $name:ident: $ty:ty = $itanium:expr, $msvc:expr;
+    )*) => {$(
+        $(#[$meta])*
+        #[cfg(not(target_env = "msvc"))]
+        $vis const $name: $ty = $itanium;
+        $(#[$meta])*
+        #[cfg(target_env = "msvc")]
+        $vis const $name: $ty = $msvc;
+    )*};
+}
+
+pub(crate) use slots;
+
+/// Declares opaque handles for server interfaces the SDK only ever holds by
+/// pointer.
+///
+/// ```ignore
+/// opaque! {
+///     /// Opaque handle for `IPlayerPool*`.
+///     pub IPlayerPool;
+/// }
+/// ```
+macro_rules! opaque {
+    ($(
+        $(#[$meta:meta])*
+        $vis:vis $name:ident;
+    )*) => {$(
+        $(#[$meta])*
+        #[repr(C)]
+        $vis struct $name {
+            _opaque: [u8; 0],
+        }
+    )*};
+}
+
+pub(crate) use opaque;
+
+/// Declares typed wrappers for virtual methods, one entry each.
+///
+/// Most of the SDK's surface is a thin, typed door onto one vtable slot: take
+/// the handle, call the slot, return what the server returns — or a neutral
+/// value when the handle, its vtable or the slot is null. Written out, each of
+/// those was a function signature around a single [`call_vtable!`]. This keeps
+/// the part that carries information — which slot, on which subobject, with
+/// which types, answering what when absent:
+///
+/// ```ignore
+/// virtual_fns! {
+///     /// `IPlayer::getHealth()`.
+///     #[must_use]
+///     pub fn player_health(player: IPlayer) -> f32 = [0, SLOT_PLAYER_GET_HEALTH] or 0.0;
+///
+///     /// `IPlayer::setHealth(float)`.
+///     pub fn player_set_health(player: IPlayer, health: f32) = [0, SLOT_PLAYER_SET_HEALTH];
+/// }
+/// ```
+///
+/// `[offset, slot]` is the subobject offset and the slot inside that
+/// subobject's vtable. A method with no return type needs no `or`. Every
+/// generated function is `unsafe`: the handle must be live, which only the
+/// caller can know.
+macro_rules! virtual_fns {
+    ($(
+        $(#[$meta:meta])*
+        $vis:vis fn $name:ident($this:ident: $handle:ty $(, $arg:ident: $arg_ty:ty)* $(,)?)
+            $(-> $ret:ty)? = [$offset:expr, $slot:expr] $(or $absent:expr)?;
+    )*) => {$(
+        $(#[$meta])*
+        $vis unsafe fn $name($this: *mut $handle $(, $arg: $arg_ty)*) $(-> $ret)? {
+            $crate::omp::vtable::call_vtable!(
+                $this.cast::<u8>(),
+                $offset,
+                $slot,
+                ($($arg_ty),*) -> $crate::omp::vtable::virtual_fns!(@ret $($ret)?),
+                ($($arg),*),
+                $crate::omp::vtable::virtual_fns!(@absent $($absent)?)
+            )
+        }
+    )*};
+    (@ret) => { () };
+    (@ret $ret:ty) => { $ret };
+    (@absent) => { () };
+    (@absent $absent:expr) => { $absent };
+}
+
+pub(crate) use virtual_fns;
+
 /// Function-pointer table for unit-test mocks. Raw pointers are not `Sync`,
 /// so the wrapper lets a mock vtable live in a `static`.
 #[cfg(test)]

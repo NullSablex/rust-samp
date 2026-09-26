@@ -14,10 +14,11 @@
 //! player-scoped `create` among them), so the MSVC column is not simply one
 //! less.
 
+use super::component_api::ComponentInterface;
 use super::players::{ENTITY_OFFSET, SLOT_ENTITY_GET_ID};
 use super::server::ServerComponent;
 use super::types::{Colour, StringView, UID, Vector2, Vector3};
-use super::vtable::call_vtable;
+use super::vtable::{call_vtable, opaque, slots, virtual_fns};
 
 /// UID of the Open Multiplayer `TextDraws` component.
 pub const TEXTDRAWS_COMPONENT_UID: UID = 0x9b5d_c2b1_d15c_992a;
@@ -43,50 +44,21 @@ pub const OBJECTS_COMPONENT_UID: UID = 0x59f8_415f_72da_6160;
 /// UID of the Open Multiplayer `Pickups` component.
 pub const PICKUPS_COMPONENT_UID: UID = 0xcf30_4faa_363d_d971;
 
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_OBJECT: usize = 21;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_OBJECT: usize = 19;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_PICKUP: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_PICKUP: usize = 17;
-
-/// `ITextDrawsComponent::create(Vector2, StringView)` — the text overload,
-/// which MSVC emits after the model one ([17] against [18]).
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_TEXTDRAW: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_TEXTDRAW: usize = 18;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_GANGZONE: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_GANGZONE: usize = 17;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_ACTOR: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_ACTOR: usize = 17;
-
-/// `ITextLabelsComponent::create` — the global overload. Three of them share
-/// the name (global, per player, per vehicle), so MSVC emits the set reversed:
-/// [18], [17], [16] against Itanium's [18], [19], [20].
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_TEXTLABEL: usize = 18;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_TEXTLABEL: usize = 18;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_MENU: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_MENU: usize = 17;
-
-#[cfg(not(target_env = "msvc"))]
-const SLOT_CREATE_CLASS: usize = 19;
-#[cfg(target_env = "msvc")]
-const SLOT_CREATE_CLASS: usize = 17;
+slots! {
+    SLOT_CREATE_OBJECT: usize = 21, 19;
+    SLOT_CREATE_PICKUP: usize = 19, 17;
+    /// `ITextDrawsComponent::create(Vector2, StringView)` — the text overload,
+    /// which MSVC emits after the model one ([17] against [18]).
+    SLOT_CREATE_TEXTDRAW: usize = 19, 18;
+    SLOT_CREATE_GANGZONE: usize = 19, 17;
+    SLOT_CREATE_ACTOR: usize = 19, 17;
+    /// `ITextLabelsComponent::create` — the global overload. Three of them share
+    /// the name (global, per player, per vehicle), so MSVC emits the set reversed:
+    /// [18], [17], [16] against Itanium's [18], [19], [20].
+    SLOT_CREATE_TEXTLABEL: usize = 18, 18;
+    SLOT_CREATE_MENU: usize = 19, 17;
+    SLOT_CREATE_CLASS: usize = 19, 17;
+}
 
 /// How many weapon slots a spawn class carries (`MAX_WEAPON_SLOTS`).
 pub const MAX_WEAPON_SLOTS: usize = 13;
@@ -99,76 +71,31 @@ pub struct WeaponSlot {
     pub ammo: u32,
 }
 
-/// Opaque handle for `ITextLabelsComponent*`.
-#[repr(C)]
-pub struct ITextLabelsComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `ITextLabel*`.
-#[repr(C)]
-pub struct ITextLabel {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IMenusComponent*`.
-#[repr(C)]
-pub struct IMenusComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IMenu*`.
-#[repr(C)]
-pub struct IMenu {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IClassesComponent*`.
-#[repr(C)]
-pub struct IClassesComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IClass*`.
-#[repr(C)]
-pub struct IClass {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `ITextDrawsComponent*`.
-#[repr(C)]
-pub struct ITextDrawsComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `ITextDraw*`.
-#[repr(C)]
-pub struct ITextDraw {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IGangZonesComponent*`.
-#[repr(C)]
-pub struct IGangZonesComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IGangZone*`.
-#[repr(C)]
-pub struct IGangZone {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IActorsComponent*`.
-#[repr(C)]
-pub struct IActorsComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IActor*`.
-#[repr(C)]
-pub struct IActor {
-    _opaque: [u8; 0],
+opaque! {
+    /// Opaque handle for `ITextLabelsComponent*`.
+    pub ITextLabelsComponent;
+    /// Opaque handle for `ITextLabel*`.
+    pub ITextLabel;
+    /// Opaque handle for `IMenusComponent*`.
+    pub IMenusComponent;
+    /// Opaque handle for `IMenu*`.
+    pub IMenu;
+    /// Opaque handle for `IClassesComponent*`.
+    pub IClassesComponent;
+    /// Opaque handle for `IClass*`.
+    pub IClass;
+    /// Opaque handle for `ITextDrawsComponent*`.
+    pub ITextDrawsComponent;
+    /// Opaque handle for `ITextDraw*`.
+    pub ITextDraw;
+    /// Opaque handle for `IGangZonesComponent*`.
+    pub IGangZonesComponent;
+    /// Opaque handle for `IGangZone*`.
+    pub IGangZone;
+    /// Opaque handle for `IActorsComponent*`.
+    pub IActorsComponent;
+    /// Opaque handle for `IActor*`.
+    pub IActor;
 }
 
 /// The rectangle a gang zone covers, as `GangZonePos` declares it.
@@ -179,22 +106,13 @@ pub struct GangZonePos {
     pub max: Vector2,
 }
 
-/// Opaque handle for `IObjectsComponent*`.
-#[repr(C)]
-pub struct IObjectsComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IPickupsComponent*`.
-#[repr(C)]
-pub struct IPickupsComponent {
-    _opaque: [u8; 0],
-}
-
-/// Opaque handle for `IPickup*`.
-#[repr(C)]
-pub struct IPickup {
-    _opaque: [u8; 0],
+opaque! {
+    /// Opaque handle for `IObjectsComponent*`.
+    pub IObjectsComponent;
+    /// Opaque handle for `IPickupsComponent*`.
+    pub IPickupsComponent;
+    /// Opaque handle for `IPickup*`.
+    pub IPickup;
 }
 
 /// What a pickup does when a player walks into it (`PickupType` in
@@ -207,6 +125,10 @@ pub type PickupType = i32;
 /// # Safety
 /// `component` must be what `queryComponent(OBJECTS_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IObjectsComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_objects_component(component: *mut ServerComponent) -> *mut IObjectsComponent {
     component.cast::<IObjectsComponent>()
 }
@@ -216,56 +138,31 @@ pub unsafe fn as_objects_component(component: *mut ServerComponent) -> *mut IObj
 /// # Safety
 /// `component` must be what `queryComponent(PICKUPS_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IPickupsComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_pickups_component(component: *mut ServerComponent) -> *mut IPickupsComponent {
     component.cast::<IPickupsComponent>()
 }
 
-/// `IObjectsComponent::create(modelID, position, rotation, drawDistance)`.
-///
-/// A `draw_distance` of `0.0` asks the server for its default. Returns null
-/// when the object pool is full.
-///
-/// # Safety
-/// `component` must be a live `IObjectsComponent`.
-#[must_use]
-pub unsafe fn create_object(
-    component: *mut IObjectsComponent,
-    model: i32,
-    position: Vector3,
-    rotation: Vector3,
-    draw_distance: f32,
-) -> *mut super::players::IObject {
-    call_vtable!(
-        component.cast::<u8>(),
-        0,
-        SLOT_CREATE_OBJECT,
-        (i32, Vector3, Vector3, f32) -> *mut super::players::IObject,
-        (model, position, rotation, draw_distance),
-        std::ptr::null_mut()
-    )
-}
+virtual_fns! {
+    /// `IObjectsComponent::create(modelID, position, rotation, drawDistance)`.
+    ///
+    /// A `draw_distance` of `0.0` asks the server for its default. Returns null
+    /// when the object pool is full.
+    ///
+    /// # Safety
+    /// `component` must be a live `IObjectsComponent`.
+    #[must_use]
+    pub fn create_object(component: IObjectsComponent, model: i32, position: Vector3, rotation: Vector3, draw_distance: f32) -> *mut super::players::IObject = [0, SLOT_CREATE_OBJECT] or std::ptr::null_mut();
 
-/// `IPickupsComponent::create(modelId, type, pos, virtualWorld, isStatic)`.
-///
-/// # Safety
-/// `component` must be a live `IPickupsComponent`.
-#[must_use]
-pub unsafe fn create_pickup(
-    component: *mut IPickupsComponent,
-    model: i32,
-    pickup_type: PickupType,
-    position: Vector3,
-    virtual_world: u32,
-    is_static: bool,
-) -> *mut IPickup {
-    call_vtable!(
-        component.cast::<u8>(),
-        0,
-        SLOT_CREATE_PICKUP,
-        (i32, PickupType, Vector3, u32, bool) -> *mut IPickup,
-        (model, pickup_type, position, virtual_world, is_static),
-        std::ptr::null_mut()
-    )
+    /// `IPickupsComponent::create(modelId, type, pos, virtualWorld, isStatic)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IPickupsComponent`.
+    #[must_use]
+    pub fn create_pickup(component: IPickupsComponent, model: i32, pickup_type: PickupType, position: Vector3, virtual_world: u32, is_static: bool) -> *mut IPickup = [0, SLOT_CREATE_PICKUP] or std::ptr::null_mut();
 }
 
 /// Casts a component handle obtained by UID into the text draws component.
@@ -273,6 +170,10 @@ pub unsafe fn create_pickup(
 /// # Safety
 /// `component` must be what `queryComponent(TEXTDRAWS_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<ITextDrawsComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_textdraws_component(component: *mut ServerComponent) -> *mut ITextDrawsComponent {
     component.cast::<ITextDrawsComponent>()
 }
@@ -282,6 +183,10 @@ pub unsafe fn as_textdraws_component(component: *mut ServerComponent) -> *mut IT
 /// # Safety
 /// `component` must be what `queryComponent(GANGZONES_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IGangZonesComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_gangzones_component(component: *mut ServerComponent) -> *mut IGangZonesComponent {
     component.cast::<IGangZonesComponent>()
 }
@@ -291,6 +196,10 @@ pub unsafe fn as_gangzones_component(component: *mut ServerComponent) -> *mut IG
 /// # Safety
 /// `component` must be what `queryComponent(ACTORS_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IActorsComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_actors_component(component: *mut ServerComponent) -> *mut IActorsComponent {
     component.cast::<IActorsComponent>()
 }
@@ -307,10 +216,7 @@ pub unsafe fn create_textdraw(
     position: Vector2,
     text: &str,
 ) -> *mut ITextDraw {
-    let text = StringView {
-        data: text.as_ptr(),
-        len: text.len(),
-    };
+    let text = StringView::of(text);
     call_vtable!(
         component.cast::<u8>(),
         0,
@@ -321,44 +227,20 @@ pub unsafe fn create_textdraw(
     )
 }
 
-/// `IGangZonesComponent::create(pos)`.
-///
-/// # Safety
-/// `component` must be a live `IGangZonesComponent`.
-#[must_use]
-pub unsafe fn create_gangzone(
-    component: *mut IGangZonesComponent,
-    area: GangZonePos,
-) -> *mut IGangZone {
-    call_vtable!(
-        component.cast::<u8>(),
-        0,
-        SLOT_CREATE_GANGZONE,
-        (GangZonePos) -> *mut IGangZone,
-        (area),
-        std::ptr::null_mut()
-    )
-}
+virtual_fns! {
+    /// `IGangZonesComponent::create(pos)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IGangZonesComponent`.
+    #[must_use]
+    pub fn create_gangzone(component: IGangZonesComponent, area: GangZonePos) -> *mut IGangZone = [0, SLOT_CREATE_GANGZONE] or std::ptr::null_mut();
 
-/// `IActorsComponent::create(skin, pos, angle)` — a static NPC-looking actor.
-///
-/// # Safety
-/// `component` must be a live `IActorsComponent`.
-#[must_use]
-pub unsafe fn create_actor(
-    component: *mut IActorsComponent,
-    skin: i32,
-    position: Vector3,
-    angle: f32,
-) -> *mut IActor {
-    call_vtable!(
-        component.cast::<u8>(),
-        0,
-        SLOT_CREATE_ACTOR,
-        (i32, Vector3, f32) -> *mut IActor,
-        (skin, position, angle),
-        std::ptr::null_mut()
-    )
+    /// `IActorsComponent::create(skin, pos, angle)` — a static NPC-looking actor.
+    ///
+    /// # Safety
+    /// `component` must be a live `IActorsComponent`.
+    #[must_use]
+    pub fn create_actor(component: IActorsComponent, skin: i32, position: Vector3, angle: f32) -> *mut IActor = [0, SLOT_CREATE_ACTOR] or std::ptr::null_mut();
 }
 
 /// Casts a component handle obtained by UID into the text labels component.
@@ -366,6 +248,10 @@ pub unsafe fn create_actor(
 /// # Safety
 /// `component` must be what `queryComponent(TEXTLABELS_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<ITextLabelsComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_textlabels_component(
     component: *mut ServerComponent,
 ) -> *mut ITextLabelsComponent {
@@ -377,6 +263,10 @@ pub unsafe fn as_textlabels_component(
 /// # Safety
 /// `component` must be what `queryComponent(MENUS_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IMenusComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_menus_component(component: *mut ServerComponent) -> *mut IMenusComponent {
     component.cast::<IMenusComponent>()
 }
@@ -386,6 +276,10 @@ pub unsafe fn as_menus_component(component: *mut ServerComponent) -> *mut IMenus
 /// # Safety
 /// `component` must be what `queryComponent(CLASSES_COMPONENT_UID)` returned.
 #[must_use]
+#[deprecated(
+    since = "3.6.0",
+    note = "the UID and the cast can disagree; use `omp_query::<Component<IClassesComponent>>()` and `Component::as_ptr`"
+)]
 pub unsafe fn as_classes_component(component: *mut ServerComponent) -> *mut IClassesComponent {
     component.cast::<IClassesComponent>()
 }
@@ -408,10 +302,7 @@ pub unsafe fn create_textlabel(
     virtual_world: i32,
     line_of_sight: bool,
 ) -> *mut ITextLabel {
-    let text = StringView {
-        data: text.as_ptr(),
-        len: text.len(),
-    };
+    let text = StringView::of(text);
     call_vtable!(
         component.cast::<u8>(),
         0,
@@ -435,10 +326,7 @@ pub unsafe fn create_menu(
     column1_width: f32,
     column2_width: f32,
 ) -> *mut IMenu {
-    let title = StringView {
-        data: title.as_ptr(),
-        len: title.len(),
-    };
+    let title = StringView::of(title);
     call_vtable!(
         component.cast::<u8>(),
         0,
@@ -476,15 +364,49 @@ pub unsafe fn create_class(
     )
 }
 
-/// `IEntity::getID()` for any entity that carries the subobject — an object, a
-/// pickup, a vehicle or a player.
-///
-/// # Safety
-/// `entity` must point at an `IExtensible`-derived interface that also inherits
-/// `IEntity`, which every entity in the SDK does.
-#[must_use]
-pub unsafe fn entity_id(entity: *mut u8) -> i32 {
-    call_vtable!(entity, ENTITY_OFFSET, SLOT_ENTITY_GET_ID, () -> i32, (), -1)
+virtual_fns! {
+    /// `IEntity::getID()` for any entity that carries the subobject — an object, a
+    /// pickup, a vehicle or a player.
+    ///
+    /// # Safety
+    /// `entity` must point at an `IExtensible`-derived interface that also inherits
+    /// `IEntity`, which every entity in the SDK does.
+    #[must_use]
+    pub fn entity_id(entity: u8) -> i32 = [ENTITY_OFFSET, SLOT_ENTITY_GET_ID] or -1;
+}
+
+// Each interface knows its own UID, so `omp_query::<Component<I>>()` finds it.
+
+impl ComponentInterface for IObjectsComponent {
+    const UID: UID = OBJECTS_COMPONENT_UID;
+}
+
+impl ComponentInterface for IPickupsComponent {
+    const UID: UID = PICKUPS_COMPONENT_UID;
+}
+
+impl ComponentInterface for ITextDrawsComponent {
+    const UID: UID = TEXTDRAWS_COMPONENT_UID;
+}
+
+impl ComponentInterface for IGangZonesComponent {
+    const UID: UID = GANGZONES_COMPONENT_UID;
+}
+
+impl ComponentInterface for IActorsComponent {
+    const UID: UID = ACTORS_COMPONENT_UID;
+}
+
+impl ComponentInterface for ITextLabelsComponent {
+    const UID: UID = TEXTLABELS_COMPONENT_UID;
+}
+
+impl ComponentInterface for IMenusComponent {
+    const UID: UID = MENUS_COMPONENT_UID;
+}
+
+impl ComponentInterface for IClassesComponent {
+    const UID: UID = CLASSES_COMPONENT_UID;
 }
 
 #[cfg(test)]
@@ -565,11 +487,7 @@ mod tests {
 
     #[test]
     fn null_components_create_nothing() {
-        let zero = Vector3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let zero = Vector3::ZERO;
         assert!(unsafe { create_object(std::ptr::null_mut(), 1337, zero, zero, 0.0) }.is_null());
         assert!(unsafe { create_pickup(std::ptr::null_mut(), 1274, 1, zero, 0, true) }.is_null());
     }

@@ -15,11 +15,7 @@ use crate::omp::types::{Colour, Vector2, Vector3};
 use crate::omp::vehicles::*;
 use crate::omp::world::*;
 
-const ZERO: Vector3 = Vector3 {
-    x: 0.0,
-    y: 0.0,
-    z: 0.0,
-};
+const ZERO: Vector3 = Vector3::ZERO;
 
 fn null<T>() -> *mut T {
     std::ptr::null_mut()
