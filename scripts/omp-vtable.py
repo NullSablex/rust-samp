@@ -163,7 +163,11 @@ def pure_virtuals(source: pathlib.Path, includes: list[str], class_name: str) ->
     these interfaces inherit from others (`IExtensible`, `IReadOnlyPool<T>`),
     and whatever those leave pure has to be overridden too."""
     ast = subprocess.run(
-        ["clang++", "-std=c++17", *includes, "-Xclang", "-ast-dump=json", "-fsyntax-only", str(source)],
+        # For the target, not the host: on x86-64 `va_list` is an array that
+        # decays to `__va_list_tag *`, which no i686 compiler knows; and type
+        # sizes should be the ones the server was built with.
+        ["clang++", "-std=c++17", "--target=i686-pc-linux-gnu", *includes,
+         "-Xclang", "-ast-dump=json", "-fsyntax-only", str(source)],
         capture_output=True,
         text=True,
     ).stdout
@@ -222,6 +226,17 @@ def pure_virtuals(source: pathlib.Path, includes: list[str], class_name: str) ->
             name = member["name"]
             head, _, tail = signature.partition("(")
             args, _, qualifiers = tail.rpartition(")")
+            # The parameters as the header spells them, when the AST has them:
+            # the function type is desugared for the host, so a `va_list` there
+            # reads `__va_list_tag *`, which the MSVC target does not know.
+            spelled = [
+                p["type"]["qualType"]
+                for p in member.get("inner", ())
+                if p.get("kind") == "ParmVarDecl"
+            ]
+            if spelled:
+                variadic = args.rstrip().endswith("...")
+                args = ", ".join(spelled) + (", ..." if variadic else "")
             rendered = f"{head.strip()} {name}({args}) {qualifiers.strip()}".strip()
             if rendered not in seen:
                 seen.add(rendered)
