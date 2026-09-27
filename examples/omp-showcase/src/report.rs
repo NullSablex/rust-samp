@@ -8,20 +8,22 @@
 use std::fmt::Debug;
 
 use log::{debug, info, warn};
+use samp::omp::{Colour, Vector3, Vector4};
 
 /// A value different from `self`, to set and read back.
 ///
 /// Small and valid for most setters: interior 3, world 3, team 3, weather 3 —
 /// a round trip is about the slot, not about exploring the value's range.
-pub trait Other: Copy {
-    fn other(self) -> Self;
+pub trait Other {
+    #[must_use]
+    fn other(&self) -> Self;
 }
 
 macro_rules! other_integer {
     ($($ty:ty),*) => {$(
         impl Other for $ty {
-            fn other(self) -> Self {
-                if self == 3 { 4 } else { 3 }
+            fn other(&self) -> Self {
+                if *self == 3 { 4 } else { 3 }
             }
         }
     )*};
@@ -30,7 +32,7 @@ macro_rules! other_integer {
 other_integer!(i8, u8, i16, u16, i32, u32, i64, u64);
 
 impl Other for f32 {
-    fn other(self) -> Self {
+    fn other(&self) -> Self {
         if (self - 1.5).abs() < f32::EPSILON {
             2.5
         } else {
@@ -40,8 +42,45 @@ impl Other for f32 {
 }
 
 impl Other for bool {
-    fn other(self) -> Self {
-        !self
+    fn other(&self) -> Self {
+        !*self
+    }
+}
+
+impl Other for Vector3 {
+    fn other(&self) -> Self {
+        Vector3 {
+            x: self.x.other(),
+            y: self.y + 2.0,
+            z: self.z - 1.0,
+        }
+    }
+}
+
+impl Other for Vector4 {
+    fn other(&self) -> Self {
+        Vector4 {
+            x: self.x.other(),
+            y: self.y + 2.0,
+            z: self.z - 1.0,
+            w: self.w + 3.0,
+        }
+    }
+}
+
+impl Other for Colour {
+    fn other(&self) -> Self {
+        Colour::rgba(self.r ^ 0x55, self.g ^ 0x0f, self.b ^ 0xf0, 0xff)
+    }
+}
+
+impl Other for String {
+    fn other(&self) -> Self {
+        if self == "round trip" {
+            "round trip, again".to_owned()
+        } else {
+            "round trip".to_owned()
+        }
     }
 }
 
@@ -63,7 +102,22 @@ macro_rules! close_exactly {
     )*};
 }
 
-close_exactly!(bool, i8, u8, i16, u16, i32, u32, i64, u64);
+close_exactly!(bool, i8, u8, i16, u16, i32, u32, i64, u64, Colour, String);
+
+impl Close for Vector3 {
+    fn close_to(self, other: Self) -> bool {
+        self.x.close_to(other.x) && self.y.close_to(other.y) && self.z.close_to(other.z)
+    }
+}
+
+impl Close for Vector4 {
+    fn close_to(self, other: Self) -> bool {
+        self.x.close_to(other.x)
+            && self.y.close_to(other.y)
+            && self.z.close_to(other.z)
+            && self.w.close_to(other.w)
+    }
+}
 
 impl Close for f32 {
     fn close_to(self, other: Self) -> bool {
@@ -73,9 +127,15 @@ impl Close for f32 {
 
 #[derive(Default)]
 pub struct Report {
-    passed: usize,
-    ignored: Vec<String>,
+    passed: Vec<String>,
+    ignored: Vec<(String, String)>,
     wrong: Vec<String>,
+}
+
+/// `npc_fighting_style (valid)` -> `npc_fighting_style`: a check run under the
+/// conditions the setter needs is named after the plain one, plus a note.
+fn base_name(name: &str) -> &str {
+    name.split(" (").next().unwrap_or(name)
 }
 
 impl Report {
@@ -88,12 +148,14 @@ impl Report {
     }
 
     /// Records one set/get round trip.
-    pub fn round_trip<T: Close + Debug + Copy>(&mut self, name: &str, before: T, want: T, got: T) {
-        if got.close_to(want) {
-            self.passed += 1;
+    pub fn round_trip<T: Close + Debug + Clone>(&mut self, name: &str, before: T, want: T, got: T) {
+        if got.clone().close_to(want.clone()) {
+            self.passed.push(name.to_owned());
         } else if got == before {
-            self.ignored
-                .push(format!("{name}: set {want:?}, stayed {before:?}"));
+            self.ignored.push((
+                name.to_owned(),
+                format!("{name}: set {want:?}, stayed {before:?}"),
+            ));
         } else {
             self.wrong.push(format!(
                 "{name}: was {before:?}, set {want:?}, read {got:?}"
@@ -105,22 +167,36 @@ impl Report {
     pub fn check(&mut self, name: &str, ok: bool, detail: impl Debug) {
         debug!("[showcase] = {name}");
         if ok {
-            self.passed += 1;
+            self.passed.push(name.to_owned());
         } else {
             self.wrong.push(format!("{name}: {detail:?}"));
         }
     }
 
     /// The totals, then every case that was not a clean pass.
+    ///
+    /// An ignored setter whose check under valid conditions passed is marked
+    /// as such, so the log says which ignores are explained and which are not.
     pub fn log(&self) {
+        let proven = |name: &str| {
+            self.passed
+                .iter()
+                .any(|p| p != name && base_name(p) == base_name(name))
+        };
+        let unexplained = self.ignored.iter().filter(|(n, _)| !proven(n)).count();
         info!(
-            "[showcase] {} passed, {} ignored by the setter, {} wrong",
-            self.passed,
+            "[showcase] {} passed, {} ignored by the setter ({} of them proven under valid conditions), {} wrong",
+            self.passed.len(),
             self.ignored.len(),
+            self.ignored.len() - unexplained,
             self.wrong.len()
         );
-        for line in &self.ignored {
-            info!("[showcase]   ignored  {line}");
+        for (name, line) in &self.ignored {
+            if proven(name) {
+                info!("[showcase]   ignored  {line} — proven under valid conditions");
+            } else {
+                info!("[showcase]   ignored  {line}");
+            }
         }
         for line in &self.wrong {
             warn!("[showcase]   WRONG    {line}");

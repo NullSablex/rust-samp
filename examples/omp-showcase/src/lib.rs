@@ -30,15 +30,24 @@ mod round_trips;
 
 use report::Report;
 
-/// How long to wait before the per-player part. Components attach their
-/// per-player data when the player connects, and an NPC created during
-/// `on_omp_ready` connects through its own network afterwards.
-const WAIT_BEFORE_PER_PLAYER: std::time::Duration = std::time::Duration::from_secs(3);
+/// When the per-NPC checks run, counted from the first tick. The NPC connects
+/// through its own network after `on_omp_ready`; its first driver sync sets the
+/// vehicle's `driver`; components attach their per-player data on connect.
+const DRIVER_SYNCED: std::time::Duration = std::time::Duration::from_secs(1);
+const PLAYER_SYNCED: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// The NPC and what it was left with for the timed checks.
+struct Npc {
+    component: *mut omp::INPCComponent,
+    npc: *mut omp::INPC,
+    vehicle: *mut omp::IVehicle,
+}
 
 struct Showcase {
     report: Report,
-    npc: Option<(*mut omp::INPCComponent, *mut omp::INPC)>,
+    npc: Option<Npc>,
     started: Option<std::time::Instant>,
+    driven: bool,
     finished: bool,
 }
 
@@ -54,26 +63,85 @@ impl SampPlugin for Showcase {
         if self.finished {
             return;
         }
-        let started = *self.started.get_or_insert_with(std::time::Instant::now);
-        if started.elapsed() < WAIT_BEFORE_PER_PLAYER {
+        let elapsed = self
+            .started
+            .get_or_insert_with(std::time::Instant::now)
+            .elapsed();
+        let Some(npc) = self.npc.as_ref() else {
+            return;
+        };
+
+        if !self.driven && elapsed >= DRIVER_SYNCED {
+            self.driven = true;
+            unsafe { with_driver(npc, &mut self.report) };
+        }
+        if elapsed < PLAYER_SYNCED {
             return;
         }
-        if let Some((component, npc)) = self.npc.take() {
-            let player = unsafe { omp::npc_player(npc) };
-            if !player.is_null() {
-                let at = Vector3 {
-                    x: 1.0,
-                    y: 2.0,
-                    z: 3.0,
-                };
-                unsafe { per_player(player, at, &mut self.report) };
-            }
-            // A connected NPC keeps the server from shutting down cleanly, and
-            // destroying it is one more wrapper exercised.
-            self.report.begin("npcs_destroy");
-            unsafe { omp::npcs_destroy(component, npc) };
+
+        let npc = self.npc.take().expect("checked above");
+        let player = unsafe { omp::npc_player(npc.npc) };
+        if !player.is_null() {
+            let at = Vector3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            };
+            unsafe { per_player(player, at, &mut self.report) };
+            // Set on the NPC by `in_valid_state`; its sync has gone out.
+            let action = unsafe { omp::player_action(player) };
+            self.report
+                .round_trip("player_action getter (from the NPC's sync)", 0, 1, action);
+            let held = unsafe { omp::npc_weapon(npc.npc) };
+            let weapon = unsafe { omp::player_armed_weapon(player) };
+            self.report.round_trip(
+                &format!("player_armed_weapon getter (from the NPC's sync; the NPC holds {held})"),
+                0,
+                24,
+                weapon,
+            );
         }
+        // A connected NPC keeps the server from shutting down cleanly, and
+        // destroying it is one more wrapper exercised.
+        self.report.begin("npcs_destroy");
+        unsafe { omp::npcs_destroy(npc.component, npc.npc) };
         self.finish();
+    }
+}
+
+/// What needs the vehicle to have registered the NPC as its driver.
+///
+/// # Safety
+/// The NPC and its vehicle must be live.
+unsafe fn with_driver(npc: &Npc, report: &mut Report) {
+    if npc.vehicle.is_null() {
+        return;
+    }
+    unsafe {
+        // Kept only with a driver (`Vehicle::setAngularVelocity`); linear
+        // velocity needs one too but is only sent to the client.
+        let spin = Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.5,
+        };
+        omp::vehicle_set_angular_velocity(npc.vehicle, spin);
+        let got = omp::vehicle_angular_velocity(npc.vehicle);
+        report.round_trip(
+            "vehicle_angular_velocity (with a driver)",
+            Vector3::ZERO,
+            spin,
+            got,
+        );
+
+        let left = omp::npc_remove_from_vehicle(npc.npc);
+        report.check("npc_remove_from_vehicle", left, "refused");
+
+        // Armed only now: the NPC's real spawn happens after it connects, and
+        // `NPC::spawn` ends with `setWeapon(PlayerWeapon_Fist)` — a weapon given
+        // before that is taken away again. On foot, its next sync reports it.
+        omp::npc_set_weapon(npc.npc, 24);
+        omp::npc_set_ammo(npc.npc, 50);
     }
 }
 
@@ -91,7 +159,7 @@ impl Showcase {
 /// # Safety
 /// Called once the server has every component ready.
 #[allow(clippy::too_many_lines)]
-unsafe fn exercise(report: &mut Report) -> Option<(*mut omp::INPCComponent, *mut omp::INPC)> {
+unsafe fn exercise(report: &mut Report) -> Option<Npc> {
     let at = Vector3 {
         x: 1.0,
         y: 2.0,
@@ -230,6 +298,7 @@ unsafe fn exercise(report: &mut Report) -> Option<(*mut omp::INPCComponent, *mut
             unsafe { round_trips::round_trips_npc(npc, report) };
 
             let player = unsafe { omp::npc_player(npc) };
+            let mut vehicle = std::ptr::null_mut();
             report.check("npc_player", !player.is_null(), "null");
             if !player.is_null() {
                 report.check(
@@ -238,11 +307,140 @@ unsafe fn exercise(report: &mut Report) -> Option<(*mut omp::INPCComponent, *mut
                     "not a bot",
                 );
                 unsafe { round_trips::round_trips_player(player, report) };
+                vehicle = unsafe { in_valid_state(npc, player, report) };
             }
-            return Some((c.as_ptr(), npc));
+            return Some(Npc {
+                component: c.as_ptr(),
+                npc,
+                vehicle,
+            });
         }
     }
     None
+}
+
+/// The setters the generic round trips report as ignored, exercised under the
+/// conditions the server's own code sets for them. Each one's rule, from
+/// open.mp's `player_impl.hpp` and `NPCs/NPC/npc.cpp`:
+///
+/// - a fighting style must be one of 4, 5, 6, 7, 15 or 16 — anything else is
+///   dropped, and the generic round trip tries 3;
+/// - `setAmmoInClip` keeps `min(ammo, clip size of the current weapon)`, and a
+///   bare fist has a clip of 0;
+/// - the NPC's vehicle state is stored only `if (isInVehicle())`.
+///
+/// `setAction`, `setArmedWeapon` and `setVelocity` are different: they only send
+/// an RPC to the client, and the getters read what the client syncs back. An
+/// NPC's sync carries its own weapon and special action and ignores those RPCs,
+/// so for an NPC-backed player the getters are proven the other way round: the
+/// NPC sets them, and [`Showcase`] reads them back from the player afterwards.
+///
+/// # Safety
+/// `npc` and `player` must be live, and the same NPC.
+unsafe fn in_valid_state(
+    npc: *mut omp::INPC,
+    player: *mut omp::IPlayer,
+    report: &mut Report,
+) -> *mut omp::IVehicle {
+    unsafe {
+        omp::npc_set_fighting_style(npc, 5); // Boxing
+        report.round_trip(
+            "npc_fighting_style (valid)",
+            4,
+            5,
+            omp::npc_fighting_style(npc),
+        );
+        omp::player_set_fighting_style(player, 6); // KungFu
+        report.round_trip(
+            "player_fighting_style (valid)",
+            5,
+            6,
+            omp::player_fighting_style(player),
+        );
+
+        omp::npc_set_weapon(npc, 24); // Desert Eagle, a clip of 7
+        omp::npc_set_ammo(npc, 50);
+        omp::npc_set_ammo_in_clip(npc, 3);
+        report.round_trip("npc_ammo_in_clip (armed)", 0, 3, omp::npc_ammo_in_clip(npc));
+        // And the clamp the source describes: more than a clip is a full clip.
+        omp::npc_set_ammo_in_clip(npc, 100);
+        let clip = omp::npc_weapon_actual_clip_size(npc, 24);
+        report.round_trip(
+            "npc_ammo_in_clip (clamped)",
+            3,
+            clip,
+            omp::npc_ammo_in_clip(npc),
+        );
+    }
+
+    let Some(vehicles) = omp_query::<Component<omp::IVehiclesComponent>>() else {
+        return std::ptr::null_mut();
+    };
+    let at = Vector3 {
+        x: 5.0,
+        y: 5.0,
+        z: 3.0,
+    };
+    let vehicle =
+        unsafe { omp::create_vehicle(vehicles.as_ptr(), 411, at, 0.0, -1, -1, -1, false) };
+    if vehicle.is_null() {
+        report.check("vehicle for the NPC", false, "null");
+        return vehicle;
+    }
+    unsafe {
+        let seated = omp::npc_put_in_vehicle(npc, vehicle, 0);
+        report.check("npc_put_in_vehicle", seated, "refused");
+        report.check(
+            "npc_vehicle",
+            omp::npc_vehicle(npc) == vehicle,
+            omp::npc_vehicle(npc),
+        );
+
+        omp::npc_set_vehicle_gear_state(npc, 1);
+        report.round_trip(
+            "npc_vehicle_gear_state (in a vehicle)",
+            0,
+            1,
+            omp::npc_vehicle_gear_state(npc),
+        );
+        omp::npc_set_vehicle_health(npc, 500.0);
+        report.round_trip(
+            "npc_vehicle_health (in a vehicle)",
+            0.0,
+            500.0,
+            omp::npc_vehicle_health(npc),
+        );
+        omp::npc_set_vehicle_hydra_thrusters(npc, 2);
+        report.round_trip(
+            "npc_vehicle_hydra_thrusters (in a vehicle)",
+            0,
+            2,
+            omp::npc_vehicle_hydra_thrusters(npc),
+        );
+        omp::npc_set_vehicle_train_speed(npc, 1.5);
+        report.round_trip(
+            "npc_vehicle_train_speed (in a vehicle)",
+            0.0,
+            1.5,
+            omp::npc_vehicle_train_speed(npc),
+        );
+        // The NPC's setter also writes the vehicle's own health.
+        report.round_trip(
+            "vehicle_health (through the NPC)",
+            1000.0,
+            500.0,
+            omp::vehicle_health(vehicle),
+        );
+
+        // The player's action and weapon come from the NPC's own sync, which
+        // ignores the player-level RPCs: set them on the NPC, and read them
+        // back from the player once a sync has gone out — see `on_tick`.
+        omp::npc_set_special_action(npc, 1); // SpecialAction_Duck
+        let _ = player;
+    }
+    // Left in the vehicle: its `driver` is set when the NPC's first driver sync
+    // arrives, and angular velocity is only kept with a driver — `on_tick`.
+    vehicle
 }
 
 /// The per-player extensions, reached through the player's extension map.
@@ -313,6 +511,7 @@ initialize_plugin!(
             report: Report::default(),
             npc: None,
             started: None,
+            driven: false,
             finished: false,
         }
     }

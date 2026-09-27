@@ -294,6 +294,19 @@ pub unsafe fn round_trips_player(handle: *mut IPlayer, report: &mut Report) {
         );
         player_set_armed_weapon(handle, before);
     }
+    report.begin("player_camera_position");
+    unsafe {
+        let before: Vector3 = player_camera_position(handle);
+        let want = before.other();
+        player_set_camera_position(handle, want);
+        report.round_trip(
+            "player_camera_position",
+            before,
+            want,
+            player_camera_position(handle),
+        );
+        player_set_camera_position(handle, before);
+    }
     report.begin("player_fighting_style");
     unsafe {
         let before: i32 = player_fighting_style(handle);
@@ -314,6 +327,36 @@ pub unsafe fn round_trips_player(handle: *mut IPlayer, report: &mut Report) {
         player_set_gravity(handle, want);
         report.round_trip("player_gravity", before, want, player_gravity(handle));
         player_set_gravity(handle, before);
+    }
+    report.begin("player_shop_name");
+    unsafe {
+        let before = player_shop_name(handle).unwrap_or_default();
+        let want = before.other();
+        player_set_shop_name(handle, StringView::of(&want));
+        let got = player_shop_name(handle).unwrap_or_default();
+        report.round_trip("player_shop_name", before.clone(), want, got);
+        player_set_shop_name(handle, StringView::of(&before));
+    }
+    report.begin("player_velocity");
+    unsafe {
+        let before: Vector3 = player_velocity(handle);
+        let want = before.other();
+        player_set_velocity(handle, want);
+        report.round_trip("player_velocity", before, want, player_velocity(handle));
+        player_set_velocity(handle, before);
+    }
+    report.begin("player_world_bounds");
+    unsafe {
+        let before: Vector4 = player_world_bounds(handle);
+        let want = before.other();
+        player_set_world_bounds(handle, want);
+        report.round_trip(
+            "player_world_bounds",
+            before,
+            want,
+            player_world_bounds(handle),
+        );
+        player_set_world_bounds(handle, before);
     }
 }
 
@@ -406,11 +449,40 @@ pub unsafe fn round_trips_player_object(handle: *mut IPlayerObject, report: &mut
     }
 }
 
+/// Every setter of `IPlayerTextDraw` that has a matching getter.
+///
+/// # Safety
+/// `handle` must be a live `IPlayerTextDraw`.
+pub unsafe fn round_trips_player_text_draw(handle: *mut IPlayerTextDraw, report: &mut Report) {
+    report.begin("player_textdraw_text");
+    unsafe {
+        let before = player_textdraw_text(handle).unwrap_or_default();
+        let want = before.other();
+        player_textdraw_set_text(handle, StringView::of(&want));
+        let got = player_textdraw_text(handle).unwrap_or_default();
+        report.round_trip("player_textdraw_text", before.clone(), want, got);
+        player_textdraw_set_text(handle, StringView::of(&before));
+    }
+}
+
 /// Every setter of `IPlayerTextLabel` that has a matching getter.
 ///
 /// # Safety
 /// `handle` must be a live `IPlayerTextLabel`.
 pub unsafe fn round_trips_player_text_label(handle: *mut IPlayerTextLabel, report: &mut Report) {
+    report.begin("player_textlabel_colour");
+    unsafe {
+        let before = player_textlabel_colour(handle).unwrap_or_default();
+        let want = before.other();
+        player_textlabel_set_colour(handle, want);
+        report.round_trip(
+            "player_textlabel_colour",
+            before,
+            want,
+            player_textlabel_colour(handle).unwrap_or_default(),
+        );
+        player_textlabel_set_colour(handle, before);
+    }
     report.begin("player_textlabel_draw_distance");
     unsafe {
         let before: f32 = player_textlabel_draw_distance(handle);
@@ -436,6 +508,15 @@ pub unsafe fn round_trips_player_text_label(handle: *mut IPlayerTextLabel, repor
             player_textlabel_test_los(handle),
         );
         player_textlabel_set_test_los(handle, before);
+    }
+    report.begin("player_textlabel_text");
+    unsafe {
+        let before = player_textlabel_text(handle).unwrap_or_default();
+        let want = before.other();
+        player_textlabel_set_text(handle, StringView::of(&want));
+        let got = player_textlabel_text(handle).unwrap_or_default();
+        report.round_trip("player_textlabel_text", before.clone(), want, got);
+        player_textlabel_set_text(handle, StringView::of(&before));
     }
 }
 
@@ -475,11 +556,40 @@ pub unsafe fn round_trips_race_checkpoint_data(
     }
 }
 
+/// Every setter of `ITextDraw` that has a matching getter.
+///
+/// # Safety
+/// `handle` must be a live `ITextDraw`.
+pub unsafe fn round_trips_text_draw(handle: *mut ITextDraw, report: &mut Report) {
+    report.begin("textdraw_text");
+    unsafe {
+        let before = textdraw_text(handle).unwrap_or_default();
+        let want = before.other();
+        textdraw_set_text(handle, StringView::of(&want));
+        let got = textdraw_text(handle).unwrap_or_default();
+        report.round_trip("textdraw_text", before.clone(), want, got);
+        textdraw_set_text(handle, StringView::of(&before));
+    }
+}
+
 /// Every setter of `ITextLabel` that has a matching getter.
 ///
 /// # Safety
 /// `handle` must be a live `ITextLabel`.
 pub unsafe fn round_trips_text_label(handle: *mut ITextLabel, report: &mut Report) {
+    report.begin("textlabel_colour");
+    unsafe {
+        let before = textlabel_colour(handle).unwrap_or_default();
+        let want = before.other();
+        textlabel_set_colour(handle, want);
+        report.round_trip(
+            "textlabel_colour",
+            before,
+            want,
+            textlabel_colour(handle).unwrap_or_default(),
+        );
+        textlabel_set_colour(handle, before);
+    }
     report.begin("textlabel_draw_distance");
     unsafe {
         let before: f32 = textlabel_draw_distance(handle);
@@ -506,6 +616,15 @@ pub unsafe fn round_trips_text_label(handle: *mut ITextLabel, report: &mut Repor
         );
         textlabel_set_test_los(handle, before);
     }
+    report.begin("textlabel_text");
+    unsafe {
+        let before = textlabel_text(handle).unwrap_or_default();
+        let want = before.other();
+        textlabel_set_text(handle, StringView::of(&want));
+        let got = textlabel_text(handle).unwrap_or_default();
+        report.round_trip("textlabel_text", before.clone(), want, got);
+        textlabel_set_text(handle, StringView::of(&before));
+    }
 }
 
 /// Every setter of `IVehicle` that has a matching getter.
@@ -513,6 +632,19 @@ pub unsafe fn round_trips_text_label(handle: *mut ITextLabel, report: &mut Repor
 /// # Safety
 /// `handle` must be a live `IVehicle`.
 pub unsafe fn round_trips_vehicle(handle: *mut IVehicle, report: &mut Report) {
+    report.begin("vehicle_angular_velocity");
+    unsafe {
+        let before: Vector3 = vehicle_angular_velocity(handle);
+        let want = before.other();
+        vehicle_set_angular_velocity(handle, want);
+        report.round_trip(
+            "vehicle_angular_velocity",
+            before,
+            want,
+            vehicle_angular_velocity(handle),
+        );
+        vehicle_set_angular_velocity(handle, before);
+    }
     report.begin("vehicle_interior");
     unsafe {
         let before: i32 = vehicle_interior(handle);
@@ -528,6 +660,23 @@ pub unsafe fn round_trips_vehicle(handle: *mut IVehicle, report: &mut Report) {
         vehicle_set_paint_job(handle, want);
         report.round_trip("vehicle_paint_job", before, want, vehicle_paint_job(handle));
         vehicle_set_paint_job(handle, before);
+    }
+    report.begin("vehicle_plate");
+    unsafe {
+        let before = vehicle_plate(handle).unwrap_or_default();
+        let want = before.other();
+        vehicle_set_plate(handle, StringView::of(&want));
+        let got = vehicle_plate(handle).unwrap_or_default();
+        report.round_trip("vehicle_plate", before.clone(), want, got);
+        vehicle_set_plate(handle, StringView::of(&before));
+    }
+    report.begin("vehicle_velocity");
+    unsafe {
+        let before: Vector3 = vehicle_velocity(handle);
+        let want = before.other();
+        vehicle_set_velocity(handle, want);
+        report.round_trip("vehicle_velocity", before, want, vehicle_velocity(handle));
+        vehicle_set_velocity(handle, before);
     }
     report.begin("vehicle_z_angle");
     unsafe {

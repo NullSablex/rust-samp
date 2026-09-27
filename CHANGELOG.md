@@ -130,6 +130,24 @@ for the full directory.
 
 #### Tests
 
+- `omp-showcase` now also proves what the first run listed as ignored. Every
+  setter the server rejected was traced to the server's own code and exercised
+  under the conditions it sets: a valid fighting style, an armed NPC for its
+  clip, the NPC seated as a driver for its vehicle state and for angular
+  velocity, and the NPC's own weapon and special action for the player-side
+  getters. Four setters remain unproven by design — they only send an RPC to
+  the client (`player_set_velocity`, `vehicle_set_velocity`, and the player's
+  `set_action`/`set_armed_weapon`, which an NPC ignores) — and the report says
+  so. Round trips also cover `Vector3`, `Vector4`, `Colour` and text now, the
+  return conventions most likely to differ between the ABIs. 75 passed, 0 wrong,
+  identically on open.mp Linux and Windows under Wine.
+- New tools in the loop: `cargo-careful` (the standard library's own debug and
+  UB checks) and AddressSanitizer with leak detection on the host target both
+  run the SDK's tests clean; `cargo-semver-checks` finds no breaking change in
+  `samp` and only the intended deprecation in `samp-sdk`; a new fuzz target for
+  `pawn_include` ran 214,617 inputs without a panic, `parse_debug` 9.7 million.
+  The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
+  `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
   921 slots `check-abi-slots.py --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
@@ -193,6 +211,15 @@ for the full directory.
 
 #### Changed
 
+- **Narrow return values are read as the whole register.** A C++ function
+  returning `bool`, `uint8_t` or a 16-bit integer sets only the low part of
+  `EAX`: the official `IVehicle::isOccupied()` on Windows ORs two pointers into
+  it and then `setne %al`, so `true` comes back as `0x????..01`. Declaring the
+  foreign function as returning `bool` leaves Rust assuming a clean 0 or 1; the
+  code rustc generates today happens to read only `AL`, but nothing guarantees
+  that. `call_vtable!` now goes through `VirtualReturn`, which receives such
+  values as `u32`/`i32` and narrows them in Rust. The two hand-rolled
+  `add_*_handler` calls use `call_vtable!` now as well.
 - The `omp` module lost most of its repetition without changing what it does.
   Per-ABI slot constants were a `#[cfg]` pair each (about 140 of them) and are
   now one line in `slots!`; opaque handles went through `opaque!`; getters and
@@ -315,6 +342,16 @@ for the full directory.
   the registry this crate exposes.
 
 ### Tooling
+
+- `deny.toml` and a `cargo deny check` step in CI: licenses, sources and yanked
+  crates. Everything that ships with the MIT crates is permissive today; the
+  policy makes a dependency under anything else fail instead of arriving with an
+  update.
+- The generators pass their output through `rustfmt`, so it is what `cargo fmt`
+  leaves: written unformatted, the next `cargo fmt` rewrote it and `--check`
+  reported the files stale forever after.
+- `fuzz/` gained a `pawn_include` target: the include parser and the template
+  renderer read files from outside the plugin, inside the server, at load.
 
 - `scripts/omp-wrappers.py` generates `samp-sdk/src/omp/generated/` from
   `scripts/omp-wrappers.toml` and the open.mp SDK headers: clang lays out each
