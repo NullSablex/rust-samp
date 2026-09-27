@@ -130,6 +130,19 @@ for the full directory.
 
 #### Tests
 
+- The generated wrappers were proven three ways. **Against the binaries**: all
+  921 slots `check-abi-slots.py --generated` can derive match the official
+  servers — by method name on Linux, by the bytes each method pops on Windows;
+  133 are declared underivable (the Windows server executable keeps RTTI for
+  three classes only, and tail-calling methods have no `ret N` of their own).
+  **Against a running server**: the new `examples/omp-showcase` creates one of
+  every entity, reads back what it created, and round-trips every setter that
+  has a matching getter — including the player's, through an NPC. On open.mp
+  Linux and on open.mp Windows under Wine it reports the same thing: 53 passed,
+  0 wrong, and 9 setters the server ignores by its own rules (a fighting style
+  of 3 is not one, ammunition without a weapon), listed rather than hidden.
+  That run also proved the extension-map walk against a real player's data for
+  the first time.
 - The panic audit: every `unwrap`, `expect`, `assert!` and `panic!` outside test
   code was classified by whether the server can reach it. Four were, and are
   fixed above; the rest are compile-time layout checks, `debug_assert!`s, or
@@ -220,6 +233,12 @@ for the full directory.
 
 #### Fixed
 
+- **`player_extension` returned null for every component's per-player data.**
+  It called the virtual `getExtension`, whose base implementation returns null;
+  components file their data with `addExtension`, in the extension map. It now
+  does what open.mp's own `queryExtension<T>()` does — the map first, then the
+  virtual — and finds a player's dialog, checkpoint, menu and object data, as
+  `examples/omp-showcase` confirms on both servers.
 - `OmpComponent`'s documentation was attached to a constant declared between
   the doc comment and the struct, so the struct showed as undocumented. And
   `player_name` said both ABIs return its `StringView` through a hidden pointer,
@@ -244,6 +263,24 @@ for the full directory.
 
 #### Added
 
+- **Wrappers for nearly every open.mp interface, generated from the SDK
+  headers.** 529 functions over 53 interfaces, in `omp::generated` and
+  re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
+  `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
+  checkpoints, text labels, player objects and text draws), every component,
+  the player pool, `ICore`, `IConfig`, the database connections and result sets,
+  and each per-player data interface with its accessor (`player_dialogs(player)`,
+  `player_objects(player)`, ...). Each component interface gets its UID and its
+  `ComponentInterface` impl. What the generator will not state with certainty —
+  `std::` types, references to structs the SDK does not mirror, C-style `...`,
+  overloaded names — is listed at the end of each module with the reason, never
+  guessed.
+- `ComponentInterface::COMPONENT_OFFSET`, for a component whose `IComponent` is
+  not its first base. `INPCComponent` puts its pool first, so the `IComponent*`
+  the server hands out sits 4 bytes in (8 on MSVC); `Component::as_ptr` moves
+  back by it. Without that, the first call into the NPC component crashed the
+  server — found by running it.
+- `Vector4::ZERO`, and `Default` for `Colour` and `Vector2`.
 - **`omp::Component<I>` and `omp::ComponentInterface`.** An interface handle
   (`IObjectsComponent`, `IVehiclesComponent`, and the other seven) now declares
   its UID, and `samp::plugin::omp_query::<Component<IObjectsComponent>>()`
@@ -260,6 +297,25 @@ for the full directory.
   report which encoding it was using.
 - `amx::loaded()` and `amx::count()` in `samp` (see that crate's entry) build on
   the registry this crate exposes.
+
+### Tooling
+
+- `scripts/omp-wrappers.py` generates `samp-sdk/src/omp/generated/` from
+  `scripts/omp-wrappers.toml` and the open.mp SDK headers: clang lays out each
+  vtable for both ABIs, its AST gives every type, and a whitelist decides what
+  can be wrapped with certainty. `--check` reports stale files.
+- `scripts/omp-roundtrip.py` derives the showcase's set/get round trips from the
+  generated code, so nobody chooses by hand what gets tested.
+- `scripts/check-abi-slots.py --generated` checks every generated slot against
+  the official binaries. Two fixes came with it: slots declared through
+  `slots!` were no longer read at all after the refactor, so every check
+  reported nothing to compare; and a tail call (`jmp *...`) made the MSVC check
+  read the `ret` of the next function, reporting false mismatches for methods
+  that forward to another.
+- `scripts/omp-vtable.py` builds its stub from the parameters as the header
+  spells them, for the i686 target: on the x86-64 host `va_list` decays to
+  `__va_list_tag *`, which no i686 compiler knows, and variadic methods lost
+  their `...`. `ICore` could not be laid out for MSVC before.
 
 ## [v3.6.0] — 2026/09/25
 

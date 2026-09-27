@@ -8,6 +8,7 @@ members = [
     "examples/counter",
     "examples/advanced",
     "examples/sink-demo",
+    "examples/omp-showcase",
 ]
 
 # Shared package metadata — each member inherits via `field.workspace = true`.

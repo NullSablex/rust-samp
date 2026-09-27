@@ -1,0 +1,536 @@
+# Interfaces `scripts/omp-wrappers.py` wraps, one module each under
+# `samp-sdk/src/omp/generated/`.
+#
+#   class   the interface whose methods are wrapped, with its primary bases
+#   header  the SDK header declaring it
+#   handle  the Rust handle the wrappers take — the interface itself, or the
+#           concrete entity when the interface is a shared base
+#   prefix  the functions' prefix: `object` gives `object_set_model`
+#   module  the generated file's name
+#   this    optional name for the handle argument (defaults to `prefix`)
+#   impl    the class implementing it in the official server binaries, and
+#   library the binary holding it (`Objects` for components/Objects.so|.dll,
+#           `omp-server` for the server itself); `check-abi-slots.py
+#           --generated` reads the real vtable there
+
+
+[[interface]]
+class = "IPlayer"
+header = "player.hpp"
+handle = "IPlayer"
+prefix = "player"
+module = "player"
+this = "player"
+impl = "Player"
+library = "omp-server"
+
+[[interface]]
+class = "IPlayerPool"
+header = "player.hpp"
+handle = "IPlayerPool"
+prefix = "players"
+module = "players"
+this = "pool"
+impl = "PlayerPool"
+library = "omp-server"
+
+[[interface]]
+class = "ICore"
+header = "core.hpp"
+handle = "ICore"
+prefix = "core"
+module = "core"
+this = "core"
+impl = "Core"
+library = "omp-server"
+
+[[interface]]
+class = "IConfig"
+header = "core.hpp"
+handle = "IConfig"
+prefix = "config"
+module = "config"
+this = "config"
+impl = "Config"
+library = "omp-server"
+
+[[interface]]
+class = "IActor"
+header = "Server/Components/Actors/actors.hpp"
+handle = "IActor"
+prefix = "actor"
+module = "actor"
+impl = "Actor"
+library = "Actors"
+
+[[interface]]
+class = "IActorsComponent"
+header = "Server/Components/Actors/actors.hpp"
+handle = "IActorsComponent"
+prefix = "actors"
+module = "actors"
+this = "component"
+impl = "ActorsComponent"
+library = "Actors"
+skip = ["create"]  # hand-written as create_*
+
+[[interface]]
+class = "ICheckpointData"
+header = "Server/Components/Checkpoints/checkpoints.hpp"
+handle = "ICheckpointData"
+prefix = "checkpoint"
+module = "checkpoint"
+impl = "CheckpointData"
+library = "Checkpoints"
+
+[[interface]]
+class = "IRaceCheckpointData"
+header = "Server/Components/Checkpoints/checkpoints.hpp"
+handle = "IRaceCheckpointData"
+prefix = "race_checkpoint"
+module = "race_checkpoint"
+impl = "RaceCheckpointData"
+library = "Checkpoints"
+
+[[interface]]
+class = "IPlayerCheckpointData"
+header = "Server/Components/Checkpoints/checkpoints.hpp"
+handle = "IPlayerCheckpointData"
+prefix = "player_checkpoints"
+module = "player_checkpoints"
+this = "data"
+impl = "PlayerCheckpointData"
+library = "Checkpoints"
+
+[[interface]]
+class = "ICheckpointsComponent"
+header = "Server/Components/Checkpoints/checkpoints.hpp"
+handle = "ICheckpointsComponent"
+prefix = "checkpoints"
+module = "checkpoints"
+this = "component"
+impl = "CheckpointsComponent"
+library = "Checkpoints"
+
+[[interface]]
+class = "IClass"
+header = "Server/Components/Classes/classes.hpp"
+handle = "IClass"
+prefix = "class"
+module = "class"
+impl = "Class"
+library = "Classes"
+
+[[interface]]
+class = "IPlayerClassData"
+header = "Server/Components/Classes/classes.hpp"
+handle = "IPlayerClassData"
+prefix = "player_classes"
+module = "player_classes"
+this = "data"
+impl = "PlayerClassData"
+library = "Classes"
+
+[[interface]]
+class = "IClassesComponent"
+header = "Server/Components/Classes/classes.hpp"
+handle = "IClassesComponent"
+prefix = "classes"
+module = "classes"
+this = "component"
+impl = "ClassesComponent"
+library = "Classes"
+skip = ["create"]  # hand-written as create_*
+
+[[interface]]
+class = "IConsoleComponent"
+header = "Server/Components/Console/console.hpp"
+handle = "IConsoleComponent"
+prefix = "console"
+module = "console"
+this = "component"
+impl = "ConsoleComponent"
+library = "Console"
+
+[[interface]]
+class = "IPlayerConsoleData"
+header = "Server/Components/Console/console.hpp"
+handle = "IPlayerConsoleData"
+prefix = "player_console"
+module = "player_console"
+this = "data"
+impl = "PlayerConsoleData"
+library = "Console"
+
+[[interface]]
+class = "ICustomModelsComponent"
+header = "Server/Components/CustomModels/custommodels.hpp"
+handle = "ICustomModelsComponent"
+prefix = "custom_models"
+module = "custom_models"
+this = "component"
+impl = "CustomModelsComponent"
+library = "CustomModels"
+
+[[interface]]
+class = "IPlayerCustomModelsData"
+header = "Server/Components/CustomModels/custommodels.hpp"
+handle = "IPlayerCustomModelsData"
+prefix = "player_custom_models"
+module = "player_custom_models"
+this = "data"
+impl = "PlayerCustomModelsData"
+library = "CustomModels"
+
+[[interface]]
+class = "IDatabasesComponent"
+header = "Server/Components/Databases/databases.hpp"
+handle = "IDatabasesComponent"
+prefix = "databases"
+module = "databases"
+this = "component"
+impl = "DatabasesComponent"
+library = "Databases"
+
+[[interface]]
+class = "IDatabaseConnection"
+header = "Server/Components/Databases/databases.hpp"
+handle = "IDatabaseConnection"
+prefix = "db"
+module = "db"
+this = "connection"
+impl = "DatabaseConnection"
+library = "Databases"
+
+[[interface]]
+class = "IDatabaseResultSet"
+header = "Server/Components/Databases/databases.hpp"
+handle = "IDatabaseResultSet"
+prefix = "db_result"
+module = "db_result"
+this = "result"
+impl = "DatabaseResultSet"
+library = "Databases"
+
+[[interface]]
+class = "IDatabaseResultSetRow"
+header = "Server/Components/Databases/databases.hpp"
+handle = "IDatabaseResultSetRow"
+prefix = "db_row"
+module = "db_row"
+this = "row"
+impl = "DatabaseResultSetRow"
+library = "Databases"
+
+[[interface]]
+class = "IDialogsComponent"
+header = "Server/Components/Dialogs/dialogs.hpp"
+handle = "IDialogsComponent"
+prefix = "dialogs"
+module = "dialogs"
+this = "component"
+impl = "DialogsComponent"
+library = "Dialogs"
+
+[[interface]]
+class = "IPlayerDialogData"
+header = "Server/Components/Dialogs/dialogs.hpp"
+handle = "IPlayerDialogData"
+prefix = "player_dialogs"
+module = "player_dialogs"
+this = "data"
+impl = "PlayerDialogData"
+library = "Dialogs"
+
+[[interface]]
+class = "IGangZone"
+header = "Server/Components/GangZones/gangzones.hpp"
+handle = "IGangZone"
+prefix = "gangzone"
+module = "gangzone"
+impl = "GangZone"
+library = "GangZones"
+
+[[interface]]
+class = "IGangZonesComponent"
+header = "Server/Components/GangZones/gangzones.hpp"
+handle = "IGangZonesComponent"
+prefix = "gangzones"
+module = "gangzones"
+this = "component"
+impl = "GangZonesComponent"
+library = "GangZones"
+skip = ["create"]  # hand-written as create_*
+
+[[interface]]
+class = "IPlayerGangZoneData"
+header = "Server/Components/GangZones/gangzones.hpp"
+handle = "IPlayerGangZoneData"
+prefix = "player_gangzones"
+module = "player_gangzones"
+this = "data"
+impl = "PlayerGangZoneData"
+library = "GangZones"
+
+[[interface]]
+class = "IMenu"
+header = "Server/Components/Menus/menus.hpp"
+handle = "IMenu"
+prefix = "menu"
+module = "menu"
+impl = "Menu"
+library = "Menus"
+
+[[interface]]
+class = "IPlayerMenuData"
+header = "Server/Components/Menus/menus.hpp"
+handle = "IPlayerMenuData"
+prefix = "player_menus"
+module = "player_menus"
+this = "data"
+impl = "PlayerMenuData"
+library = "Menus"
+
+[[interface]]
+class = "IMenusComponent"
+header = "Server/Components/Menus/menus.hpp"
+handle = "IMenusComponent"
+prefix = "menus"
+module = "menus"
+this = "component"
+impl = "MenusComponent"
+library = "Menus"
+skip = ["create"]  # hand-written as create_*
+
+[[interface]]
+class = "INPC"
+header = "Server/Components/NPCs/npcs.hpp"
+handle = "INPC"
+prefix = "npc"
+module = "npc"
+impl = "NPC"
+library = "NPCs"
+
+[[interface]]
+class = "INPCComponent"
+header = "Server/Components/NPCs/npcs.hpp"
+handle = "INPCComponent"
+prefix = "npcs"
+module = "npcs"
+this = "component"
+impl = "NPCComponent"
+library = "NPCs"
+
+[[interface]]
+class = "IObject"
+header = "Server/Components/Objects/objects.hpp"
+handle = "IObject"
+prefix = "object"
+module = "object"
+impl = "Object"
+library = "Objects"
+
+[[interface]]
+class = "IPlayerObject"
+header = "Server/Components/Objects/objects.hpp"
+handle = "IPlayerObject"
+prefix = "player_object"
+module = "player_object"
+impl = "PlayerObject"
+library = "Objects"
+
+[[interface]]
+class = "IObjectsComponent"
+header = "Server/Components/Objects/objects.hpp"
+handle = "IObjectsComponent"
+prefix = "objects"
+module = "objects"
+this = "component"
+impl = "ObjectComponent"
+library = "Objects"
+skip = ["create"]  # hand-written as create_*
+
+[[interface]]
+class = "IPlayerObjectData"
+header = "Server/Components/Objects/objects.hpp"
+handle = "IPlayerObjectData"
+prefix = "player_objects"
+module = "player_objects"
+this = "data"
+impl = "PlayerObjectData"
+library = "Objects"
+
+[[interface]]
+class = "IPickup"
+header = "Server/Components/Pickups/pickups.hpp"
+handle = "IPickup"
+prefix = "pickup"
+module = "pickup"
+impl = "Pickup"
+library = "Pickups"
+
+[[interface]]
+class = "IPickupsComponent"
+header = "Server/Components/Pickups/pickups.hpp"
+handle = "IPickupsComponent"
+prefix = "pickups"
+module = "pickups"
+this = "component"
+impl = "PickupsComponent"
+library = "Pickups"
+skip = ["create"]  # hand-written as create_*
+
+[[interface]]
+class = "IPlayerPickupData"
+header = "Server/Components/Pickups/pickups.hpp"
+handle = "IPlayerPickupData"
+prefix = "player_pickups"
+module = "player_pickups"
+this = "data"
+impl = "PlayerPickupData"
+library = "Pickups"
+
+[[interface]]
+class = "IRecordingsComponent"
+header = "Server/Components/Recordings/recordings.hpp"
+handle = "IRecordingsComponent"
+prefix = "recordings"
+module = "recordings"
+this = "component"
+impl = "RecordingsComponent"
+library = "Recordings"
+
+[[interface]]
+class = "IPlayerRecordingData"
+header = "Server/Components/Recordings/recordings.hpp"
+handle = "IPlayerRecordingData"
+prefix = "player_recordings"
+module = "player_recordings"
+this = "data"
+impl = "PlayerRecordingData"
+library = "Recordings"
+
+[[interface]]
+class = "ITextDraw"
+header = "Server/Components/TextDraws/textdraws.hpp"
+handle = "ITextDraw"
+prefix = "textdraw"
+module = "textdraw"
+impl = "TextDraw"
+library = "TextDraws"
+
+[[interface]]
+class = "IPlayerTextDraw"
+header = "Server/Components/TextDraws/textdraws.hpp"
+handle = "IPlayerTextDraw"
+prefix = "player_textdraw"
+module = "player_textdraw"
+impl = "PlayerTextDraw"
+library = "TextDraws"
+
+[[interface]]
+class = "ITextDrawsComponent"
+header = "Server/Components/TextDraws/textdraws.hpp"
+handle = "ITextDrawsComponent"
+prefix = "textdraws"
+module = "textdraws"
+this = "component"
+impl = "TextDrawsComponent"
+library = "TextDraws"
+
+[[interface]]
+class = "IPlayerTextDrawData"
+header = "Server/Components/TextDraws/textdraws.hpp"
+handle = "IPlayerTextDrawData"
+prefix = "player_textdraws"
+module = "player_textdraws"
+this = "data"
+impl = "PlayerTextDrawData"
+library = "TextDraws"
+
+[[interface]]
+class = "ITextLabel"
+header = "Server/Components/TextLabels/textlabels.hpp"
+handle = "ITextLabel"
+prefix = "textlabel"
+module = "textlabel"
+impl = "TextLabel"
+library = "TextLabels"
+
+[[interface]]
+class = "IPlayerTextLabel"
+header = "Server/Components/TextLabels/textlabels.hpp"
+handle = "IPlayerTextLabel"
+prefix = "player_textlabel"
+module = "player_textlabel"
+impl = "PlayerTextLabel"
+library = "TextLabels"
+
+[[interface]]
+class = "ITextLabelsComponent"
+header = "Server/Components/TextLabels/textlabels.hpp"
+handle = "ITextLabelsComponent"
+prefix = "textlabels"
+module = "textlabels"
+this = "component"
+impl = "TextLabelsComponent"
+library = "TextLabels"
+
+[[interface]]
+class = "IPlayerTextLabelData"
+header = "Server/Components/TextLabels/textlabels.hpp"
+handle = "IPlayerTextLabelData"
+prefix = "player_textlabels"
+module = "player_textlabels"
+this = "data"
+impl = "PlayerTextLabelData"
+library = "TextLabels"
+
+[[interface]]
+class = "IVariablesComponent"
+header = "Server/Components/Variables/variables.hpp"
+handle = "IVariablesComponent"
+prefix = "variables"
+module = "variables"
+this = "component"
+impl = "VariablesComponent"
+library = "Variables"
+
+[[interface]]
+class = "IPlayerVariableData"
+header = "Server/Components/Variables/variables.hpp"
+handle = "IPlayerVariableData"
+prefix = "player_variables"
+module = "player_variables"
+this = "data"
+impl = "PlayerVariableData"
+library = "Variables"
+
+[[interface]]
+class = "IVehicle"
+header = "Server/Components/Vehicles/vehicles.hpp"
+handle = "IVehicle"
+prefix = "vehicle"
+module = "vehicle"
+impl = "Vehicle"
+library = "Vehicles"
+
+[[interface]]
+class = "IVehiclesComponent"
+header = "Server/Components/Vehicles/vehicles.hpp"
+handle = "IVehiclesComponent"
+prefix = "vehicles"
+module = "vehicles"
+this = "component"
+impl = "VehiclesComponent"
+library = "Vehicles"
+
+[[interface]]
+class = "IPlayerVehicleData"
+header = "Server/Components/Vehicles/vehicles.hpp"
+handle = "IPlayerVehicleData"
+prefix = "player_vehicles"
+module = "player_vehicles"
+this = "data"
+impl = "PlayerVehicleData"
+library = "Vehicles"

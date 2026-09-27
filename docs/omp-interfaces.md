@@ -80,22 +80,51 @@ is overwritten. Score, team and money belong to the server and do read back.
 
 ## Entities
 
-Components follow one shape — query by UID, create, read:
+Components follow one shape — query, create, use:
 
 ```rust
-let Some(component) = samp::plugin::omp_query_component(samp::omp::VEHICLES_COMPONENT_UID)
-else { return };
+use samp::omp::{Component, IVehiclesComponent};
 
-let vehicles = unsafe { samp::omp::as_vehicles_component(component) };
-let vehicle = unsafe {
-    samp::omp::create_vehicle(vehicles, 411, position, 90.0, -1, -1, -1, false)
+let Some(vehicles) = samp::plugin::omp_query::<Component<IVehiclesComponent>>() else {
+    return;
 };
-let id = unsafe { samp::omp::vehicle_id(vehicle) };
+let vehicle = unsafe {
+    samp::omp::create_vehicle(vehicles.as_ptr(), 411, position, 90.0, -1, -1, -1, false)
+};
+unsafe { samp::omp::vehicle_set_health(vehicle, 750.0) };
 ```
 
-Wrapped so far: vehicles (with their fourteen events), objects, pickups, text
-draws, text labels, gang zones, actors, menus and spawn classes. Every entity
-carrying an `IEntity` answers `entity_id`.
+The component's UID comes from the interface type, so a lookup cannot find
+one component and hand it back as another. The older
+`omp_query_component(UID)` plus `as_*_component` cast still works, deprecated.
+
+Past the `create_*` functions, nearly every method of every interface is
+available as `<entity>_<method>`: `object_set_model`, `pickup_model`,
+`textdraw_set_letter_colour`, `gangzone_show_for_player`, `npc_...`,
+`players_...` on the pool, `core_...` on `ICore`. Getters drop the `get`, the
+way `player_health` wraps `getHealth`. Every entity carrying an `IEntity`
+answers `entity_id`.
+
+## Generated wrappers
+
+Those functions are generated from the open.mp SDK headers by
+`scripts/omp-wrappers.py`, one module per interface under
+`samp_sdk::omp::generated`. Each file lists at its end what was left out and
+why — a type the SDK does not mirror (`std::` containers, references to
+unmirrored structs), a C-style `...`, an overloaded name. A gap is written
+down, never guessed at.
+
+Three things stand behind every generated function:
+
+- **The layout is clang's**, for both ABIs, from the same headers the server is
+  built from.
+- **Every slot is checked against the official binaries** by
+  `scripts/check-abi-slots.py --generated`: by method name on Linux, whose
+  libraries keep their symbols, and by the argument bytes each method pops on
+  Windows (`ret N` under `thiscall`).
+- **`examples/omp-showcase` round-trips every setter that has a getter** on a
+  running server — set a value, read it back, restore it. It is run on open.mp
+  Linux and Windows before a release.
 
 ## Finding players and vehicles
 
@@ -110,19 +139,24 @@ layout belongs to a vendored library.
 
 ## Per-player extensions
 
-Components attach their per-player data with `addExtension`, which files it in a
-map the virtual `getExtension` does not consult. `samp::omp::extension` walks
-that map:
+Components attach their per-player data — checkpoints, dialogs, objects,
+variables — as extensions. Each generated data interface comes with an accessor
+that finds it:
 
 ```rust
-const CHECKPOINT_DATA_UID: u64 = 0xbc07_576a_a359_1a66;
-let data = unsafe { samp::omp::extension(player.cast::<u8>(), CHECKPOINT_DATA_UID) };
+let dialogs = unsafe { samp::omp::player_dialogs(player) };   // *mut IPlayerDialogData
+if !dialogs.is_null() {
+    let id = unsafe { samp::omp::player_dialogs_active_id(dialogs) };
+}
 ```
 
-This is the one part of the SDK whose correctness rests on a vendored library's
-internals rather than an ABI. It fails closed — a bounded probe, and a candidate
-returned only after `getExtensionID()` confirms it — but when in doubt, the Pawn
-natives through `Amx::call_native` do not depend on any of it.
+Components file that data with `addExtension`, in a map the virtual
+`getExtension` does not consult, so the accessor walks the map
+(`samp::omp::extension`). It is the one part of the SDK whose correctness rests
+on a vendored library's internals rather than an ABI. It fails closed — a
+bounded probe, and a candidate returned only after `getExtensionID()` confirms
+it — and the accessor is generated only where `IExtension` is the interface's
+first base, which is what makes the extension pointer the interface pointer.
 
 ## Every pointer here fails closed
 
@@ -138,7 +172,17 @@ runs against real servers on both platforms.
 
 ## Adding an interface
 
-The slot indices differ per ABI and are not guessable — see
-[the ABI notes](internals/omp-abi.md). `scripts/omp-vtable.py` asks clang where
-each method lands, in both ABIs at once, and `--rust` prints the constants ready
-to paste. `CONTRIBUTING.md` has the workflow.
+List it in `scripts/omp-wrappers.toml` — the interface, its header, the handle
+the wrappers take, their prefix, and the class implementing it in the server's
+binaries — then:
+
+```sh
+scripts/omp-wrappers.py                    # regenerate samp-sdk/src/omp/generated/
+scripts/check-abi-slots.py --generated     # every slot against the binaries
+scripts/omp-roundtrip.py                   # refresh the showcase's round trips
+```
+
+and run `omp-showcase` on both servers. What the generator skips can still be
+written by hand; the slot indices differ per ABI and are not guessable — see
+[the ABI notes](internals/omp-abi.md), and `scripts/omp-vtable.py` for the
+layout of one class.

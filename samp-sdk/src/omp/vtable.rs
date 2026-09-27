@@ -314,6 +314,10 @@ macro_rules! virtual_fns {
             $(-> $ret:ty)? = [$offset:expr, $slot:expr] $(or $absent:expr)?;
     )*) => {$(
         $(#[$meta])*
+        // A wrapper takes what the C++ method takes, argument for argument:
+        // grouping them would read better alone and worse next to the header,
+        // which is what the wrapper has to be checked against.
+        #[allow(clippy::too_many_arguments)]
         $vis unsafe fn $name($this: *mut $handle $(, $arg: $arg_ty)*) $(-> $ret)? {
             $crate::omp::vtable::call_vtable!(
                 $this.cast::<u8>(),

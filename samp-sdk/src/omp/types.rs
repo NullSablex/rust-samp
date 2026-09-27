@@ -138,7 +138,7 @@ impl StringView {
 /// RGBA color.
 ///
 /// Equivalent to `Colour` in `types.hpp`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(C)]
 pub struct Colour {
     pub r: u8,
@@ -182,7 +182,7 @@ impl Colour {
 }
 
 /// 2D vector.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[repr(C)]
 pub struct Vector2 {
     pub x: f32,
@@ -216,6 +216,16 @@ pub struct Vector4 {
     pub y: f32,
     pub z: f32,
     pub w: f32,
+}
+
+impl Vector4 {
+    /// All zero — what a getter answers when the entity is not there to ask.
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        w: 0.0,
+    };
 }
 
 /// Component type.

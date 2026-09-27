@@ -51,6 +51,16 @@ pub trait OmpComponentHandle: Sized + Copy {
 pub trait ComponentInterface {
     /// The component's UID, as the server's headers declare it.
     const UID: UID;
+
+    /// Where the `IComponent` subobject sits inside the interface.
+    ///
+    /// The server hands out an `IComponent*`. For almost every component that
+    /// is the start of the object, because `IComponent` is the first base; for
+    /// `INPCComponent` the pool comes first and the `IComponent` sits after its
+    /// vtable pointer, so the pointer has to move back before the interface's
+    /// own methods can be called through it. From clang's record layout, per
+    /// ABI.
+    const COMPONENT_OFFSET: isize = 0;
 }
 
 /// A server component, typed by the interface it implements.
@@ -68,7 +78,12 @@ impl<I: ComponentInterface> Component<I> {
     /// The component as its interface, for the functions that take one.
     #[must_use]
     pub fn as_ptr(&self) -> *mut I {
-        self.ptr.as_ptr().cast::<I>()
+        // Back from the `IComponent` subobject to the start of the interface.
+        self.ptr
+            .as_ptr()
+            .cast::<u8>()
+            .wrapping_offset(-I::COMPONENT_OFFSET)
+            .cast::<I>()
     }
 }
 

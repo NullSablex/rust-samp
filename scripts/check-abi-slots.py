@@ -34,6 +34,7 @@ import re
 import struct
 import subprocess
 import sys
+import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -195,7 +196,7 @@ class PortableExecutable:
                 return raw + (rva - vaddr)
         return None
 
-    def vtable(self, class_name: str, limit: int = 64) -> list[int]:
+    def vtable(self, class_name: str, limit: int = 512) -> list[int]:
         """Function pointers of the primary vtable of `class_name`, via RTTI."""
         marker = f".?AV{class_name}@@".encode()
         index = self.data.find(marker)
@@ -248,6 +249,12 @@ class PortableExecutable:
             match = re.search(r"\bret\s*(?:\$0x([0-9a-f]+))?\s*$", line)
             if match:
                 return int(match.group(1), 16) if match.group(1) else 0
+            # A tail call (`jmp *...`) hands the stack to another function and
+            # never returns here; the `int3` padding marks the function's end.
+            # Past either, the next `ret` belongs to a different function —
+            # reading it reported false mismatches for forwarding methods.
+            if re.search(r"\bjmp\s+\*", line) or re.search(r"\bint3\b", line):
+                return None
         return None
 
 
@@ -385,6 +392,86 @@ def check_msvc(server: pathlib.Path, report: Report) -> None:
     print("        exact index is not derivable from `ret N`; see docs/internals/omp-abi.md")
 
 
+# --------------------------------------------------------------------------
+# Generated wrappers (`scripts/omp-wrappers.py`)
+# --------------------------------------------------------------------------
+# Bytes a `thiscall` callee pops for one argument of each C++ type that the
+# generator emits. Everything narrower than a word still takes a word.
+ARG_BYTES = {
+    "Vector2": 8, "Vector3": 12, "Vector4": 16, "StringView": 8, "Colour": 4,
+    "int64_t": 8, "uint64_t": 8, "UID": 8, "long long": 8, "unsigned long long": 8,
+}
+
+
+def arg_bytes(signature: str) -> int:
+    """What the MSVC callee pops for this signature, hidden return pointer included.
+
+    Mirrors the generator's rules: a struct returned by value arrives through a
+    pointer pushed with the arguments."""
+    ret = signature.split("(")[0].rsplit(" ", 1)[0].replace("const", "").strip()
+    args = signature[signature.index("(") + 1 : signature.rindex(")")]
+    total = 4 if ret in ("Vector2", "Vector3", "Vector4", "StringView", "Colour") else 0
+    for arg in filter(None, (a.strip() for a in args.split(","))):
+        bare = arg.replace("const", "").strip()
+        total += 4 if bare.endswith(("&", "*")) else ARG_BYTES.get(bare, 4)
+    return total
+
+
+def generated_slots():
+    """(module, impl, library, [(signature, itanium, msvc)]) for every generated file."""
+    spec = tomllib.loads((REPO / "scripts/omp-wrappers.toml").read_text())
+    for entry in spec["interface"]:
+        path = REPO / "samp-sdk/src/omp/generated" / f"{entry['module']}.rs"
+        if not path.exists():
+            continue
+        slots = re.findall(r"/// `([^`]+)`\n\s*SLOT_\w+: usize = (\d+), (\d+);", path.read_text())
+        yield entry, [(sig, int(i), int(m)) for sig, i, m in slots]
+
+
+def check_generated(linux: pathlib.Path | None, win: pathlib.Path | None, report: Report) -> None:
+    """Every slot the generator wrote, against the vtable of the class that
+    implements it.
+
+    Itanium is checked by name: the slot must hold the method the signature
+    names. MSVC is checked by `ret N` against the argument bytes the signature
+    implies, which pins every method that takes arguments; the rest must at
+    least return plainly (`ret 0`) where the source says they are."""
+    for entry, slots in generated_slots():
+        library, impl = entry["library"], entry["impl"]
+        print(f"\nGenerated `{entry['module']}` — {impl} in {library}")
+        if not slots:
+            print("  (nothing generated)")
+            continue
+        if linux is not None:
+            so = linux / (library if library == "omp-server" else f"components/{library}.so")
+            try:
+                vtable = elf_vtable(so, impl, count=max(i for _, i, _ in slots) + 1)
+            except LookupError as why:
+                print(f"  SKIP  Itanium: {why}")
+                report.skipped += len(slots)
+                vtable = None
+        if linux is not None and vtable is not None:
+            for signature, itanium, _ in slots:
+                method = re.search(r"::(\w+)\(", signature).group(1)
+                found = vtable[itanium] if itanium < len(vtable) else ""
+                report.check(f"Itanium [{itanium}] {method}", True, f"::{method}(" in found or None)
+        if win is not None:
+            dll = PortableExecutable(win / (f"{library}.exe" if library == "omp-server" else f"components/{library}.dll"))
+            try:
+                vtable = dll.vtable(impl)
+            except LookupError as why:
+                # The Windows server executable keeps RTTI for three classes
+                # only; these slots are left to a run against a real server.
+                print(f"  SKIP  MSVC: {why} — prove these with examples/omp-showcase")
+                report.skipped += len(slots)
+                continue
+            for signature, _, msvc in slots:
+                method = re.search(r"::(\w+)\(", signature).group(1)
+                expected = arg_bytes(signature)
+                found = dll.ret_bytes(vtable[msvc]) if msvc < len(vtable) else None
+                report.check(f"MSVC [{msvc}] {method} pops {expected}", expected, found)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -396,6 +483,11 @@ def main() -> int:
         "--win",
         type=pathlib.Path,
         help="unpacked Windows server (default: $OPENMP_WIN_SERVER, then the usual spots)",
+    )
+    parser.add_argument(
+        "--generated",
+        action="store_true",
+        help="also check every slot in samp-sdk/src/omp/generated/",
     )
     args = parser.parse_args()
 
@@ -410,6 +502,15 @@ def main() -> int:
             report.skipped += 1
             continue
         check(directory, report)
+
+    if args.generated:
+        linux = find_server(args.linux, "OPENMP_LINUX_SERVER", LINUX_CANDIDATES)
+        win = find_server(args.win, "OPENMP_WIN_SERVER", WIN_CANDIDATES)
+        check_generated(
+            linux if linux is not None and linux.is_dir() else None,
+            win if win is not None and win.is_dir() else None,
+            report,
+        )
 
     print()
     if report.failures:

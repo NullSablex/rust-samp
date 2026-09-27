@@ -768,25 +768,27 @@ pub unsafe fn all_players(pool: *mut IPlayerPool) -> Vec<*mut IPlayer> {
     found
 }
 
-/// `IExtensible::getExtension(UID)` on a player.
+/// The player's extension registered under `uid`, or null — what the C++
+/// side's `queryExtension<T>()` answers.
 ///
-/// **This reaches less than it looks like it should.** Components attach their
-/// per-player data with `addExtension`, which files it in a `robin_hood` map
-/// that the virtual `getExtension` does not consult — the C++ side finds it
-/// through `queryExtension<T>()`, a template that checks the map first and only
-/// then calls the virtual. So the stock components' data (dialogs, checkpoints,
-/// a player's menu) comes back null here.
+/// Components attach their per-player data with `addExtension`, which files it
+/// in the extension map; the virtual `getExtension` only covers extensions a
+/// class provides by overriding it, and returns null otherwise. `queryExtension`
+/// looks in the map first and falls back to the virtual, and so does this: the
+/// map through [`extension`](super::extensions::extension), then
+/// `IExtensible::getExtension(UID)`.
 ///
-/// What this does reach is an extension a component exposes by overriding
-/// `getExtension` itself. For the rest, the Pawn natives are the working route:
-/// `Amx::call_native("ShowPlayerDialog", ...)`. Reading the map would mean
-/// mirroring `robin_hood`'s layout, which this SDK does not do — see the note
-/// on `entries()` in [`pool_bounds`].
+/// The generated accessors (`player_dialogs`, `player_objects`, ...) return the
+/// same thing already typed.
 ///
 /// # Safety
 /// See [`player_kick`].
 #[must_use]
 pub unsafe fn player_extension(player: *mut IPlayer, uid: UID) -> *mut u8 {
+    let attached = unsafe { super::extensions::extension(player.cast::<u8>(), uid) };
+    if !attached.is_null() {
+        return attached;
+    }
     call_vtable!(
         player.cast::<u8>(),
         0,
