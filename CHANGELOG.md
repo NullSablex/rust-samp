@@ -4,9 +4,27 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [Unreleased]
+## [v3.7.0]
 
-### `rust-samp` (lib `samp`) — unreleased
+The rest of the open.mp interfaces, and a Pawn include that stays in step with
+the plugin.
+
+**Fix to note first:** a plugin built with `samp-only` did not compile in
+3.6.0 — the library side broke in 3.6.0-rc.1, and the code generator had never
+honoured the feature for a plugin. Anyone relying on the opt-out wants this
+release.
+
+**New:** typed wrappers for nearly every open.mp interface, generated from the
+SDK headers and proven against the official binaries and a running server; the
+Pawn include generated from a template, checked in `cargo test`, documented in
+Pawn's own format; main-thread jobs that reach the plugin's state.
+
+**Hardening:** panics the server can reach no longer end its process; narrow
+return values from C++ are read as the whole register.
+
+The per-crate sections come first, then the ones belonging to the repository.
+
+### `rust-samp` (lib `samp`) — 3.6.0
 
 #### Added
 
@@ -64,7 +82,6 @@ for the full directory.
   either. Validated against four hand-written includes in the wild
   (`a_players`, `a_mysql`, `YSF`, `foreach`, ~550 declarations): every
   declaration read, and every one inside a comment block correctly left out.
-
 - **Generating the include from a template.** A generated include has no room
   for documentation and a hand-written one drifts; a template is both.
   `pawn_include::Template` fills `{{NATIVES}}`, `{{NATIVE:Name}}` and
@@ -112,6 +129,22 @@ for the full directory.
 
 #### Fixed
 
+- **A plugin built with `samp-only` did not compile — since `3.6.0-rc.1` for
+  the library, and for every plugin since native Open Multiplayer became the
+  default.** Two faults. In the library, the Pawn include's bookkeeping had been
+  placed in the Open Multiplayer-only part of the runtime, and the SDK's log
+  macros were compiled only with Open Multiplayer. In the code generator,
+  `initialize_plugin!` decided whether to emit the Open Multiplayer entry point
+  from `CARGO_FEATURE_SAMP_ONLY`, which Cargo sets only for build scripts — so
+  the check was always false, the entry point was always emitted, and it
+  referred to items `samp-only` removes. The decision now belongs to the `samp`
+  crate: `initialize_plugin!` wraps the entry point in `samp::__omp_only!`,
+  which `samp` defines once per case. A `samp-only` build of the `hello`
+  example loads on SA-MP and, as a legacy plugin, on open.mp; CI now builds it,
+  and runs clippy on the library crates with every feature combination — none
+  of the builds before turned the feature on, which is how this shipped.
+  With `samp-only`, the component UID is now written to `Cargo.toml` like in
+  any other build; it is unused there, and harmless.
 - **A native called outside the server's own ordering could end its process.**
   The `#[native]` wrapper resolved the script and the plugin with `expect`, before
   the `catch_unwind` that guards the native's body — so a panic there crossed
@@ -130,45 +163,6 @@ for the full directory.
 
 #### Tests
 
-- `omp-showcase` now also proves what the first run listed as ignored. Every
-  setter the server rejected was traced to the server's own code and exercised
-  under the conditions it sets: a valid fighting style, an armed NPC for its
-  clip, the NPC seated as a driver for its vehicle state and for angular
-  velocity, and the NPC's own weapon and special action for the player-side
-  getters. Four setters remain unproven by design — they only send an RPC to
-  the client (`player_set_velocity`, `vehicle_set_velocity`, and the player's
-  `set_action`/`set_armed_weapon`, which an NPC ignores) — and the report says
-  so. Round trips also cover `Vector3`, `Vector4`, `Colour` and text now, the
-  return conventions most likely to differ between the ABIs. 75 passed, 0 wrong,
-  identically on open.mp Linux and Windows under Wine.
-- New tools in the loop: `cargo-careful` (the standard library's own debug and
-  UB checks) and AddressSanitizer with leak detection on the host target both
-  run the SDK's tests clean; `cargo-semver-checks` finds no breaking change in
-  `samp` and only the intended deprecation in `samp-sdk`; a new fuzz target for
-  `pawn_include` ran 214,617 inputs without a panic, `parse_debug` 9.7 million.
-  The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
-  `env-samp`, the last two written for 3.0) compile against it unchanged.
-- The generated wrappers were proven three ways. **Against the binaries**: all
-  921 slots `check-abi-slots.py --generated` can derive match the official
-  servers — by method name on Linux, by the bytes each method pops on Windows;
-  133 are declared underivable (the Windows server executable keeps RTTI for
-  three classes only, and tail-calling methods have no `ret N` of their own).
-  **Against a running server**: the new `examples/omp-showcase` creates one of
-  every entity, reads back what it created, and round-trips every setter that
-  has a matching getter — including the player's, through an NPC. On open.mp
-  Linux and on open.mp Windows under Wine it reports the same thing: 53 passed,
-  0 wrong, and 9 setters the server ignores by its own rules (a fighting style
-  of 3 is not one, ammunition without a weapon), listed rather than hidden.
-  That run also proved the extension-map walk against a real player's data for
-  the first time.
-- The panic audit: every `unwrap`, `expect`, `assert!` and `panic!` outside test
-  code was classified by whether the server can reach it. Four were, and are
-  fixed above; the rest are compile-time layout checks, `debug_assert!`s, or
-  invariants the servers' call order guarantees — the runtime and the plugin are
-  created by `Supports`/`ComponentEntryPoint`, the first call each server makes.
-  An empty function-table slot is now pinned by a test that expects an error, and
-  the `counter` example, whose every native went through the changed wrapper,
-  was run on open.mp Linux, open.mp Windows under Wine and SA-MP Linux.
 - The include parser was checked against the 38 includes the open.mp server
   ships: 1068 native declarations and 117 forwards read, with no divergence from a
   count of the declaration lines — the pawndoc `/** */` blocks and `///` lines
@@ -209,33 +203,7 @@ for the full directory.
   include edited to rename one native and change another's arity and tag reports
   exactly those four divergences.
 
-#### Changed
-
-- **Narrow return values are read as the whole register.** A C++ function
-  returning `bool`, `uint8_t` or a 16-bit integer sets only the low part of
-  `EAX`: the official `IVehicle::isOccupied()` on Windows ORs two pointers into
-  it and then `setne %al`, so `true` comes back as `0x????..01`. Declaring the
-  foreign function as returning `bool` leaves Rust assuming a clean 0 or 1; the
-  code rustc generates today happens to read only `AL`, but nothing guarantees
-  that. `call_vtable!` now goes through `VirtualReturn`, which receives such
-  values as `u32`/`i32` and narrows them in Rust. The two hand-rolled
-  `add_*_handler` calls use `call_vtable!` now as well.
-- The `omp` module lost most of its repetition without changing what it does.
-  Per-ABI slot constants were a `#[cfg]` pair each (about 140 of them) and are
-  now one line in `slots!`; opaque handles went through `opaque!`; getters and
-  setters that were a signature around one `call_vtable!` are one line in
-  `virtual_fns!`; the `StringView` return that differs per ABI is one helper
-  instead of two hand-written copies. Two workarounds went with it: a helper
-  that pushed `u32` values through an `i32` setter with `as`, and a slot
-  constant with two names.
-- That this changed nothing was checked, not assumed: every non-inlined
-  function of the module was disassembled before and after, for both ABIs, and
-  compared. All matched except the two position getters, where the neutral
-  `Vector3` answer is now written only on the failure path instead of before the
-  call — same slot, same call, same stack cleanup. The `counter` example then
-  produced identical output on open.mp Linux and open.mp Windows.
-
-### `rust-samp-codegen` (lib `samp_codegen`) — unreleased
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.6.0
 
 #### Added
 
@@ -255,54 +223,24 @@ for the full directory.
   Pawn declaration of every registered native, as a plain function, available
   without a server. It is what lets `samp::pawn_include` compare a hand-written
   include with the natives behind it from a test.
-
-### `rust-samp-sdk` (lib `samp_sdk`) — unreleased
+- `initialize_plugin!` takes `callbacks: ["OnThing(a, b)"]`, the Pawn callbacks
+  the plugin calls, and emits `pawn_callback_decls()`; `#[native]` captures the
+  function's doc comment and `initialize_plugin!` emits `pawn_native_docs()`.
+  Both feed the include template (`{{CALLBACKS}}`, `{{DOC:Name}}`).
 
 #### Fixed
 
-- **A plugin built with `samp-only` did not compile — since `3.6.0-rc.1` for
-  the library, and for every plugin since native Open Multiplayer became the
-  default.** Two faults. In the library, the Pawn include's bookkeeping had been
-  placed in the Open Multiplayer-only part of the runtime, and the SDK's log
-  macros were compiled only with Open Multiplayer. In the code generator,
-  `initialize_plugin!` decided whether to emit the Open Multiplayer entry point
-  from `CARGO_FEATURE_SAMP_ONLY`, which Cargo sets only for build scripts — so
-  the check was always false, the entry point was always emitted, and it
-  referred to items `samp-only` removes. The decision now belongs to the `samp`
-  crate: `initialize_plugin!` wraps the entry point in `samp::__omp_only!`,
-  which `samp` defines once per case. A `samp-only` build of the `hello`
-  example loads on SA-MP and, as a legacy plugin, on open.mp; CI now builds it,
-  and runs clippy on the library crates with every feature combination — none
-  of the builds before turned the feature on, which is how this shipped.
-  With `samp-only`, the component UID is now written to `Cargo.toml` like in
-  any other build; it is unused there, and harmless.
-- **`player_extension` returned null for every component's per-player data.**
-  It called the virtual `getExtension`, whose base implementation returns null;
-  components file their data with `addExtension`, in the extension map. It now
-  does what open.mp's own `queryExtension<T>()` does — the map first, then the
-  virtual — and finds a player's dialog, checkpoint, menu and object data, as
-  `examples/omp-showcase` confirms on both servers.
-- `OmpComponent`'s documentation was attached to a constant declared between
-  the doc comment and the struct, so the struct showed as undocumented. And
-  `player_name` said both ABIs return its `StringView` through a hidden pointer,
-  which is the MSVC half only — the code already did the right thing.
-- **An AMX function table the server left partly empty ended the server's
-  process.** Every `Amx` call resolved its function through `Export::from_table`,
-  which asserted on an empty slot — a panic on the path of every native, and a
-  panic there aborts the process. The calls now answer `Err(AmxError::NotFound)`,
-  which a native reports like any other error. The first assertion, on a null
-  table, was already unreachable: `Amx` checks for that before resolving.
+- **`initialize_plugin!` emitted the Open Multiplayer entry point even for a
+  `samp-only` plugin**, which then did not compile. It decided from
+  `CARGO_FEATURE_SAMP_ONLY`, which Cargo sets only for build scripts. The entry
+  point is now wrapped in `samp::__omp_only!`, which the `samp` crate defines
+  according to its own feature. See the `rust-samp` entry.
+- The `#[native]` wrapper resolves the script and the plugin without `expect`,
+  before its `catch_unwind` — through `samp::interlayer::native_amx` and
+  `samp::plugin::try_get` — so a native called outside the server's ordering
+  answers `0` instead of ending the process.
 
-#### Deprecated
-
-- `Export::from_table`, in favour of `Export::try_from_table`, which returns
-  `None` instead of panicking. The old method keeps its signature and behaviour,
-  so nothing that calls it breaks.
-- The nine `omp::as_*_component` casts (`as_objects_component`,
-  `as_vehicles_component`, ...). Each took a component looked up by a UID
-  constant and cast it, and nothing tied the two together: looking up one
-  component and casting it to another compiled. `omp_query::<Component<I>>()`
-  takes the UID from the interface type instead. The casts keep working.
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.6.0
 
 #### Added
 
@@ -334,17 +272,97 @@ for the full directory.
 - Every public item of the `omp` submodules is re-exported at `omp::`, which
   adds `Component`, `ComponentInterface`, `ServerComponent` and `NUM_AMX_FUNCS`
   to what was already there.
-
 - `encoding::current()` returns the encoding in force. A plugin that lets the
   server owner choose one could set it but not read it back, so it could not
   report which encoding it was using.
-- `amx::loaded()` and `amx::count()` in `samp` (see that crate's entry) build on
-  the registry this crate exposes.
+
+#### Changed
+
+- **Narrow return values are read as the whole register.** A C++ function
+  returning `bool`, `uint8_t` or a 16-bit integer sets only the low part of
+  `EAX`: the official `IVehicle::isOccupied()` on Windows ORs two pointers into
+  it and then `setne %al`, so `true` comes back as `0x????..01`. Declaring the
+  foreign function as returning `bool` leaves Rust assuming a clean 0 or 1; the
+  code rustc generates today happens to read only `AL`, but nothing guarantees
+  that. `call_vtable!` now goes through `VirtualReturn`, which receives such
+  values as `u32`/`i32` and narrows them in Rust. The two hand-rolled
+  `add_*_handler` calls use `call_vtable!` now as well.
+- The `omp` module lost most of its repetition without changing what it does.
+  Per-ABI slot constants were a `#[cfg]` pair each (about 140 of them) and are
+  now one line in `slots!`; opaque handles went through `opaque!`; getters and
+  setters that were a signature around one `call_vtable!` are one line in
+  `virtual_fns!`; the `StringView` return that differs per ABI is one helper
+  instead of two hand-written copies. Two workarounds went with it: a helper
+  that pushed `u32` values through an `i32` setter with `as`, and a slot
+  constant with two names.
+- That this changed nothing was checked, not assumed: every non-inlined
+  function of the module was disassembled before and after, for both ABIs, and
+  compared. All matched except the two position getters, where the neutral
+  `Vector3` answer is now written only on the failure path instead of before the
+  call — same slot, same call, same stack cleanup. The `counter` example then
+  produced identical output on open.mp Linux and open.mp Windows.
+
+#### Deprecated
+
+- `Export::from_table`, in favour of `Export::try_from_table`, which returns
+  `None` instead of panicking. The old method keeps its signature and behaviour,
+  so nothing that calls it breaks.
+- The nine `omp::as_*_component` casts (`as_objects_component`,
+  `as_vehicles_component`, ...). Each took a component looked up by a UID
+  constant and cast it, and nothing tied the two together: looking up one
+  component and casting it to another compiled. `omp_query::<Component<I>>()`
+  takes the UID from the interface type instead. The casts keep working.
+
+#### Fixed
+
+- **`player_extension` returned null for every component's per-player data.**
+  It called the virtual `getExtension`, whose base implementation returns null;
+  components file their data with `addExtension`, in the extension map. It now
+  does what open.mp's own `queryExtension<T>()` does — the map first, then the
+  virtual — and finds a player's dialog, checkpoint, menu and object data, as
+  `examples/omp-showcase` confirms on both servers.
+- `OmpComponent`'s documentation was attached to a constant declared between
+  the doc comment and the struct, so the struct showed as undocumented. And
+  `player_name` said both ABIs return its `StringView` through a hidden pointer,
+  which is the MSVC half only — the code already did the right thing.
+- **An AMX function table the server left partly empty ended the server's
+  process.** Every `Amx` call resolved its function through `Export::from_table`,
+  which asserted on an empty slot — a panic on the path of every native, and a
+  panic there aborts the process. The calls now answer `Err(AmxError::NotFound)`,
+  which a native reports like any other error. The first assertion, on a null
+  table, was already unreachable: `Amx` checks for that before resolving.
+
+### Dependencies
+
+- Dependabot: 13 Cargo updates (#69), 3 GitHub Actions updates (#68), and
+  `pymdown-extensions` for the documentation site (#67).
+
+### CI
+
+- Clippy on the library crates with every feature combination, and a build of
+  the `hello` example with `samp-only`. No build turned that feature on before,
+  which is how its breakage reached a release.
+- `cargo deny check` against `deny.toml`: licenses, sources, yanked crates.
+
+### Docs
+
+- `natives.md`: checking and generating the Pawn include — templates,
+  placeholders, callbacks, documentation in Pawn's format, what `#[native]` can
+  add to a declaration, and the per-plugin environment variables.
+- `omp-interfaces.md`: the typed component lookup, the generated wrappers and
+  how they are proven, per-player extensions, and adding an interface.
+- `threads.md`: reaching the plugin's state from a main-thread job, and the one
+  `&mut` rule. `encoding.md`: reading the encoding in force.
+- `migration.md`, `plugin-anatomy.md` and the README: the plugin declares its
+  own `samp-only` feature, which the documented `#[cfg]` guard needs.
+- `migration.md` gains a v3.6.0 → v3.7.0 section: the typed component lookup
+  replacing the deprecated casts, `try_from_table`, and what `player_extension`
+  finds now.
 
 ### Tooling
 
-- `deny.toml` and a `cargo deny check` step in CI: licenses, sources and yanked
-  crates. Everything that ships with the MIT crates is permissive today; the
+- `deny.toml`, the dependency policy the new CI step checks: licenses, sources
+  and yanked crates. Everything that ships with the MIT crates is permissive today; the
   policy makes a dependency under anything else fail instead of arriving with an
   update.
 - The generators pass their output through `rustfmt`, so it is what `cargo fmt`
@@ -352,7 +370,6 @@ for the full directory.
   reported the files stale forever after.
 - `fuzz/` gained a `pawn_include` target: the include parser and the template
   renderer read files from outside the plugin, inside the server, at load.
-
 - `scripts/omp-wrappers.py` generates `samp-sdk/src/omp/generated/` from
   `scripts/omp-wrappers.toml` and the open.mp SDK headers: clang lays out each
   vtable for both ABIs, its AST gives every type, and a whitelist decides what
@@ -369,6 +386,48 @@ for the full directory.
   spells them, for the i686 target: on the x86-64 host `va_list` decays to
   `__va_list_tag *`, which no i686 compiler knows, and variadic methods lost
   their `...`. `ICore` could not be laid out for MSVC before.
+
+### Validation
+
+- `omp-showcase` now also proves what the first run listed as ignored. Every
+  setter the server rejected was traced to the server's own code and exercised
+  under the conditions it sets: a valid fighting style, an armed NPC for its
+  clip, the NPC seated as a driver for its vehicle state and for angular
+  velocity, and the NPC's own weapon and special action for the player-side
+  getters. Four setters remain unproven by design — they only send an RPC to
+  the client (`player_set_velocity`, `vehicle_set_velocity`, and the player's
+  `set_action`/`set_armed_weapon`, which an NPC ignores) — and the report says
+  so. Round trips also cover `Vector3`, `Vector4`, `Colour` and text now, the
+  return conventions most likely to differ between the ABIs. 75 passed, 0 wrong,
+  identically on open.mp Linux and Windows under Wine.
+- New tools in the loop: `cargo-careful` (the standard library's own debug and
+  UB checks) and AddressSanitizer with leak detection on the host target both
+  run the SDK's tests clean; `cargo-semver-checks` finds no breaking change in
+  `samp` and only the intended deprecation in `samp-sdk`; a new fuzz target for
+  `pawn_include` ran 214,617 inputs without a panic, `parse_debug` 9.7 million.
+  The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
+  `env-samp`, the last two written for 3.0) compile against it unchanged.
+- The generated wrappers were proven three ways. **Against the binaries**: all
+  921 slots `check-abi-slots.py --generated` can derive match the official
+  servers — by method name on Linux, by the bytes each method pops on Windows;
+  133 are declared underivable (the Windows server executable keeps RTTI for
+  three classes only, and tail-calling methods have no `ret N` of their own).
+  **Against a running server**: the new `examples/omp-showcase` creates one of
+  every entity, reads back what it created, and round-trips every setter that
+  has a matching getter — including the player's, through an NPC. On open.mp
+  Linux and on open.mp Windows under Wine it reports the same thing: 53 passed,
+  0 wrong, and 9 setters the server ignores by its own rules (a fighting style
+  of 3 is not one, ammunition without a weapon), listed rather than hidden.
+  That run also proved the extension-map walk against a real player's data for
+  the first time.
+- The panic audit: every `unwrap`, `expect`, `assert!` and `panic!` outside test
+  code was classified by whether the server can reach it. Four were, and are
+  fixed above; the rest are compile-time layout checks, `debug_assert!`s, or
+  invariants the servers' call order guarantees — the runtime and the plugin are
+  created by `Supports`/`ComponentEntryPoint`, the first call each server makes.
+  An empty function-table slot is now pinned by a test that expects an error, and
+  the `counter` example, whose every native went through the changed wrapper,
+  was run on open.mp Linux, open.mp Windows under Wine and SA-MP Linux.
 
 ## [v3.6.0] — 2026/09/25
 

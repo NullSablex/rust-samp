@@ -160,6 +160,57 @@ Types supported by `get_as` / `set_as` / `iter_as`: `i8`, `u8`, `i16`,
 > converts individual cells of a buffer. They live in different layers
 > intentionally — `CellConvert` does not need an `&Amx`.
 
+## v3.6.0 → v3.7.0
+
+Release v3.7.0 ships `rust-samp` 3.6.0, `rust-samp-sdk` 3.6.0 and
+`rust-samp-codegen` 1.6.0. Nothing breaks; two things are deprecated and one
+behaves better.
+
+### Querying a component
+
+The nine `as_*_component` casts are deprecated: they took a component looked up
+by a separate UID constant, and nothing tied the two together. Query by the
+interface instead — the UID comes from the type:
+
+**Before:**
+
+```rust
+let c = samp::plugin::omp_query_component(samp::omp::OBJECTS_COMPONENT_UID)?;
+let objects = unsafe { samp::omp::as_objects_component(c) };
+```
+
+**Now:**
+
+```rust
+use samp::omp::{Component, IObjectsComponent};
+
+let objects = samp::plugin::omp_query::<Component<IObjectsComponent>>()?.as_ptr();
+```
+
+### `Export::from_table`
+
+Deprecated in favour of `Export::try_from_table`, which returns `None` for a
+function table the server left partly empty instead of panicking — a panic
+there ends the server's process. Only code that resolves AMX exports by hand is
+affected.
+
+### `player_extension` finds more
+
+It now looks in the player's extension map before the virtual `getExtension`,
+the order open.mp's own `queryExtension<T>()` uses. Components' per-player data
+(dialogs, checkpoints, objects, menus) used to come back null and is found now.
+The generated accessors — `player_dialogs(player)`, `player_objects(player)` —
+return the same pointers already typed.
+
+### `samp-only`
+
+It works again, declared on the plugin so its own `#[cfg]` agrees with the SDK:
+
+```toml
+[features]
+samp-only = ["samp/samp-only"]
+```
+
 ## v3.1.0 → v3.2.0
 
 No breaking changes — every addition is opt-in and existing plugins keep
@@ -413,7 +464,8 @@ Declare it on the plugin rather than only on the dependency line: the
 `on_component_free` (below) asks about the plugin's features, and would
 otherwise stay true while the SDK leaves those hooks out.
 
-> Before 3.7, a plugin built this way did not compile: `initialize_plugin!`
+> Before release v3.7.0 (`rust-samp` 3.6.0), a plugin built this way did not
+> compile: `initialize_plugin!`
 > decided whether to emit the Open Multiplayer entry point from a variable
 > Cargo only sets for build scripts. The `samp` crate now makes that decision
 > itself.
