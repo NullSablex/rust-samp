@@ -18,9 +18,24 @@ libfuzzer-sys = "0.4"
 path = "../samp-sdk"
 features = ["debug"]
 
+[dependencies.rust-samp]
+path = "../samp"
+
+# cargo-machete reads the package name, `rust-samp-sdk`, and looks for it in the
+# code; the code uses the library name, `samp_sdk`. It is used.
+[package.metadata.cargo-machete]
+ignored = ["rust-samp-sdk", "rust-samp"]
+
 [[bin]]
 name = "parse_debug"
 path = "fuzz_targets/parse_debug.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pawn_include"
+path = "fuzz_targets/pawn_include.rs"
 test = false
 doc = false
 bench = false

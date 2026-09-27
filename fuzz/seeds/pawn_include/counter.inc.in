@@ -1,0 +1,57 @@
+/*
+ * counter v{{VERSION}} — a stateful example plugin for SA-MP and open.mp.
+ *
+ * GENERATED from counter.inc.in — do not edit counter.inc by hand.
+ *
+ * The prose, the sections and the callback documentation live in the template;
+ * every `native` line comes from the Rust signature, so it cannot drift.
+ */
+
+#if defined {{GUARD}}
+    #endinput
+#endif
+#define {{GUARD}}
+
+#define COUNTER_VERSION "{{VERSION}}"
+
+
+// ---------------------------------------------------------------------------
+// Callbacks
+// ---------------------------------------------------------------------------
+
+// Called on the main thread once a Counter_WorkAsync job has finished.
+{{CALLBACKS}}
+
+// Declares a callback in one line — `Counter::OnCounterWorkDone(delay) { ... }`
+// is the usual forward/public pair. Hand-written Pawn like this stays in the
+// template; only the declarations are generated.
+#define Counter::%0(%1) forward %0(%1); public %0(%1)
+
+
+// ---------------------------------------------------------------------------
+// Reading and changing the counter
+// ---------------------------------------------------------------------------
+
+// Documentation written once, in the Rust doc comment, rendered here in Pawn's
+// own format — the one the open.mp includes use and `pawncc -r` reads.
+{{DOC:Counter_Increment}}
+{{NATIVE:Counter_Increment}}
+
+{{DOC:Counter_Decrement}}
+{{NATIVE:Counter_Decrement}}
+
+// Back to zero.
+{{NATIVE:Counter_Reset}}
+
+// Reads the current value into `out`.
+{{NATIVE:Counter_Get}}
+
+// The open.mp-styled spelling of the same native, for a script that prefers it.
+{{NATIVE:Counter_Get as Counter_Read}}
+
+
+// ---------------------------------------------------------------------------
+// Everything else
+// ---------------------------------------------------------------------------
+
+{{NATIVES}}

@@ -26,14 +26,19 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
+import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GENERATED = REPO / "samp-sdk/src/omp/generated"
 OUT = REPO / "examples/omp-showcase/src/round_trips.rs"
 
-# Types a round trip can compare exactly, and that have an obvious "other value".
-COMPARABLE = {"i32", "u32", "i16", "u16", "i8", "u8", "i64", "u64", "f32", "bool"}
+# Types a round trip can compare, and that have an obvious "other value".
+COMPARABLE = {"i32", "u32", "i16", "u16", "i8", "u8", "i64", "u64", "f32", "bool",
+              "Vector3", "Vector4"}
+# Setter type -> getter return type for the values the ABI returns through a
+# small-struct slot, which the wrapper hands back as an `Option`.
+WRAPPED = {"StringView": "Option<String>", "Colour": "Option<Colour>"}
 
 ENTRY = re.compile(
     r"pub fn (\w+)\(\s*(\w+): (\w+)((?:,\s*\w+: [^,)]+)*),?\s*\)\s*(?:->\s*([^=]+?))?\s*=",
@@ -41,15 +46,32 @@ ENTRY = re.compile(
 )
 
 
+def rustfmt(text: str) -> str:
+    """The text as `cargo fmt` would leave it.
+
+    The generated files live inside crates that `cargo fmt` formats; written
+    unformatted, the next `cargo fmt` rewrites them and `--check` reports them
+    stale forever after."""
+    done = subprocess.run(["rustfmt", "--edition", "2024"], input=text, capture_output=True, text=True)
+    if done.returncode != 0:
+        sys.exit(f"rustfmt rejected the generated code:\n{done.stderr}")
+    return done.stdout
+
+
 def wrappers() -> dict[str, dict]:
-    """name -> {handle, this, params, ret} for every `virtual_fns!` entry."""
+    """name -> {handle, this, params, ret} for every generated wrapper."""
     found = {}
     for path in sorted(GENERATED.glob("*.rs")):
-        for m in ENTRY.finditer(path.read_text()):
+        text = path.read_text()
+        for m in ENTRY.finditer(text):
             name, this, handle, rest, ret = m.groups()
             params = [p.split(":")[1].strip() for p in rest.split(",") if ":" in p]
             found[name] = {"handle": handle, "this": this, "params": params,
                            "ret": ret.strip() if ret else None}
+        # Small-struct getters are plain functions returning an `Option`.
+        for m in re.finditer(r"pub unsafe fn (\w+)\((\w+): \*mut (\w+)\) -> (Option<\w+>)", text):
+            found[m.group(1)] = {"handle": m.group(3), "this": m.group(2), "params": [],
+                                 "ret": m.group(4)}
     return found
 
 
@@ -58,12 +80,15 @@ def pairs(found: dict) -> dict[str, list[tuple[str, str, str]]]:
     out: dict[str, list] = {}
     for setter, w in found.items():
         m = re.match(r"(\w+?)_set_(\w+)$", setter)
-        if not m or len(w["params"]) != 1 or w["params"][0] not in COMPARABLE:
+        if not m or len(w["params"]) != 1:
             continue
+        ty = w["params"][0]
         getter = f"{m.group(1)}_{m.group(2)}"
         g = found.get(getter)
-        if g and g["handle"] == w["handle"] and not g["params"] and g["ret"] == w["params"][0]:
-            out.setdefault(w["handle"], []).append((getter, setter, w["params"][0]))
+        if not g or g["handle"] != w["handle"] or g["params"]:
+            continue
+        if (ty in COMPARABLE and g["ret"] == ty) or WRAPPED.get(ty) == g["ret"]:
+            out.setdefault(w["handle"], []).append((getter, setter, ty))
     return out
 
 
@@ -87,16 +112,39 @@ def render(by_handle: dict) -> str:
             f"pub unsafe fn {fn}(handle: *mut {handle}, report: &mut Report) {{",
         ]
         for getter, setter, ty in sorted(by_handle[handle]):
-            lines += [
-                f'    report.begin("{getter}");',
-                "    unsafe {",
-                f"        let before: {ty} = {getter}(handle);",
-                "        let want = before.other();",
-                f"        {setter}(handle, want);",
-                f'        report.round_trip("{getter}", before, want, {getter}(handle));',
-                f"        {setter}(handle, before);",
-                "    }",
-            ]
+            lines.append(f'    report.begin("{getter}");')
+            if ty == "StringView":
+                # Text goes in as a view and comes back as an owned copy.
+                lines += [
+                    "    unsafe {",
+                    f"        let before = {getter}(handle).unwrap_or_default();",
+                    "        let want = before.other();",
+                    f"        {setter}(handle, StringView::of(&want));",
+                    f"        let got = {getter}(handle).unwrap_or_default();",
+                    f'        report.round_trip("{getter}", before.clone(), want, got);',
+                    f"        {setter}(handle, StringView::of(&before));",
+                    "    }",
+                ]
+            elif ty == "Colour":
+                lines += [
+                    "    unsafe {",
+                    f"        let before = {getter}(handle).unwrap_or_default();",
+                    "        let want = before.other();",
+                    f"        {setter}(handle, want);",
+                    f'        report.round_trip("{getter}", before, want, {getter}(handle).unwrap_or_default());',
+                    f"        {setter}(handle, before);",
+                    "    }",
+                ]
+            else:
+                lines += [
+                    "    unsafe {",
+                    f"        let before: {ty} = {getter}(handle);",
+                    "        let want = before.other();",
+                    f"        {setter}(handle, want);",
+                    f'        report.round_trip("{getter}", before, want, {getter}(handle));',
+                    f"        {setter}(handle, before);",
+                    "    }",
+                ]
         lines += ["}", ""]
     return "\n".join(lines)
 
@@ -107,7 +155,7 @@ def main() -> int:
     args = parser.parse_args()
 
     by_handle = pairs(wrappers())
-    text = render(by_handle)
+    text = rustfmt(render(by_handle))
     if args.check:
         if not OUT.exists() or OUT.read_text() != text:
             print(f"{OUT.relative_to(REPO)} is stale")

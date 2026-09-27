@@ -112,6 +112,12 @@ jobs:
       if: runner.os == 'Linux' && !matrix.check_only
       run: cargo install cargo-audit --locked && cargo audit
 
+    # Licenses, sources and yanked crates, per `deny.toml`. Advisories overlap
+    # with the audit above; the rest is what an update could slip in unnoticed.
+    - name: Dependency policy (cargo-deny)
+      if: runner.os == 'Linux' && !matrix.check_only
+      run: cargo install cargo-deny --locked && cargo deny check
+
     - name: Upload artifact
       if: '!matrix.check_only && github.event_name == ''push'' && github.ref == ''refs/heads/master'''
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
