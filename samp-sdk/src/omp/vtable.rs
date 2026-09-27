@@ -145,6 +145,88 @@ pub unsafe fn secondary_call_target(
     unsafe { secondary_call_target_ptr(obj, offset, slot) }.map(|(this, f)| (this, f.addr()))
 }
 
+/// How a value comes back from a C++ virtual call, and what to declare the
+/// foreign function as returning to receive it safely.
+///
+/// A C++ function returning `bool`, `uint8_t` or a 16-bit integer sets only the
+/// low part of `EAX`; the rest of the register is left as it was. The official
+/// `IVehicle::isOccupied()` on Windows ORs two pointers into `EAX` and then
+/// `setne %al` — `true` comes back as `0x????..01`. Rust, told the function
+/// returns `bool`, assumes the register holds exactly 0 or 1, and a `bool` with
+/// any other bit pattern is undefined behaviour: a comparison may read the
+/// whole register and answer wrongly, with nothing to show for it.
+///
+/// So narrow types are received as the full register (`Raw`) and narrowed in
+/// Rust, where truncation is defined. Everything else comes back as it is.
+pub trait VirtualReturn: Sized {
+    /// The type the foreign function is declared to return.
+    type Raw;
+    /// The value the caller sees.
+    fn from_raw(raw: Self::Raw) -> Self;
+}
+
+impl VirtualReturn for bool {
+    type Raw = u32;
+    fn from_raw(raw: u32) -> bool {
+        // Only `AL` is defined; C++ puts 0 or 1 there.
+        raw & 0xff != 0
+    }
+}
+
+macro_rules! narrowed {
+    ($($ty:ty => $raw:ty),* $(,)?) => {$(
+        impl VirtualReturn for $ty {
+            type Raw = $raw;
+            #[allow(clippy::cast_possible_truncation)]
+            fn from_raw(raw: $raw) -> $ty {
+                // Truncation keeps the defined low bits and drops the rest.
+                raw as $ty
+            }
+        }
+    )*};
+}
+
+narrowed!(u8 => u32, i8 => i32, u16 => u32, i16 => i32);
+
+macro_rules! as_returned {
+    ($($ty:ty),* $(,)?) => {$(
+        impl VirtualReturn for $ty {
+            type Raw = $ty;
+            fn from_raw(raw: $ty) -> $ty {
+                raw
+            }
+        }
+    )*};
+}
+
+as_returned!(
+    (),
+    i32,
+    u32,
+    i64,
+    u64,
+    f32,
+    f64,
+    usize,
+    isize,
+    super::types::Vector3,
+    super::types::Vector4,
+);
+
+impl<T> VirtualReturn for *mut T {
+    type Raw = *mut T;
+    fn from_raw(raw: *mut T) -> *mut T {
+        raw
+    }
+}
+
+impl<T> VirtualReturn for *const T {
+    type Raw = *const T;
+    fn from_raw(raw: *const T) -> *const T {
+        raw
+    }
+}
+
 /// Calls a virtual method through a server object's vtable.
 ///
 /// Every wrapper in this module family repeats the same four steps: name the
@@ -171,15 +253,16 @@ macro_rules! call_vtable {
         ($($arg:expr),* $(,)?),
         $absent:expr
     ) => {{
+        type Raw = <$ret as $crate::omp::vtable::VirtualReturn>::Raw;
         #[cfg(not(target_env = "msvc"))]
-        type VirtualFn = unsafe extern "C" fn(*mut u8 $(, $arg_ty)*) -> $ret;
+        type VirtualFn = unsafe extern "C" fn(*mut u8 $(, $arg_ty)*) -> Raw;
         #[cfg(target_env = "msvc")]
-        type VirtualFn = unsafe extern "thiscall" fn(*mut u8 $(, $arg_ty)*) -> $ret;
+        type VirtualFn = unsafe extern "thiscall" fn(*mut u8 $(, $arg_ty)*) -> Raw;
 
         match unsafe { $crate::omp::vtable::secondary_call_target_ptr($ptr, $offset, $slot) } {
             Some((this, f_ptr)) => {
                 let call: VirtualFn = unsafe { std::mem::transmute(f_ptr) };
-                unsafe { call(this $(, $arg)*) }
+                <$ret as $crate::omp::vtable::VirtualReturn>::from_raw(unsafe { call(this $(, $arg)*) })
             }
             None => $absent,
         }

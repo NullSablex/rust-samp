@@ -389,20 +389,17 @@ pub unsafe fn add_player_connect_handler(
     dispatcher: *mut IPlayerConnectDispatcher,
     handler: *mut PlayerConnectHandler,
 ) -> bool {
-    #[cfg(not(target_env = "msvc"))]
-    type AddFn = unsafe extern "C" fn(*mut u8, *mut PlayerConnectHandler, i8) -> bool;
-    #[cfg(target_env = "msvc")]
-    type AddFn = unsafe extern "thiscall" fn(*mut u8, *mut PlayerConnectHandler, i8) -> bool;
-
     // `IEventDispatcher<T>` declares no destructor, so `addEventHandler` is
-    // slot [0] on both ABIs — same layout the Pawn dispatcher uses.
-    let Some((this, f_ptr)) =
-        (unsafe { super::vtable::secondary_call_target_ptr(dispatcher.cast::<u8>(), 0, 0) })
-    else {
-        return false;
-    };
-    let add: AddFn = unsafe { std::mem::transmute(f_ptr) };
-    unsafe { add(this, handler, 0) }
+    // slot [0] on both ABIs — same layout the Pawn dispatcher uses. The last
+    // argument is the priority, `EventPriority_Default`.
+    call_vtable!(
+        dispatcher.cast::<u8>(),
+        0,
+        0,
+        (*mut PlayerConnectHandler, i8) -> bool,
+        (handler, 0),
+        false
+    )
 }
 
 handler_vtable! {
@@ -852,18 +849,14 @@ macro_rules! dispatcher_pair {
         /// Both pointers must be valid, and `handler` must outlive the
         /// registration.
         pub unsafe fn $adder(dispatcher: *mut $dispatcher, handler: *mut $handler) -> bool {
-            #[cfg(not(target_env = "msvc"))]
-            type AddFn = unsafe extern "C" fn(*mut u8, *mut $handler, i8) -> bool;
-            #[cfg(target_env = "msvc")]
-            type AddFn = unsafe extern "thiscall" fn(*mut u8, *mut $handler, i8) -> bool;
-
-            let Some((this, f_ptr)) = (unsafe {
-                super::vtable::secondary_call_target_ptr(dispatcher.cast::<u8>(), 0, 0)
-            }) else {
-                return false;
-            };
-            let add: AddFn = unsafe { std::mem::transmute(f_ptr) };
-            unsafe { add(this, handler, 0) }
+            call_vtable!(
+                dispatcher.cast::<u8>(),
+                0,
+                0,
+                (*mut $handler, i8) -> bool,
+                (handler, 0),
+                false
+            )
         }
     };
 }
