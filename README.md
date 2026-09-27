@@ -1,5 +1,8 @@
 [![CI](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml/badge.svg)](https://github.com/NullSablex/rust-samp/actions/workflows/rust.yml)
-[![crates.io](https://img.shields.io/crates/v/rust-samp?logo=rust)](https://crates.io/crates/rust-samp)
+[![release](https://img.shields.io/github/v/release/NullSablex/rust-samp?label=release&logo=github)](https://github.com/NullSablex/rust-samp/releases)
+[![rust-samp](https://img.shields.io/crates/v/rust-samp?label=rust-samp&logo=rust)](https://crates.io/crates/rust-samp)
+[![rust-samp-sdk](https://img.shields.io/crates/v/rust-samp-sdk?label=rust-samp-sdk&logo=rust)](https://crates.io/crates/rust-samp-sdk)
+[![rust-samp-codegen](https://img.shields.io/crates/v/rust-samp-codegen?label=rust-samp-codegen&logo=rust)](https://crates.io/crates/rust-samp-codegen)
 [![downloads](https://img.shields.io/crates/d/rust-samp?logo=rust&label=downloads)](https://crates.io/crates/rust-samp)
 [![docs.rs](https://img.shields.io/docsrs/rust-samp?logo=docsdotrs&label=docs.rs)](https://docs.rs/rust-samp)
 [![MSRV](https://img.shields.io/crates/msrv/rust-samp?label=MSRV)](Cargo.toml)
@@ -94,6 +97,11 @@ Drop the resulting `.so` into the server's `plugins/`. Full walkthrough in
 | `samp`         | Main crate — depend on this one.                                     |
 | `samp-sdk`     | Low-level bindings: AMX VM + Open Multiplayer component ABI.         |
 | `samp-codegen` | Procedural macros (`#[native]`, `initialize_plugin!`, `SampPlugin`). |
+
+Each crate is versioned on its own: a repository release (`v3.x.y`,
+the GitHub tag) bundles whatever crate versions it lists in the
+[CHANGELOG](CHANGELOG.md), so the crate numbers on crates.io need not
+match the release number.
 
 Edition 2024, workspace `resolver = "3"`. Target: **i686** — both servers
 are 32-bit.
