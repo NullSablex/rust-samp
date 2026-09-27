@@ -233,6 +233,22 @@ for the full directory.
 
 #### Fixed
 
+- **A plugin built with `samp-only` did not compile — since `3.6.0-rc.1` for
+  the library, and for every plugin since native Open Multiplayer became the
+  default.** Two faults. In the library, the Pawn include's bookkeeping had been
+  placed in the Open Multiplayer-only part of the runtime, and the SDK's log
+  macros were compiled only with Open Multiplayer. In the code generator,
+  `initialize_plugin!` decided whether to emit the Open Multiplayer entry point
+  from `CARGO_FEATURE_SAMP_ONLY`, which Cargo sets only for build scripts — so
+  the check was always false, the entry point was always emitted, and it
+  referred to items `samp-only` removes. The decision now belongs to the `samp`
+  crate: `initialize_plugin!` wraps the entry point in `samp::__omp_only!`,
+  which `samp` defines once per case. A `samp-only` build of the `hello`
+  example loads on SA-MP and, as a legacy plugin, on open.mp; CI now builds it,
+  and runs clippy on the library crates with every feature combination — none
+  of the builds before turned the feature on, which is how this shipped.
+  With `samp-only`, the component UID is now written to `Cargo.toml` like in
+  any other build; it is unused there, and harmless.
 - **`player_extension` returned null for every component's per-player data.**
   It called the virtual `getExtension`, whose base implementation returns null;
   components file their data with `addExtension`, in the extension map. It now

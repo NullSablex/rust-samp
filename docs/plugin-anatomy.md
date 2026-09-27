@@ -46,7 +46,13 @@ pub trait SampPlugin {
 The two Open Multiplayer-only hooks exist only when the `samp-only`
 feature is **not** set. Plugins that must compile both with and without
 that feature should gate their overrides with
-`#[cfg(not(feature = "samp-only"))]`.
+`#[cfg(not(feature = "samp-only"))]` — which asks about the **plugin's**
+feature, so the plugin declares one that turns on the SDK's:
+
+```toml
+[features]
+samp-only = ["samp/samp-only"]
+```
 
 > See [Native Open Multiplayer support](omp-native.md) for the full
 > Open Multiplayer lifecycle and feature-flag matrix.

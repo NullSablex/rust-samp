@@ -60,7 +60,6 @@ pub mod events;
 #[doc(hidden)]
 pub mod interlayer;
 pub mod logger;
-#[cfg(not(feature = "samp-only"))]
 pub(crate) mod macros;
 pub mod mainthread;
 pub mod omp_amx;
@@ -71,6 +70,28 @@ pub(crate) mod runtime;
 pub(crate) mod test_support;
 
 pub use samp_codegen::{event, initialize_plugin, native};
+
+/// Expands its input only when native Open Multiplayer support is compiled in —
+/// that is, without the `samp-only` feature.
+///
+/// `initialize_plugin!` wraps the Open Multiplayer entry point in it. The proc
+/// macro cannot tell which features this crate was built with; this macro is
+/// defined by the crate itself, once per case, so the answer is always this
+/// crate's.
+#[doc(hidden)]
+#[cfg(not(feature = "samp-only"))]
+#[macro_export]
+macro_rules! __omp_only {
+    ($($tokens:tt)*) => { $($tokens)* };
+}
+
+/// See the other definition: with `samp-only`, the input is dropped.
+#[doc(hidden)]
+#[cfg(feature = "samp-only")]
+#[macro_export]
+macro_rules! __omp_only {
+    ($($tokens:tt)*) => {};
+}
 
 /// Version of the `rust-samp` (`samp`) crate the plugin was compiled
 /// against. Useful for diagnostic natives that report the SDK build

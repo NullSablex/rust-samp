@@ -110,7 +110,9 @@ are 32-bit.
 
 - *(default)* — SA-MP exports + Open Multiplayer `ComponentEntryPoint`.
 - `samp-only` — opt out of the Open Multiplayer code path; plugin still
-  loads on Open Multiplayer in legacy mode.
+  loads on Open Multiplayer in legacy mode. Declare it on the plugin as
+  `samp-only = ["samp/samp-only"]` and build with `--features samp-only`, so
+  the plugin's own `#[cfg(feature = "samp-only")]` agrees with the SDK.
 - `encoding` — string conversion for the code pages servers run (Windows-1250
   through 1257, ISO-8859-2, UTF-8 and the rest of the WHATWG set) via
   `encoding_rs`.

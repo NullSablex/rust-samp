@@ -10,5 +10,11 @@ crate-type = ["cdylib"]
 [dependencies]
 samp = { package = "rust-samp", path = "../../samp" }
 
+# Builds the plugin for SA-MP only, without the Open Multiplayer entry point.
+# CI compiles it this way too: the opt-out was broken for every plugin until
+# it was, and nothing built it.
+[features]
+samp-only = ["samp/samp-only"]
+
 [package.metadata.samp]
 uid = "0x6ce26e5eedb55087"

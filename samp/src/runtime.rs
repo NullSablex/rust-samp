@@ -582,6 +582,60 @@ impl Runtime {
             .map(std::ptr::NonNull::as_ptr)
     }
 
+    /// Stores the list of natives to register on the AMX in native Open Multiplayer mode.
+    ///
+    /// Called by the generated `ComponentEntryPoint` before registering the `PawnEventHandler`,
+    /// ensuring natives are available when `pawn_on_amx_load` fires.
+    pub fn set_omp_natives(&self, natives: Vec<AMX_NATIVE_INFO>) {
+        self.inner().omp_natives = natives;
+    }
+
+    /// Returns the list of natives to register on the AMX in native Open Multiplayer mode.
+    pub fn omp_natives(&self) -> &[AMX_NATIVE_INFO] {
+        &self.inner().omp_natives
+    }
+
+    /// Enqueues an AMX that arrived via `on_amx_load` before `on_ready`.
+    /// It will be processed when `on_ready` stores the `fn_table`.
+    pub fn enqueue_pending_amx(&self, amx: *mut AMX) {
+        self.inner().omp_pending_amx.push(amx);
+    }
+
+    /// Drains the pending AMX queue. Called in `on_ready` after `set_omp_amx_exports`.
+    pub fn take_pending_amx(&self) -> Vec<*mut AMX> {
+        std::mem::take(&mut self.inner().omp_pending_amx)
+    }
+
+    /// Stores references to the timer/handler created in `on_ready` for the tick abstraction.
+    pub fn set_omp_tick(&self, timer: *mut ITimer, handler: *mut TimerTimeOutHandler) {
+        self.inner().omp_tick_timer = NonNull::new(timer);
+        self.inner().omp_tick_handler = NonNull::new(handler);
+    }
+
+    /// Returns and clears the timer pointer (for `kill` on shutdown).
+    pub fn take_omp_tick_timer(&self) -> Option<*mut ITimer> {
+        self.inner()
+            .omp_tick_timer
+            .take()
+            .map(std::ptr::NonNull::as_ptr)
+    }
+
+    /// Returns and clears the timer handler (in case the `free` callback does not fire and
+    /// we need to release manually).
+    pub fn take_omp_tick_handler(&self) -> Option<*mut TimerTimeOutHandler> {
+        self.inner()
+            .omp_tick_handler
+            .take()
+            .map(std::ptr::NonNull::as_ptr)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// What the plugin declared about itself — natives, callbacks, version. Needed
+// in every mode: the Pawn include is written from it on SA-MP too.
+// ---------------------------------------------------------------------------
+
+impl Runtime {
     /// Stores the plugin crate name and the Pawn declaration of each native,
     /// for writing the `.inc`.
     pub fn set_native_decls(&self, plugin_name: &'static str, decls: Vec<&'static str>) {
@@ -630,52 +684,5 @@ impl Runtime {
 
     pub fn native_decls(&self) -> &[&'static str] {
         &self.inner().native_decls
-    }
-
-    /// Stores the list of natives to register on the AMX in native Open Multiplayer mode.
-    ///
-    /// Called by the generated `ComponentEntryPoint` before registering the `PawnEventHandler`,
-    /// ensuring natives are available when `pawn_on_amx_load` fires.
-    pub fn set_omp_natives(&self, natives: Vec<AMX_NATIVE_INFO>) {
-        self.inner().omp_natives = natives;
-    }
-
-    /// Returns the list of natives to register on the AMX in native Open Multiplayer mode.
-    pub fn omp_natives(&self) -> &[AMX_NATIVE_INFO] {
-        &self.inner().omp_natives
-    }
-
-    /// Enqueues an AMX that arrived via `on_amx_load` before `on_ready`.
-    /// It will be processed when `on_ready` stores the `fn_table`.
-    pub fn enqueue_pending_amx(&self, amx: *mut AMX) {
-        self.inner().omp_pending_amx.push(amx);
-    }
-
-    /// Drains the pending AMX queue. Called in `on_ready` after `set_omp_amx_exports`.
-    pub fn take_pending_amx(&self) -> Vec<*mut AMX> {
-        std::mem::take(&mut self.inner().omp_pending_amx)
-    }
-
-    /// Stores references to the timer/handler created in `on_ready` for the tick abstraction.
-    pub fn set_omp_tick(&self, timer: *mut ITimer, handler: *mut TimerTimeOutHandler) {
-        self.inner().omp_tick_timer = NonNull::new(timer);
-        self.inner().omp_tick_handler = NonNull::new(handler);
-    }
-
-    /// Returns and clears the timer pointer (for `kill` on shutdown).
-    pub fn take_omp_tick_timer(&self) -> Option<*mut ITimer> {
-        self.inner()
-            .omp_tick_timer
-            .take()
-            .map(std::ptr::NonNull::as_ptr)
-    }
-
-    /// Returns and clears the timer handler (in case the `free` callback does not fire and
-    /// we need to release manually).
-    pub fn take_omp_tick_handler(&self) -> Option<*mut TimerTimeOutHandler> {
-        self.inner()
-            .omp_tick_handler
-            .take()
-            .map(std::ptr::NonNull::as_ptr)
     }
 }

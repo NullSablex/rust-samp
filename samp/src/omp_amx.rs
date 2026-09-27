@@ -29,6 +29,7 @@ use samp_sdk::exports::{
 };
 use samp_sdk::raw::types::AMX_NATIVE_INFO;
 
+#[cfg(not(feature = "samp-only"))]
 use crate::runtime::Runtime;
 
 /// The extended table is only known to be present when the SDK itself read it

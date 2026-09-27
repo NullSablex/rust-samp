@@ -392,15 +392,31 @@ target = "i686-unknown-linux-gnu"
 
 ### Option A — keep v2.x behavior (SA-MP only)
 
-Enable the `samp-only` feature. The `ComponentEntryPoint` is not
-emitted; the plugin behaves exactly like in v2.x:
+Give the plugin a `samp-only` feature of its own that turns on the SDK's,
+and build with it. The `ComponentEntryPoint` is not emitted; the plugin
+behaves exactly like in v2.x:
 
 ```toml
 [dependencies]
-samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z", features = ["samp-only"] }
+samp = { git = "https://github.com/NullSablex/rust-samp.git", tag = "vX.Y.Z" }
+
+[features]
+samp-only = ["samp/samp-only"]
 ```
 
-No other change is required.
+```sh
+cargo build --features samp-only
+```
+
+Declare it on the plugin rather than only on the dependency line: the
+`#[cfg(not(feature = "samp-only"))]` that guards `on_omp_ready` and
+`on_component_free` (below) asks about the plugin's features, and would
+otherwise stay true while the SDK leaves those hooks out.
+
+> Before 3.7, a plugin built this way did not compile: `initialize_plugin!`
+> decided whether to emit the Open Multiplayer entry point from a variable
+> Cargo only sets for build scripts. The `samp` crate now makes that decision
+> itself.
 
 ### Option B — adopt native Open Multiplayer support
 

@@ -89,6 +89,25 @@ jobs:
       if: '!matrix.check_only'
       run: cargo clippy --all-targets --target ${{ matrix.target }} -- -D warnings
 
+    # Every feature of the library crates, alone and together. The default set
+    # is all the steps above see; `samp-only` stopped compiling in 3.6.0-rc.1
+    # and shipped that way because no build turned it on.
+    - name: Clippy per feature
+      if: '!matrix.check_only'
+      shell: bash
+      run: |
+        for features in samp-only encoding debug compression "encoding,debug,compression" "samp-only,encoding,debug,compression"; do
+          echo "::group::--features $features"
+          cargo clippy -p rust-samp-sdk -p rust-samp --target ${{ matrix.target }} --features "rust-samp/${features//,/,rust-samp/}" -- -D warnings
+          echo "::endgroup::"
+        done
+
+    # A plugin built with `samp-only` must compile and must not export the
+    # Open Multiplayer entry point — the library alone compiling proves neither.
+    - name: Build a samp-only plugin
+      if: '!matrix.check_only'
+      run: cargo build -p hello --features samp-only --target ${{ matrix.target }}
+
     - name: Security audit
       if: runner.os == 'Linux' && !matrix.check_only
       run: cargo install cargo-audit --locked && cargo audit

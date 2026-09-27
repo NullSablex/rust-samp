@@ -11,7 +11,6 @@
 //!
 //! Marked `#[doc(hidden)]` in `lib.rs` — not part of the plugin's public API.
 
-#[cfg(not(feature = "samp-only"))]
 use crate::macros::sdk_warn;
 use crate::runtime::Runtime;
 use samp_sdk::raw::types::{AMX, AMX_NATIVE_INFO};
