@@ -343,6 +343,11 @@ The per-crate sections come first, then the ones belonging to the repository.
   the `hello` example with `samp-only`. No build turned that feature on before,
   which is how its breakage reached a release.
 - `cargo deny check` against `deny.toml`: licenses, sources, yanked crates.
+- The cross-only `aarch64` check caught a log import in `samp/src/events.rs`
+  left unconditional during the panic audit: only the `amx_Exec` hook uses it,
+  and the hook exists only on x86, so `-D warnings` failed everywhere else. The
+  import now carries the hook's own `cfg`. It never reached a published
+  version.
 
 ### Docs
 

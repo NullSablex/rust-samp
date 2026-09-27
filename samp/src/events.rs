@@ -22,6 +22,8 @@ use samp_sdk::args::Args;
 use samp_sdk::raw::types::AMX;
 
 use crate::amx::AmxIdent;
+// Only the `amx_Exec` hook logs, and it exists only where `retour` can build one.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::macros::sdk_warn;
 use crate::runtime::Runtime;
 
