@@ -1,6 +1,6 @@
 # Examples
 
-Three sample plugins, each one progressively richer. They share the
+Sample plugins, the first three progressively richer. They share the
 same workspace, so a single `cargo build --target i686-unknown-linux-gnu`
 at the repository root produces every artefact.
 
@@ -9,6 +9,8 @@ at the repository root produces every artefact.
 | [`hello`](hello/)       | Minimal stateless plugin. `#[derive(SampPlugin)]`, `&AmxString`, `write_str`.        | [`examples/hello/`](hello/)   |
 | [`counter`](counter/)   | Stateful plugin with the unified tick. `Ref<i32>`, full constructor block, `fern`.   | [`examples/counter/`](counter/)|
 | [`advanced`](advanced/) | Memcache client. Custom `AmxCell`, `encoding` feature, layered `fern` dispatch.      | [`examples/advanced/`](advanced/)|
+| [`sink-demo`](sink-demo/) | External log sink: Sentry integration through the `Sink` trait.                    | [`examples/sink-demo/`](sink-demo/)|
+| [`omp-showcase`](omp-showcase/) | Test harness for the generated open.mp wrappers: entities, an NPC, set/get round trips. | [`examples/omp-showcase/`](omp-showcase/)|
 
 Each example folder ships its own `README.md` covering the natives
 exposed to Pawn, the Rust patterns it demonstrates, and how to call

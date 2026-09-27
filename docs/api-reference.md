@@ -293,15 +293,17 @@ exec_public!(amx, "PublicName", &vec => array);     // Rust slice
 | Path                | Contents                                                                |
 | ------------------- | ----------------------------------------------------------------------- |
 | *(crate root)*      | `samp::version()` — `rust-samp` crate version (`&'static str`).         |
-| `samp::amx`         | `Amx`, `AmxExt`, `AmxIdent`, `get(ident)`, `add(ptr)`.                  |
-| `samp::plugin`      | `SampPlugin`, `TickContext`, `TickSource`, `TickConfig`, `enable_tick`, `enable_tick_with`, `enable_debug_hook`, `disable_debug_hook`, `logger`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
+| `samp::amx`         | `Amx`, `AmxExt`, `AmxIdent`, `get(ident)`, `add(ptr)`, `loaded()`, `count()`. |
+| `samp::plugin`      | `SampPlugin`, `TickContext`, `TickSource`, `TickConfig`, `enable_tick`, `enable_tick_with`, `enable_debug_hook`, `disable_debug_hook`, `logger`, `with_instance`, `is_borrowed`, `omp_core` *, `omp_query_component` *, `omp_query` *. |
 | `samp::debug` ***   | `AmxDbg` (`from_amx`, `parse`, `lookup_line`, `lookup_file`, `lookup_function`, `function_address`, `line_to_address`, `symbols_in_scope`, `tag_name`), `DbgSymbol`, `Ident`, `VClass`, `OpcodeMap`, `operand_cells`, `OP_NUM_OPCODES`, `OP_PARAMS`; submodules `opcode` (opcode numbers, `STK_MARGIN`) and `stack` (`walk`, `MAX_DEPTH`). |
 | `samp::cell`        | `AmxCell`, `CellConvert`, `AmxPrimitive`, `AmxString`, `Ref`, `Buffer`, `UnsizedBuffer`. |
 | `samp::error`       | `AmxError`, `AmxResult`.                                                |
 | `samp::args`        | `Args`.                                                                 |
 | `samp::consts`      | `Supports`, `AmxFlags`, `AmxExecIdx`, `ServerData`.                     |
-| `samp::encoding` ** | `set_default_encoding`, `WINDOWS_1251`, `WINDOWS_1252`.                 |
-| `samp::omp` *       | Re-exports of `samp_sdk::omp` (component types, vtables, helpers).      |
+| `samp::encoding` ** | `set_default_encoding`, `current`, `WINDOWS_1251`, `WINDOWS_1252`.      |
+| `samp::mainthread`  | `post`, `post_with`, `post_with_amx` — work handed back to the main thread. |
+| `samp::pawn_include`| Generating and checking the Pawn include: `render`, `Template`, `compare_file`, `parse`, `registered`. |
+| `samp::omp` *       | Re-exports of `samp_sdk::omp`: component types, `Component<I>`, `StringView::of`, and the generated interface wrappers ([guide](omp-interfaces.md)). |
 | `samp::raw`         | Raw FFI types (`AMX`, `AMX_HEADER`, `AMX_NATIVE_INFO`) and function aliases. |
 
 \* Available only when the `samp-only` feature is **not** set.
@@ -357,7 +359,17 @@ impl SampPlugin for MyPlugin {
   (after `on_init`).
 - `omp_query::<T>() -> Option<T>` — typed wrapper version; `T` must
   implement `OmpComponentHandle` (e.g. `PawnComponent`,
-  `TimersComponent`).
+  `TimersComponent`) or be `Component<I>` for a generated interface
+  (`omp_query::<Component<IVehiclesComponent>>()`).
+
+### `samp::plugin` — reaching the plugin
+
+- `with_instance::<T, _>(|p| ...) -> Option<R>` — the plugin's state from
+  anywhere on the main thread. `None` when a borrow is already alive, the type
+  is wrong, or the call comes from inside a native.
+- `is_borrowed() -> bool` — whether such a borrow is alive now.
+
+See [Background Work and the Main Thread](threads.md).
 
 ### `samp::logger` — turnkey logger
 

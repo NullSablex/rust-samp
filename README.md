@@ -139,6 +139,7 @@ are 32-bit.
 | [`examples/counter`](examples/counter/)   | Stateful plugin: `on_tick`, `Ref<i32>`, background work, native open.mp events and entities. |
 | [`examples/advanced`](examples/advanced/) | Memcache plugin: custom `AmxCell`, `encoding` feature, layered `fern`.    |
 | [`examples/sink-demo`](examples/sink-demo/) | External log sink: end-to-end Sentry integration via the `Sink` trait.  |
+| [`examples/omp-showcase`](examples/omp-showcase/) | Test harness: runs every generated open.mp wrapper on a live server — entities, an NPC as player, set/get round trips. |
 
 ## Documentation
 
@@ -146,7 +147,8 @@ Full user docs under [`docs/`](docs/) (MkDocs Material). Starting points:
 
 - [Introduction](docs/index.md) and [Setup](docs/setup.md).
 - [First plugin](docs/first-plugin.md) and [Plugin anatomy](docs/plugin-anatomy.md).
-- [Native Open Multiplayer support](docs/omp-native.md).
+- [Native Open Multiplayer support](docs/omp-native.md) and
+  [talking to the server directly](docs/omp-interfaces.md).
 - [Logging](docs/logging.md) and [VM Debugging](docs/vm-debugging.md).
 - [API reference](docs/api-reference.md) and [Migration guide](docs/migration.md).
 

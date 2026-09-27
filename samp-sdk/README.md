@@ -33,7 +33,13 @@ samp-sdk = { package = "rust-samp-sdk", version = "3" }
   `ILogger`. Vtables are verified against both Itanium (Linux GCC) and
   MSVC ABIs at runtime.
 - `OmpComponentHandle` trait + `omp_query` for typed access to any
-  component by UID.
+  component by UID, and `omp::Component<I>` for a lookup typed by the
+  interface itself.
+- Wrappers for nearly every open.mp interface — players, the player pool,
+  `ICore`, `IConfig`, objects, pickups, vehicles, textdraws, gang zones,
+  actors, text labels, menus, classes, checkpoints, dialogs, NPCs, variables
+  and the per-player data — generated from the SDK headers and checked
+  against the official server binaries for both ABIs.
 
 ## Target
 

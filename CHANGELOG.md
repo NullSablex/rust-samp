@@ -364,6 +364,20 @@ The per-crate sections come first, then the ones belonging to the repository.
   replacing the deprecated casts, `try_from_table`, and what `player_extension`
   finds now.
 
+- The README shows the repository release and each crate's version as separate
+  badges, and says that the crates are versioned on their own: one crates.io
+  badge next to a different GitHub release number read as a mismatch.
+- `examples/omp-showcase` gained a README, and is listed in the root README,
+  `examples/README.md` (which also lists `sink-demo`, missing until now) and
+  `advanced-examples.md`.
+- `api-reference.md` lists what this release added: `amx::loaded`/`count`,
+  `plugin::with_instance`/`is_borrowed`, `samp::mainthread`,
+  `samp::pawn_include`, `encoding::current`, `omp::Component<I>` and the
+  generated wrappers. The `rust-samp-sdk` README names the generated wrappers.
+- Removed `samp-sdk/readme.md` and `samp-codegen/readme.md`, copies left from
+  v2 that no manifest pointed at, and that clash with `README.md` on a
+  case-insensitive file system.
+
 ### Tooling
 
 - `deny.toml`, the dependency policy the new CI step checks: licenses, sources
