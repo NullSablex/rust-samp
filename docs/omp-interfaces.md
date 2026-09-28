@@ -105,6 +105,11 @@ available as `<entity>_<method>`: `object_set_model`, `pickup_model`,
 way `player_health` wraps `getHealth`. Every entity carrying an `IEntity`
 answers `entity_id`.
 
+A value the header takes by `const &` is a Rust reference
+(`checkpoint_set_position(cp, &pos)`); a setter that returns the object for
+chaining returns nothing here. Times use the SDK's `Milliseconds`, `Seconds`,
+`Minutes` and `Hours`, laid out as `std::chrono` is on each ABI.
+
 ## Generated wrappers
 
 Those functions are generated from the open.mp SDK headers by

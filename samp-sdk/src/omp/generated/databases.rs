@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -23,10 +25,14 @@ slots! {
     SLOT_CLOSE: usize = 19, 17;
     /// `bool IDatabasesComponent::freeResultSet(IDatabaseResultSet &)`
     SLOT_FREE_RESULT_SET: usize = 20, 18;
+    /// `std::size_t IDatabasesComponent::getDatabaseConnectionCount()`
+    SLOT_GET_DATABASE_CONNECTION_COUNT: usize = 21, 19;
     /// `bool IDatabasesComponent::isDatabaseConnectionIDValid(int)`
     SLOT_IS_DATABASE_CONNECTION_ID_VALID: usize = 22, 20;
     /// `IDatabaseConnection & IDatabasesComponent::getDatabaseConnectionByID(int)`
     SLOT_GET_DATABASE_CONNECTION_BY_ID: usize = 23, 21;
+    /// `std::size_t IDatabasesComponent::getDatabaseResultSetCount()`
+    SLOT_GET_DATABASE_RESULT_SET_COUNT: usize = 24, 22;
     /// `bool IDatabasesComponent::isDatabaseResultSetIDValid(int)`
     SLOT_IS_DATABASE_RESULT_SET_ID_VALID: usize = 25, 23;
     /// `IDatabaseResultSet & IDatabasesComponent::getDatabaseResultSetByID(int)`
@@ -65,6 +71,15 @@ virtual_fns! {
         result_set: *mut IDatabaseResultSet,
     ) -> bool = [0, SLOT_FREE_RESULT_SET] or false;
 
+    /// `std::size_t IDatabasesComponent::getDatabaseConnectionCount()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IDatabasesComponent`.
+    #[must_use]
+    pub fn databases_database_connection_count(
+        component: IDatabasesComponent,
+    ) -> usize = [0, SLOT_GET_DATABASE_CONNECTION_COUNT] or 0;
+
     /// `bool IDatabasesComponent::isDatabaseConnectionIDValid(int)`.
     ///
     /// # Safety
@@ -84,6 +99,15 @@ virtual_fns! {
         component: IDatabasesComponent,
         database_connection_id: i32,
     ) -> *mut IDatabaseConnection = [0, SLOT_GET_DATABASE_CONNECTION_BY_ID] or std::ptr::null_mut();
+
+    /// `std::size_t IDatabasesComponent::getDatabaseResultSetCount()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IDatabasesComponent`.
+    #[must_use]
+    pub fn databases_database_result_set_count(
+        component: IDatabasesComponent,
+    ) -> usize = [0, SLOT_GET_DATABASE_RESULT_SET_COUNT] or 0;
 
     /// `bool IDatabasesComponent::isDatabaseResultSetIDValid(int)`.
     ///
@@ -105,7 +129,3 @@ virtual_fns! {
         database_result_set_id: i32,
     ) -> *mut IDatabaseResultSet = [0, SLOT_GET_DATABASE_RESULT_SET_BY_ID] or std::ptr::null_mut();
 }
-
-// What the generator left out, and why.
-// skipped: `std::size_t IDatabasesComponent::getDatabaseConnectionCount()` — returns `std::size_t`
-// skipped: `std::size_t IDatabasesComponent::getDatabaseResultSetCount()` — returns `std::size_t`

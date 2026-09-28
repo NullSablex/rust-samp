@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -17,13 +19,24 @@ opaque! {
 }
 
 slots! {
+    /// `std::size_t IDatabaseResultSet::getRowCount()`
+    SLOT_GET_ROW_COUNT: usize = 6, 5;
     /// `bool IDatabaseResultSet::selectNextRow()`
     SLOT_SELECT_NEXT_ROW: usize = 7, 6;
+    /// `std::size_t IDatabaseResultSet::getFieldCount()`
+    SLOT_GET_FIELD_COUNT: usize = 8, 7;
     /// `bool IDatabaseResultSet::isFieldNameAvailable(StringView)`
     SLOT_IS_FIELD_NAME_AVAILABLE: usize = 9, 8;
 }
 
 virtual_fns! {
+    /// `std::size_t IDatabaseResultSet::getRowCount()`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_row_count(result: IDatabaseResultSet) -> usize = [0, SLOT_GET_ROW_COUNT] or 0;
+
     /// `bool IDatabaseResultSet::selectNextRow()`.
     ///
     /// # Safety
@@ -32,6 +45,15 @@ virtual_fns! {
     pub fn db_result_select_next_row(
         result: IDatabaseResultSet,
     ) -> bool = [0, SLOT_SELECT_NEXT_ROW] or false;
+
+    /// `std::size_t IDatabaseResultSet::getFieldCount()`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_field_count(
+        result: IDatabaseResultSet,
+    ) -> usize = [0, SLOT_GET_FIELD_COUNT] or 0;
 
     /// `bool IDatabaseResultSet::isFieldNameAvailable(StringView)`.
     ///
@@ -45,12 +67,10 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `std::size_t IDatabaseResultSet::getRowCount()` — returns `std::size_t`
-// skipped: `std::size_t IDatabaseResultSet::getFieldCount()` — returns `std::size_t`
-// skipped: `StringView IDatabaseResultSet::getFieldName(std::size_t)` — takes `std::size_t`
-// skipped: `StringView IDatabaseResultSet::getFieldString(std::size_t)` — takes `std::size_t`
-// skipped: `long IDatabaseResultSet::getFieldInt(std::size_t)` — takes `std::size_t`
-// skipped: `double IDatabaseResultSet::getFieldFloat(std::size_t)` — takes `std::size_t`
+// skipped: `StringView IDatabaseResultSet::getFieldName(std::size_t)` — returns a small struct and takes arguments
+// skipped: `StringView IDatabaseResultSet::getFieldString(std::size_t)` — returns a small struct and takes arguments
+// skipped: `long IDatabaseResultSet::getFieldInt(std::size_t)` — returns `long`
+// skipped: `double IDatabaseResultSet::getFieldFloat(std::size_t)` — returns `double`
 // skipped: `StringView IDatabaseResultSet::getFieldStringByName(StringView)` — returns a small struct and takes arguments
 // skipped: `long IDatabaseResultSet::getFieldIntByName(StringView)` — returns `long`
 // skipped: `double IDatabaseResultSet::getFieldFloatByName(StringView)` — returns `double`

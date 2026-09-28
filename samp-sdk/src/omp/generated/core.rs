@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -26,6 +28,8 @@ slots! {
     SLOT_GET_GRAVITY: usize = 14, 13;
     /// `void ICore::setWeather(int)`
     SLOT_SET_WEATHER: usize = 15, 14;
+    /// `void ICore::setWorldTime(Hours)`
+    SLOT_SET_WORLD_TIME: usize = 16, 15;
     /// `void ICore::useStuntBonuses(bool)`
     SLOT_USE_STUNT_BONUSES: usize = 17, 16;
     /// `void ICore::setData(SettableCoreDataType, StringView)`
@@ -96,6 +100,12 @@ virtual_fns! {
     /// `core` must be a live `ICore`.
     pub fn core_set_weather(core: ICore, weather: i32) = [0, SLOT_SET_WEATHER];
 
+    /// `void ICore::setWorldTime(Hours)`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    pub fn core_set_world_time(core: ICore, time: Hours) = [0, SLOT_SET_WORLD_TIME];
+
     /// `void ICore::useStuntBonuses(bool)`.
     ///
     /// # Safety
@@ -164,7 +174,6 @@ pub unsafe fn core_version_hash(core: *mut ICore) -> Option<String> {
 // skipped: `SemanticVersion ICore::getVersion()` — returns `SemanticVersion`
 // skipped: `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()` — returns `IEventDispatcher<CoreEventHandler> &`, which the SDK does not mirror
 // skipped: `const FlatPtrHashSet<INetwork> & ICore::getNetworks()` — returns `const FlatPtrHashSet<INetwork> &`, which the SDK does not mirror
-// skipped: `void ICore::setWorldTime(Hours)` — takes `Hours`
 // skipped: `void ICore::setThreadSleep(Microseconds)` — takes `Microseconds`
 // skipped: `StringView ICore::getWeaponName(PlayerWeapon)` — returns a small struct and takes arguments
 // skipped: `void ICore::requestHTTP(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)` — takes `HTTPResponseHandler *`, which the SDK does not mirror

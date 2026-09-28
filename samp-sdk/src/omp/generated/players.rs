@@ -7,15 +7,21 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
     /// `bool IPlayerPool::isNameTaken(StringView, const IPlayer *)`
     SLOT_IS_NAME_TAKEN: usize = 20, 19;
+    /// `void IPlayerPool::sendClientMessageToAll(const Colour &, StringView)`
+    SLOT_SEND_CLIENT_MESSAGE_TO_ALL: usize = 21, 20;
     /// `void IPlayerPool::sendChatMessageToAll(IPlayer &, StringView)`
     SLOT_SEND_CHAT_MESSAGE_TO_ALL: usize = 22, 21;
+    /// `void IPlayerPool::sendGameTextToAll(StringView, Milliseconds, int)`
+    SLOT_SEND_GAME_TEXT_TO_ALL: usize = 23, 22;
     /// `void IPlayerPool::hideGameTextForAll(int)`
     SLOT_HIDE_GAME_TEXT_FOR_ALL: usize = 24, 23;
     /// `void IPlayerPool::sendDeathMessageToAll(IPlayer *, IPlayer &, int)`
@@ -44,6 +50,16 @@ virtual_fns! {
         skip: *mut IPlayer,
     ) -> bool = [0, SLOT_IS_NAME_TAKEN] or false;
 
+    /// `void IPlayerPool::sendClientMessageToAll(const Colour &, StringView)`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    pub fn players_send_client_message_to_all(
+        pool: IPlayerPool,
+        colour: &Colour,
+        message: StringView,
+    ) = [0, SLOT_SEND_CLIENT_MESSAGE_TO_ALL];
+
     /// `void IPlayerPool::sendChatMessageToAll(IPlayer &, StringView)`.
     ///
     /// # Safety
@@ -53,6 +69,17 @@ virtual_fns! {
         from: *mut IPlayer,
         message: StringView,
     ) = [0, SLOT_SEND_CHAT_MESSAGE_TO_ALL];
+
+    /// `void IPlayerPool::sendGameTextToAll(StringView, Milliseconds, int)`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    pub fn players_send_game_text_to_all(
+        pool: IPlayerPool,
+        message: StringView,
+        time: Milliseconds,
+        style: i32,
+    ) = [0, SLOT_SEND_GAME_TEXT_TO_ALL];
 
     /// `void IPlayerPool::hideGameTextForAll(int)`.
     ///
@@ -139,8 +166,6 @@ virtual_fns! {
 // skipped: `IEventDispatcher<PlayerCheckEventHandler> & IPlayerPool::getPlayerCheckDispatcher()` — returns `IEventDispatcher<PlayerCheckEventHandler> &`, which the SDK does not mirror
 // skipped: `IEventDispatcher<PlayerUpdateEventHandler> & IPlayerPool::getPlayerUpdateDispatcher()` — returns `IEventDispatcher<PlayerUpdateEventHandler> &`, which the SDK does not mirror
 // skipped: `IEventDispatcher<PoolEventHandler<IPlayer>> & IPlayerPool::getPoolEventDispatcher()` — returns `IEventDispatcher<PoolEventHandler<IPlayer>> &`, which the SDK does not mirror
-// skipped: `void IPlayerPool::sendClientMessageToAll(const Colour &, StringView)` — takes `const Colour &`, which the SDK does not mirror
-// skipped: `void IPlayerPool::sendGameTextToAll(StringView, Milliseconds, int)` — takes `Milliseconds`
 // skipped: `Pair<NewConnectionResult, IPlayer *> IPlayerPool::requestPlayer(const PeerNetworkData &, const PeerRequestParams &)` — takes `const PeerNetworkData &`, which the SDK does not mirror
 // skipped: `void IPlayerPool::broadcastPacket(Span<uint8_t>, int, const IPlayer *, bool)` — takes `Span<uint8_t>`
 // skipped: `void IPlayerPool::broadcastRPC(int, Span<uint8_t>, int, const IPlayer *, bool)` — takes `Span<uint8_t>`

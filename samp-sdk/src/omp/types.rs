@@ -228,6 +228,42 @@ impl Vector4 {
     };
 }
 
+/// `std::chrono` durations as the server's headers use them: `Milliseconds`,
+/// `Seconds`, `Minutes`, `Hours`.
+///
+/// Each is the duration's count and nothing else, laid out as the C++ class
+/// is. The count's width is the standard library's choice: 64 bits in both for
+/// milliseconds and seconds, while Microsoft's library counts minutes and hours
+/// in an `int` where libstdc++ keeps 64 bits — hence [`HoursRep`].
+macro_rules! durations {
+    ($($(#[$meta:meta])* $name:ident($rep:ty);)*) => {$(
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[repr(C)]
+        pub struct $name(pub $rep);
+    )*};
+}
+
+/// The count type of [`Minutes`] and [`Hours`]: `int` under MSVC, 64 bits under
+/// libstdc++.
+#[cfg(target_env = "msvc")]
+pub type HoursRep = i32;
+/// The count type of [`Minutes`] and [`Hours`]: `int` under MSVC, 64 bits under
+/// libstdc++.
+#[cfg(not(target_env = "msvc"))]
+pub type HoursRep = i64;
+
+durations! {
+    /// `std::chrono::milliseconds`.
+    Milliseconds(i64);
+    /// `std::chrono::seconds`.
+    Seconds(i64);
+    /// `std::chrono::minutes`.
+    Minutes(HoursRep);
+    /// `std::chrono::hours`.
+    Hours(HoursRep);
+}
+
 /// Component type.
 ///
 /// Equivalent to `ComponentType` in `component.hpp`.

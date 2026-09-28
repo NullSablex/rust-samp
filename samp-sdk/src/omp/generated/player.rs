@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -96,6 +98,8 @@ slots! {
     SLOT_USE_STUNT_BONUSES: usize = 68, 67;
     /// `void IPlayer::toggleOtherNameTag(IPlayer &, bool)`
     SLOT_TOGGLE_OTHER_NAME_TAG: usize = 69, 68;
+    /// `void IPlayer::setTime(Hours, Minutes)`
+    SLOT_SET_TIME: usize = 70, 69;
     /// `void IPlayer::useClock(bool)`
     SLOT_USE_CLOCK: usize = 72, 71;
     /// `bool IPlayer::hasClock()`
@@ -108,6 +112,8 @@ slots! {
     SLOT_SET_GRAVITY: usize = 83, 82;
     /// `float IPlayer::getGravity()`
     SLOT_GET_GRAVITY: usize = 84, 83;
+    /// `void IPlayer::setWorldTime(Hours)`
+    SLOT_SET_WORLD_TIME: usize = 85, 84;
     /// `void IPlayer::clearAnimations(PlayerAnimationSyncType)`
     SLOT_CLEAR_ANIMATIONS: usize = 87, 86;
     /// `void IPlayer::streamInForPlayer(IPlayer &)`
@@ -118,10 +124,16 @@ slots! {
     SLOT_STREAM_OUT_FOR_PLAYER: usize = 92, 91;
     /// `PlayerState IPlayer::getState()`
     SLOT_GET_STATE: usize = 94, 93;
+    /// `void IPlayer::setChatBubble(StringView, const Colour &, float, Milliseconds)`
+    SLOT_SET_CHAT_BUBBLE: usize = 99, 98;
+    /// `void IPlayer::sendClientMessage(const Colour &, StringView)`
+    SLOT_SEND_CLIENT_MESSAGE: usize = 100, 99;
     /// `void IPlayer::sendChatMessage(IPlayer &, StringView)`
     SLOT_SEND_CHAT_MESSAGE: usize = 101, 100;
     /// `void IPlayer::sendCommand(StringView)`
     SLOT_SEND_COMMAND: usize = 102, 101;
+    /// `void IPlayer::sendGameText(StringView, Milliseconds, int)`
+    SLOT_SEND_GAME_TEXT: usize = 103, 102;
     /// `void IPlayer::hideGameText(int)`
     SLOT_HIDE_GAME_TEXT: usize = 104, 103;
     /// `bool IPlayer::hasGameText(int)`
@@ -501,6 +513,12 @@ virtual_fns! {
         toggle: bool,
     ) = [0, SLOT_TOGGLE_OTHER_NAME_TAG];
 
+    /// `void IPlayer::setTime(Hours, Minutes)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_set_time(player: IPlayer, hr: Hours, min: Minutes) = [0, SLOT_SET_TIME];
+
     /// `void IPlayer::useClock(bool)`.
     ///
     /// # Safety
@@ -539,6 +557,12 @@ virtual_fns! {
     /// `player` must be a live `IPlayer`.
     #[must_use]
     pub fn player_gravity(player: IPlayer) -> f32 = [0, SLOT_GET_GRAVITY] or 0.0;
+
+    /// `void IPlayer::setWorldTime(Hours)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_set_world_time(player: IPlayer, time: Hours) = [0, SLOT_SET_WORLD_TIME];
 
     /// `void IPlayer::clearAnimations(PlayerAnimationSyncType)`.
     ///
@@ -581,6 +605,28 @@ virtual_fns! {
     #[must_use]
     pub fn player_state(player: IPlayer) -> i32 = [0, SLOT_GET_STATE] or 0;
 
+    /// `void IPlayer::setChatBubble(StringView, const Colour &, float, Milliseconds)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_set_chat_bubble(
+        player: IPlayer,
+        text: StringView,
+        colour: &Colour,
+        draw_dist: f32,
+        expire: Milliseconds,
+    ) = [0, SLOT_SET_CHAT_BUBBLE];
+
+    /// `void IPlayer::sendClientMessage(const Colour &, StringView)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_send_client_message(
+        player: IPlayer,
+        colour: &Colour,
+        message: StringView,
+    ) = [0, SLOT_SEND_CLIENT_MESSAGE];
+
     /// `void IPlayer::sendChatMessage(IPlayer &, StringView)`.
     ///
     /// # Safety
@@ -596,6 +642,17 @@ virtual_fns! {
     /// # Safety
     /// `player` must be a live `IPlayer`.
     pub fn player_send_command(player: IPlayer, message: StringView) = [0, SLOT_SEND_COMMAND];
+
+    /// `void IPlayer::sendGameText(StringView, Milliseconds, int)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_send_game_text(
+        player: IPlayer,
+        message: StringView,
+        time: Milliseconds,
+        style: i32,
+    ) = [0, SLOT_SEND_GAME_TEXT];
 
     /// `void IPlayer::hideGameText(int)`.
     ///
@@ -974,7 +1031,6 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `void IPlayer::setMoney(int)` — `player_set_money` is written by hand
 // skipped: `void IPlayer::giveMoney(int)` — `player_give_money` is written by hand
 // skipped: `int IPlayer::getMoney()` — `player_money` is written by hand
-// skipped: `void IPlayer::setTime(Hours, Minutes)` — takes `Hours`
 // skipped: `Pair<Hours, Minutes> IPlayer::getTime()` — returns `Pair<Hours, Minutes>`
 // skipped: `void IPlayer::setTransform(GTAQuat)` — takes `GTAQuat`
 // skipped: `void IPlayer::setHealth(float)` — `player_set_health` is written by hand
@@ -983,7 +1039,6 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `int IPlayer::getScore()` — `player_score` is written by hand
 // skipped: `void IPlayer::setArmour(float)` — `player_set_armour` is written by hand
 // skipped: `float IPlayer::getArmour()` — `player_armour` is written by hand
-// skipped: `void IPlayer::setWorldTime(Hours)` — takes `Hours`
 // skipped: `void IPlayer::applyAnimation(const AnimationData &, PlayerAnimationSyncType)` — takes `const AnimationData &`, which the SDK does not mirror
 // skipped: `PlayerAnimationData IPlayer::getAnimationData()` — returns `PlayerAnimationData`
 // skipped: `PlayerSurfingData IPlayer::getSurfingData()` — returns `PlayerSurfingData`
@@ -992,9 +1047,6 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `int IPlayer::getTeam()` — `player_team` is written by hand
 // skipped: `void IPlayer::setSkin(int, bool)` — `player_set_skin` is written by hand
 // skipped: `int IPlayer::getSkin()` — `player_skin` is written by hand
-// skipped: `void IPlayer::setChatBubble(StringView, const Colour &, float, Milliseconds)` — takes `const Colour &`, which the SDK does not mirror
-// skipped: `void IPlayer::sendClientMessage(const Colour &, StringView)` — takes `const Colour &`, which the SDK does not mirror
-// skipped: `void IPlayer::sendGameText(StringView, Milliseconds, int)` — takes `Milliseconds`
 // skipped: `bool IPlayer::getGameText(int, StringView &, Milliseconds &, Milliseconds &)` — takes `StringView &`, which the SDK does not mirror
 // skipped: `void IPlayer::setWeather(int)` — `player_set_weather` is written by hand
 // skipped: `void IPlayer::setInterior(unsigned int)` — `player_set_interior` is written by hand

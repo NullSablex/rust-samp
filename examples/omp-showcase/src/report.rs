@@ -8,7 +8,7 @@
 use std::fmt::Debug;
 
 use log::{debug, info, warn};
-use samp::omp::{Colour, Vector3, Vector4};
+use samp::omp::{Colour, Hours, Milliseconds, Minutes, Seconds, Vector3, Vector4};
 
 /// A value different from `self`, to set and read back.
 ///
@@ -74,6 +74,18 @@ impl Other for Colour {
     }
 }
 
+macro_rules! other_duration {
+    ($($ty:ident),*) => {$(
+        impl Other for $ty {
+            fn other(&self) -> Self {
+                $ty(self.0.other())
+            }
+        }
+    )*};
+}
+
+other_duration!(Milliseconds, Seconds, Minutes, Hours);
+
 impl Other for String {
     fn other(&self) -> Self {
         if self == "round trip" {
@@ -102,7 +114,23 @@ macro_rules! close_exactly {
     )*};
 }
 
-close_exactly!(bool, i8, u8, i16, u16, i32, u32, i64, u64, Colour, String);
+close_exactly!(
+    bool,
+    i8,
+    u8,
+    i16,
+    u16,
+    i32,
+    u32,
+    i64,
+    u64,
+    Colour,
+    String,
+    Milliseconds,
+    Seconds,
+    Minutes,
+    Hours
+);
 
 impl Close for Vector3 {
     fn close_to(self, other: Self) -> bool {

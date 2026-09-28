@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -39,8 +41,18 @@ slots! {
     SLOT_DESTROY_PATH: usize = 12, 11;
     /// `void INPCComponent::destroyAllPaths()`
     SLOT_DESTROY_ALL_PATHS: usize = 13, 12;
+    /// `size_t INPCComponent::getPathCount()`
+    SLOT_GET_PATH_COUNT: usize = 14, 13;
+    /// `bool INPCComponent::addPointToPath(int, const Vector3 &, float)`
+    SLOT_ADD_POINT_TO_PATH: usize = 15, 14;
+    /// `bool INPCComponent::removePointFromPath(int, size_t)`
+    SLOT_REMOVE_POINT_FROM_PATH: usize = 16, 15;
     /// `bool INPCComponent::clearPath(int)`
     SLOT_CLEAR_PATH: usize = 17, 16;
+    /// `size_t INPCComponent::getPathPointCount(int)`
+    SLOT_GET_PATH_POINT_COUNT: usize = 18, 17;
+    /// `bool INPCComponent::hasPathPointInRange(int, const Vector3 &, float)`
+    SLOT_HAS_PATH_POINT_IN_RANGE: usize = 20, 19;
     /// `bool INPCComponent::isValidPath(int)`
     SLOT_IS_VALID_PATH: usize = 21, 20;
     /// `int INPCComponent::loadRecord(StringView)`
@@ -49,6 +61,8 @@ slots! {
     SLOT_UNLOAD_RECORD: usize = 23, 22;
     /// `bool INPCComponent::isValidRecord(int)`
     SLOT_IS_VALID_RECORD: usize = 24, 23;
+    /// `size_t INPCComponent::getRecordCount()`
+    SLOT_GET_RECORD_COUNT: usize = 25, 24;
     /// `void INPCComponent::unloadAllRecords()`
     SLOT_UNLOAD_ALL_RECORDS: usize = 26, 25;
     /// `bool INPCComponent::openNode(int)`
@@ -105,6 +119,36 @@ virtual_fns! {
     /// `component` must be a live `INPCComponent`.
     pub fn npcs_destroy_all_paths(component: INPCComponent) = [0, SLOT_DESTROY_ALL_PATHS];
 
+    /// `size_t INPCComponent::getPathCount()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_path_count(component: INPCComponent) -> usize = [0, SLOT_GET_PATH_COUNT] or 0;
+
+    /// `bool INPCComponent::addPointToPath(int, const Vector3 &, float)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_add_point_to_path(
+        component: INPCComponent,
+        path_id: i32,
+        position: &Vector3,
+        stop_range: f32,
+    ) -> bool = [0, SLOT_ADD_POINT_TO_PATH] or false;
+
+    /// `bool INPCComponent::removePointFromPath(int, size_t)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_remove_point_from_path(
+        component: INPCComponent,
+        path_id: i32,
+        point_index: usize,
+    ) -> bool = [0, SLOT_REMOVE_POINT_FROM_PATH] or false;
+
     /// `bool INPCComponent::clearPath(int)`.
     ///
     /// # Safety
@@ -114,6 +158,28 @@ virtual_fns! {
         component: INPCComponent,
         path_id: i32,
     ) -> bool = [0, SLOT_CLEAR_PATH] or false;
+
+    /// `size_t INPCComponent::getPathPointCount(int)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_path_point_count(
+        component: INPCComponent,
+        path_id: i32,
+    ) -> usize = [0, SLOT_GET_PATH_POINT_COUNT] or 0;
+
+    /// `bool INPCComponent::hasPathPointInRange(int, const Vector3 &, float)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_has_path_point_in_range(
+        component: INPCComponent,
+        path_id: i32,
+        position: &Vector3,
+        radius: f32,
+    ) -> bool = [0, SLOT_HAS_PATH_POINT_IN_RANGE] or false;
 
     /// `bool INPCComponent::isValidPath(int)`.
     ///
@@ -154,6 +220,13 @@ virtual_fns! {
         component: INPCComponent,
         record_id: i32,
     ) -> bool = [0, SLOT_IS_VALID_RECORD] or false;
+
+    /// `size_t INPCComponent::getRecordCount()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_record_count(component: INPCComponent) -> usize = [0, SLOT_GET_RECORD_COUNT] or 0;
 
     /// `void INPCComponent::unloadAllRecords()`.
     ///
@@ -221,12 +294,6 @@ virtual_fns! {
 
 // What the generator left out, and why.
 // skipped: `IEventDispatcher<NPCEventHandler> & INPCComponent::getEventDispatcher()` — returns `IEventDispatcher<NPCEventHandler> &`, which the SDK does not mirror
-// skipped: `size_t INPCComponent::getPathCount()` — returns `size_t`
-// skipped: `bool INPCComponent::addPointToPath(int, const Vector3 &, float)` — takes `const Vector3 &`, which the SDK does not mirror
-// skipped: `bool INPCComponent::removePointFromPath(int, size_t)` — takes `size_t`
-// skipped: `size_t INPCComponent::getPathPointCount(int)` — returns `size_t`
-// skipped: `bool INPCComponent::getPathPoint(int, size_t, Vector3 &, float &)` — takes `size_t`
-// skipped: `bool INPCComponent::hasPathPointInRange(int, const Vector3 &, float)` — takes `const Vector3 &`, which the SDK does not mirror
-// skipped: `size_t INPCComponent::getRecordCount()` — returns `size_t`
+// skipped: `bool INPCComponent::getPathPoint(int, size_t, Vector3 &, float &)` — takes `Vector3 &`, which the SDK does not mirror
 // skipped: `bool INPCComponent::getNodePointPosition(int, Vector3 &)` — takes `Vector3 &`, which the SDK does not mirror
 // skipped: `bool INPCComponent::getNodeInfo(int, uint32_t &, uint32_t &, uint32_t &)` — takes `uint32_t &`, which the SDK does not mirror

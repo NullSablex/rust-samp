@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -21,6 +23,8 @@ slots! {
     SLOT_GET_PLAYER: usize = 6, 5;
     /// `Vector3 INPC::getPosition()`
     SLOT_GET_POSITION: usize = 7, 6;
+    /// `void INPC::setPosition(const Vector3 &, bool)`
+    SLOT_SET_POSITION: usize = 8, 7;
     /// `int INPC::getVirtualWorld()`
     SLOT_GET_VIRTUAL_WORLD: usize = 11, 10;
     /// `void INPC::setVirtualWorld(int)`
@@ -31,6 +35,8 @@ slots! {
     SLOT_RESPAWN: usize = 14, 13;
     /// `bool INPC::move(Vector3, NPCMoveType, float, float)`
     SLOT_MOVE: usize = 15, 14;
+    /// `bool INPC::moveToPlayer(IPlayer &, NPCMoveType, float, float, Milliseconds, bool)`
+    SLOT_MOVE_TO_PLAYER: usize = 16, 15;
     /// `void INPC::stopMove()`
     SLOT_STOP_MOVE: usize = 17, 16;
     /// `bool INPC::isMoving()`
@@ -97,8 +103,14 @@ slots! {
     SLOT_SET_AMMO_IN_CLIP: usize = 50, 49;
     /// `int INPC::getAmmoInClip()`
     SLOT_GET_AMMO_IN_CLIP: usize = 51, 50;
+    /// `void INPC::shoot(int, PlayerBulletHitType, uint8_t, const Vector3 &, const Vector3 &, bool, EntityCheckType)`
+    SLOT_SHOOT: usize = 52, 51;
     /// `bool INPC::isShooting()`
     SLOT_IS_SHOOTING: usize = 53, 52;
+    /// `void INPC::aimAt(const Vector3 &, bool, int, bool, const Vector3 &, EntityCheckType)`
+    SLOT_AIM_AT: usize = 54, 53;
+    /// `void INPC::aimAtPlayer(IPlayer &, bool, int, bool, const Vector3 &, const Vector3 &, EntityCheckType)`
+    SLOT_AIM_AT_PLAYER: usize = 55, 54;
     /// `void INPC::stopAim()`
     SLOT_STOP_AIM: usize = 56, 55;
     /// `bool INPC::isAiming()`
@@ -246,6 +258,16 @@ virtual_fns! {
     #[must_use]
     pub fn npc_position(npc: INPC) -> Vector3 = [0, SLOT_GET_POSITION] or Vector3::ZERO;
 
+    /// `void INPC::setPosition(const Vector3 &, bool)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_set_position(
+        npc: INPC,
+        position: &Vector3,
+        immediate_update: bool,
+    ) = [0, SLOT_SET_POSITION];
+
     /// `int INPC::getVirtualWorld()`.
     ///
     /// # Safety
@@ -283,6 +305,21 @@ virtual_fns! {
         move_speed: f32,
         stop_range: f32,
     ) -> bool = [0, SLOT_MOVE] or false;
+
+    /// `bool INPC::moveToPlayer(IPlayer &, NPCMoveType, float, float, Milliseconds, bool)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    #[must_use]
+    pub fn npc_move_to_player(
+        npc: INPC,
+        target_player: *mut IPlayer,
+        move_type: i32,
+        move_speed: f32,
+        stop_range: f32,
+        pos_check_update_delay: Milliseconds,
+        auto_restart: bool,
+    ) -> bool = [0, SLOT_MOVE_TO_PLAYER] or false;
 
     /// `void INPC::stopMove()`.
     ///
@@ -520,12 +557,56 @@ virtual_fns! {
     #[must_use]
     pub fn npc_ammo_in_clip(npc: INPC) -> i32 = [0, SLOT_GET_AMMO_IN_CLIP] or 0;
 
+    /// `void INPC::shoot(int, PlayerBulletHitType, uint8_t, const Vector3 &, const Vector3 &, bool, EntityCheckType)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_shoot(
+        npc: INPC,
+        hit_id: i32,
+        hit_type: u8,
+        weapon: u8,
+        end_point: &Vector3,
+        offset: &Vector3,
+        is_hit: bool,
+        between_check_flags: u8,
+    ) = [0, SLOT_SHOOT];
+
     /// `bool INPC::isShooting()`.
     ///
     /// # Safety
     /// `npc` must be a live `INPC`.
     #[must_use]
     pub fn npc_is_shooting(npc: INPC) -> bool = [0, SLOT_IS_SHOOTING] or false;
+
+    /// `void INPC::aimAt(const Vector3 &, bool, int, bool, const Vector3 &, EntityCheckType)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_aim_at(
+        npc: INPC,
+        point: &Vector3,
+        shoot: bool,
+        shoot_delay: i32,
+        set_angle: bool,
+        offset_from: &Vector3,
+        between_check_flags: u8,
+    ) = [0, SLOT_AIM_AT];
+
+    /// `void INPC::aimAtPlayer(IPlayer &, bool, int, bool, const Vector3 &, const Vector3 &, EntityCheckType)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_aim_at_player(
+        npc: INPC,
+        at_player: *mut IPlayer,
+        shoot: bool,
+        shoot_delay: i32,
+        set_angle: bool,
+        offset: &Vector3,
+        offset_from: &Vector3,
+        between_check_flags: u8,
+    ) = [0, SLOT_AIM_AT_PLAYER];
 
     /// `void INPC::stopAim()`.
     ///
@@ -1045,15 +1126,10 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `void INPC::setPosition(const Vector3 &, bool)` — takes `const Vector3 &`, which the SDK does not mirror
 // skipped: `GTAQuat INPC::getRotation()` — returns `GTAQuat`
 // skipped: `void INPC::setRotation(const GTAQuat &, bool)` — takes `const GTAQuat &`, which the SDK does not mirror
-// skipped: `bool INPC::moveToPlayer(IPlayer &, NPCMoveType, float, float, Milliseconds, bool)` — takes `Milliseconds`
 // skipped: `const FlatPtrHashSet<IPlayer> & INPC::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `void INPC::getKeys(uint16_t &, uint16_t &, uint16_t &)` — takes `uint16_t &`, which the SDK does not mirror
-// skipped: `void INPC::shoot(int, PlayerBulletHitType, uint8_t, const Vector3 &, const Vector3 &, bool, EntityCheckType)` — takes `const Vector3 &`, which the SDK does not mirror
-// skipped: `void INPC::aimAt(const Vector3 &, bool, int, bool, const Vector3 &, EntityCheckType)` — takes `const Vector3 &`, which the SDK does not mirror
-// skipped: `void INPC::aimAtPlayer(IPlayer &, bool, int, bool, const Vector3 &, const Vector3 &, EntityCheckType)` — takes `const Vector3 &`, which the SDK does not mirror
 // skipped: `void INPC::getAnimation(int &, float &, bool &, bool &, bool &, bool &, int &)` — takes `int &`, which the SDK does not mirror
 // skipped: `void INPC::applyAnimation(const AnimationData &)` — takes `const AnimationData &`, which the SDK does not mirror
 // skipped: `bool INPC::startPlayback(StringView, bool, const Vector3 &, const GTAQuat &)` — overloaded

@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -19,6 +21,8 @@ opaque! {
 slots! {
     /// `Vector3 ICheckpointDataBase::getPosition()`
     SLOT_GET_POSITION: usize = 0, 0;
+    /// `void ICheckpointDataBase::setPosition(const Vector3 &)`
+    SLOT_SET_POSITION: usize = 1, 1;
     /// `float ICheckpointDataBase::getRadius()`
     SLOT_GET_RADIUS: usize = 2, 2;
     /// `void ICheckpointDataBase::setRadius(float)`
@@ -44,6 +48,15 @@ virtual_fns! {
     pub fn checkpoint_position(
         checkpoint: ICheckpointData,
     ) -> Vector3 = [0, SLOT_GET_POSITION] or Vector3::ZERO;
+
+    /// `void ICheckpointDataBase::setPosition(const Vector3 &)`.
+    ///
+    /// # Safety
+    /// `checkpoint` must be a live `ICheckpointData`.
+    pub fn checkpoint_set_position(
+        checkpoint: ICheckpointData,
+        position: &Vector3,
+    ) = [0, SLOT_SET_POSITION];
 
     /// `float ICheckpointDataBase::getRadius()`.
     ///
@@ -97,6 +110,3 @@ virtual_fns! {
         checkpoint: ICheckpointData,
     ) -> bool = [0, SLOT_IS_ENABLED] or false;
 }
-
-// What the generator left out, and why.
-// skipped: `void ICheckpointDataBase::setPosition(const Vector3 &)` — takes `const Vector3 &`, which the SDK does not mirror

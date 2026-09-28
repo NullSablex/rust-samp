@@ -230,6 +230,7 @@ unsafe fn exercise(report: &mut Report) -> Option<Npc> {
                 !unsafe { omp::textdraw_is_selectable(td) },
                 "selectable",
             );
+            unsafe { round_trips::round_trips_text_draw(td, report) };
         }
     }
 

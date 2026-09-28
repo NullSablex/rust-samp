@@ -245,7 +245,7 @@ The per-crate sections come first, then the ones belonging to the repository.
 #### Added
 
 - **Wrappers for nearly every open.mp interface, generated from the SDK
-  headers.** 529 functions over 53 interfaces, in `omp::generated` and
+  headers.** 596 functions over 53 interfaces, in `omp::generated` and
   re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
   `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
   checkpoints, text labels, player objects and text draws), every component,
@@ -256,6 +256,16 @@ The per-crate sections come first, then the ones belonging to the repository.
   `std::` types, references to structs the SDK does not mirror, C-style `...`,
   overloaded names — is listed at the end of each module with the reason, never
   guessed.
+- The generator covers three more shapes, which brought 67 methods in —
+  among them every setter of the text draws, the checkpoints' positions and the
+  vehicles' respawn delay. A `const Vector3 &` (or any mirrored value type
+  taken by const reference) becomes a Rust reference, which is that pointer; a
+  setter returning the object itself for chaining (`ITextDrawBase &`) drops the
+  value, since the caller already holds the object; and `size_t` is `usize`.
+- `Milliseconds`, `Seconds`, `Minutes` and `Hours`, the `std::chrono`
+  durations the headers take and return, laid out as the C++ classes are. The
+  count of minutes and hours is an `int` under Microsoft's library and 64 bits
+  under libstdc++, so it is `HoursRep`, which follows the target.
 - `ComponentInterface::COMPONENT_OFFSET`, for a component whose `IComponent` is
   not its first base. `INPCComponent` puts its pool first, so the `IComponent*`
   the server hands out sits 4 bytes in (8 on MSVC); `Component::as_ptr` moves
@@ -417,8 +427,10 @@ The per-crate sections come first, then the ones belonging to the repository.
   the client (`player_set_velocity`, `vehicle_set_velocity`, and the player's
   `set_action`/`set_armed_weapon`, which an NPC ignores) — and the report says
   so. Round trips also cover `Vector3`, `Vector4`, `Colour` and text now, the
-  return conventions most likely to differ between the ABIs. 75 passed, 0 wrong,
-  identically on open.mp Linux and Windows under Wine.
+  return conventions most likely to differ between the ABIs, and the durations
+  and const-reference setters the generator gained later, the global text
+  draw's included. 89 passed, 0 wrong, identically on open.mp Linux and on
+  Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
   UB checks) and AddressSanitizer with leak detection on the host target both
   run the SDK's tests clean; `cargo-semver-checks` finds no breaking change in
@@ -427,9 +439,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
-  921 slots `check-abi-slots.py --generated` can derive match the official
+  1045 slots `check-abi-slots.py --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
-  133 are declared underivable (the Windows server executable keeps RTTI for
+  143 are declared underivable (the Windows server executable keeps RTTI for
   three classes only, and tail-calling methods have no `ret N` of their own).
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that

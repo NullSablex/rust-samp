@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -46,6 +48,10 @@ slots! {
     SLOT_IS_DEAD: usize = 37, 36;
     /// `void IVehicle::respawn()`
     SLOT_RESPAWN: usize = 38, 37;
+    /// `Seconds IVehicle::getRespawnDelay()`
+    SLOT_GET_RESPAWN_DELAY: usize = 39, 38;
+    /// `void IVehicle::setRespawnDelay(Seconds)`
+    SLOT_SET_RESPAWN_DELAY: usize = 40, 39;
     /// `bool IVehicle::isRespawning()`
     SLOT_IS_RESPAWNING: usize = 41, 40;
     /// `void IVehicle::setInterior(int)`
@@ -221,6 +227,15 @@ virtual_fns! {
     /// # Safety
     /// `vehicle` must be a live `IVehicle`.
     pub fn vehicle_respawn(vehicle: IVehicle) = [0, SLOT_RESPAWN];
+
+    /// `void IVehicle::setRespawnDelay(Seconds)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    pub fn vehicle_set_respawn_delay(
+        vehicle: IVehicle,
+        delay: Seconds,
+    ) = [0, SLOT_SET_RESPAWN_DELAY];
 
     /// `bool IVehicle::isRespawning()`.
     ///
@@ -419,6 +434,21 @@ pub unsafe fn vehicle_plate(vehicle: *mut IVehicle) -> Option<String> {
     unsafe { view.to_owned_string() }
 }
 
+/// `Seconds IVehicle::getRespawnDelay()`.
+///
+/// # Safety
+/// `vehicle` must be a live `IVehicle`.
+#[must_use]
+pub unsafe fn vehicle_respawn_delay(vehicle: *mut IVehicle) -> Option<Seconds> {
+    call_vtable_small_struct!(
+        vehicle.cast::<u8>(),
+        0,
+        SLOT_GET_RESPAWN_DELAY,
+        Seconds,
+        Seconds::default()
+    )
+}
+
 // What the generator left out, and why.
 // skipped: `void IVehicle::setSpawnData(const VehicleSpawnData &)` — takes `const VehicleSpawnData &`, which the SDK does not mirror
 // skipped: `const VehicleSpawnData & IVehicle::getSpawnData()` — returns `const VehicleSpawnData &`, which the SDK does not mirror
@@ -436,8 +466,6 @@ pub unsafe fn vehicle_plate(vehicle: *mut IVehicle) -> Option<String> {
 // skipped: `void IVehicle::setParams(const VehicleParams &)` — takes `const VehicleParams &`, which the SDK does not mirror
 // skipped: `void IVehicle::setParamsForPlayer(IPlayer &, const VehicleParams &)` — takes `const VehicleParams &`, which the SDK does not mirror
 // skipped: `const VehicleParams & IVehicle::getParams()` — returns `const VehicleParams &`, which the SDK does not mirror
-// skipped: `Seconds IVehicle::getRespawnDelay()` — returns `Seconds`
-// skipped: `void IVehicle::setRespawnDelay(Seconds)` — takes `Seconds`
 // skipped: `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> & IVehicle::getCarriages()` — returns `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> &`, which the SDK does not mirror
 // skipped: `int IVehicle::getModel()` — `vehicle_model` is written by hand
 // skipped: `const TimePoint & IVehicle::getLastOccupiedTime()` — returns `const TimePoint &`, which the SDK does not mirror

@@ -400,7 +400,12 @@ def check_msvc(server: pathlib.Path, report: Report) -> None:
 ARG_BYTES = {
     "Vector2": 8, "Vector3": 12, "Vector4": 16, "StringView": 8, "Colour": 4,
     "int64_t": 8, "uint64_t": 8, "UID": 8, "long long": 8, "unsigned long long": 8,
+    # `std::chrono` under Microsoft's library: minutes and hours count in an `int`.
+    "Milliseconds": 8, "Seconds": 8, "Minutes": 4, "Hours": 4,
 }
+# Returned by value, so through a pointer pushed with the arguments.
+RETURNED_BY_POINTER = ("Vector2", "Vector3", "Vector4", "StringView", "Colour",
+                       "Milliseconds", "Seconds", "Minutes", "Hours")
 
 
 def arg_bytes(signature: str) -> int:
@@ -410,7 +415,7 @@ def arg_bytes(signature: str) -> int:
     pointer pushed with the arguments."""
     ret = signature.split("(")[0].rsplit(" ", 1)[0].replace("const", "").strip()
     args = signature[signature.index("(") + 1 : signature.rindex(")")]
-    total = 4 if ret in ("Vector2", "Vector3", "Vector4", "StringView", "Colour") else 0
+    total = 4 if ret in RETURNED_BY_POINTER else 0
     for arg in filter(None, (a.strip() for a in args.split(","))):
         bare = arg.replace("const", "").strip()
         total += 4 if bare.endswith(("&", "*")) else ARG_BYTES.get(bare, 4)

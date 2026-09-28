@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -16,8 +18,12 @@ slots! {
     SLOT_IS_SHOWN_FOR_PLAYER: usize = 6, 5;
     /// `bool IBaseGangZone::isFlashingForPlayer(const IPlayer &)`
     SLOT_IS_FLASHING_FOR_PLAYER: usize = 7, 6;
+    /// `void IBaseGangZone::showForPlayer(IPlayer &, const Colour &)`
+    SLOT_SHOW_FOR_PLAYER: usize = 8, 7;
     /// `void IBaseGangZone::hideForPlayer(IPlayer &)`
     SLOT_HIDE_FOR_PLAYER: usize = 9, 8;
+    /// `void IBaseGangZone::flashForPlayer(IPlayer &, const Colour &)`
+    SLOT_FLASH_FOR_PLAYER: usize = 10, 9;
     /// `void IBaseGangZone::stopFlashForPlayer(IPlayer &)`
     SLOT_STOP_FLASH_FOR_PLAYER: usize = 11, 10;
     /// `bool IBaseGangZone::isPlayerInside(const IPlayer &)`
@@ -49,6 +55,16 @@ virtual_fns! {
         player: *mut IPlayer,
     ) -> bool = [0, SLOT_IS_FLASHING_FOR_PLAYER] or false;
 
+    /// `void IBaseGangZone::showForPlayer(IPlayer &, const Colour &)`.
+    ///
+    /// # Safety
+    /// `gangzone` must be a live `IGangZone`.
+    pub fn gangzone_show_for_player(
+        gangzone: IGangZone,
+        player: *mut IPlayer,
+        colour: &Colour,
+    ) = [0, SLOT_SHOW_FOR_PLAYER];
+
     /// `void IBaseGangZone::hideForPlayer(IPlayer &)`.
     ///
     /// # Safety
@@ -57,6 +73,16 @@ virtual_fns! {
         gangzone: IGangZone,
         player: *mut IPlayer,
     ) = [0, SLOT_HIDE_FOR_PLAYER];
+
+    /// `void IBaseGangZone::flashForPlayer(IPlayer &, const Colour &)`.
+    ///
+    /// # Safety
+    /// `gangzone` must be a live `IGangZone`.
+    pub fn gangzone_flash_for_player(
+        gangzone: IGangZone,
+        player: *mut IPlayer,
+        colour: &Colour,
+    ) = [0, SLOT_FLASH_FOR_PLAYER];
 
     /// `void IBaseGangZone::stopFlashForPlayer(IPlayer &)`.
     ///
@@ -97,8 +123,6 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `void IBaseGangZone::showForPlayer(IPlayer &, const Colour &)` — takes `const Colour &`, which the SDK does not mirror
-// skipped: `void IBaseGangZone::flashForPlayer(IPlayer &, const Colour &)` — takes `const Colour &`, which the SDK does not mirror
 // skipped: `GangZonePos IBaseGangZone::getPosition()` — returns `GangZonePos`
 // skipped: `void IBaseGangZone::setPosition(const GangZonePos &)` — takes `const GangZonePos &`, which the SDK does not mirror
 // skipped: `const FlatHashSet<IPlayer *> & IBaseGangZone::getShownFor()` — returns `const FlatHashSet<IPlayer *> &`, which the SDK does not mirror

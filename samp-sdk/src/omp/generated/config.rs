@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -17,8 +19,12 @@ opaque! {
 }
 
 slots! {
+    /// `size_t IConfig::getStringsCount(StringView)`
+    SLOT_GET_STRINGS_COUNT: usize = 10, 9;
     /// `ConfigOptionType IConfig::getType(StringView)`
     SLOT_GET_TYPE: usize = 11, 10;
+    /// `size_t IConfig::getBansCount()`
+    SLOT_GET_BANS_COUNT: usize = 12, 11;
     /// `void IConfig::writeBans()`
     SLOT_WRITE_BANS: usize = 17, 16;
     /// `void IConfig::reloadBans()`
@@ -28,12 +34,29 @@ slots! {
 }
 
 virtual_fns! {
+    /// `size_t IConfig::getStringsCount(StringView)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_strings_count(
+        config: IConfig,
+        key: StringView,
+    ) -> usize = [0, SLOT_GET_STRINGS_COUNT] or 0;
+
     /// `ConfigOptionType IConfig::getType(StringView)`.
     ///
     /// # Safety
     /// `config` must be a live `IConfig`.
     #[must_use]
     pub fn config_type(config: IConfig, key: StringView) -> i32 = [0, SLOT_GET_TYPE] or 0;
+
+    /// `size_t IConfig::getBansCount()`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_bans_count(config: IConfig) -> usize = [0, SLOT_GET_BANS_COUNT] or 0;
 
     /// `void IConfig::writeBans()`.
     ///
@@ -59,9 +82,7 @@ virtual_fns! {
 // skipped: `int * IConfig::getInt(StringView)` — returns `int *`, which the SDK does not mirror
 // skipped: `float * IConfig::getFloat(StringView)` — returns `float *`, which the SDK does not mirror
 // skipped: `size_t IConfig::getStrings(StringView, Span<StringView>)` — takes `Span<StringView>`
-// skipped: `size_t IConfig::getStringsCount(StringView)` — returns `size_t`
-// skipped: `size_t IConfig::getBansCount()` — returns `size_t`
-// skipped: `const BanEntry & IConfig::getBan(size_t)` — takes `size_t`
+// skipped: `const BanEntry & IConfig::getBan(size_t)` — returns `const BanEntry &`, which the SDK does not mirror
 // skipped: `void IConfig::addBan(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
 // skipped: `void IConfig::removeBan(size_t)` — overloaded
 // skipped: `void IConfig::removeBan(const BanEntry &)` — overloaded

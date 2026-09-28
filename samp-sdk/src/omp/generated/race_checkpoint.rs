@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -19,6 +21,8 @@ opaque! {
 slots! {
     /// `Vector3 ICheckpointDataBase::getPosition()`
     SLOT_GET_POSITION: usize = 0, 0;
+    /// `void ICheckpointDataBase::setPosition(const Vector3 &)`
+    SLOT_SET_POSITION: usize = 1, 1;
     /// `float ICheckpointDataBase::getRadius()`
     SLOT_GET_RADIUS: usize = 2, 2;
     /// `void ICheckpointDataBase::setRadius(float)`
@@ -39,6 +43,8 @@ slots! {
     SLOT_SET_TYPE: usize = 10, 10;
     /// `Vector3 IRaceCheckpointData::getNextPosition()`
     SLOT_GET_NEXT_POSITION: usize = 11, 11;
+    /// `void IRaceCheckpointData::setNextPosition(const Vector3 &)`
+    SLOT_SET_NEXT_POSITION: usize = 12, 12;
 }
 
 virtual_fns! {
@@ -50,6 +56,15 @@ virtual_fns! {
     pub fn race_checkpoint_position(
         race_checkpoint: IRaceCheckpointData,
     ) -> Vector3 = [0, SLOT_GET_POSITION] or Vector3::ZERO;
+
+    /// `void ICheckpointDataBase::setPosition(const Vector3 &)`.
+    ///
+    /// # Safety
+    /// `race_checkpoint` must be a live `IRaceCheckpointData`.
+    pub fn race_checkpoint_set_position(
+        race_checkpoint: IRaceCheckpointData,
+        position: &Vector3,
+    ) = [0, SLOT_SET_POSITION];
 
     /// `float ICheckpointDataBase::getRadius()`.
     ///
@@ -134,8 +149,13 @@ virtual_fns! {
     pub fn race_checkpoint_next_position(
         race_checkpoint: IRaceCheckpointData,
     ) -> Vector3 = [0, SLOT_GET_NEXT_POSITION] or Vector3::ZERO;
-}
 
-// What the generator left out, and why.
-// skipped: `void ICheckpointDataBase::setPosition(const Vector3 &)` — takes `const Vector3 &`, which the SDK does not mirror
-// skipped: `void IRaceCheckpointData::setNextPosition(const Vector3 &)` — takes `const Vector3 &`, which the SDK does not mirror
+    /// `void IRaceCheckpointData::setNextPosition(const Vector3 &)`.
+    ///
+    /// # Safety
+    /// `race_checkpoint` must be a live `IRaceCheckpointData`.
+    pub fn race_checkpoint_set_next_position(
+        race_checkpoint: IRaceCheckpointData,
+        next_position: &Vector3,
+    ) = [0, SLOT_SET_NEXT_POSITION];
+}

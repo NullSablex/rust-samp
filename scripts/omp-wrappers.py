@@ -71,6 +71,7 @@ INTEGERS = {
     "long long": "i64", "int64_t": "i64",
     "unsigned long long": "u64", "uint64_t": "u64", "UID": "u64",
     "float": "f32", "bool": "bool",
+    "size_t": "usize", "std::size_t": "usize",
 }
 
 # Value types the SDK mirrors, with their size (for the return rule) and the
@@ -81,6 +82,13 @@ VALUES = {
     "Vector4": (16, "Vector4::ZERO"),
     "Colour": (4, None),
     "StringView": (8, None),
+    # `std::chrono` durations: a class holding the count, so returned through
+    # a hidden pointer like the structs above. Minutes and hours are 4 bytes
+    # under MSVC, still within the rule.
+    "Milliseconds": (8, None),
+    "Seconds": (8, None),
+    "Minutes": (8, None),
+    "Hours": (8, None),
 }
 
 NEUTRAL = {"bool": "false", "f32": "0.0"}
@@ -344,6 +352,10 @@ def param_type(cpp: str, enums: dict, handles: set) -> str:
         target = bare.rstrip("&*").strip()
         if target in handles:
             return f"*mut {target}"
+        # `const Vector3 &` is a pointer to one the callee only reads; a Rust
+        # reference is that pointer.
+        if bare.endswith("&") and cpp.lstrip().startswith("const ") and target in VALUES:
+            return f"&{target}"
         raise Skip(f"takes `{cpp}`, which the SDK does not mirror")
     if bare in INTEGERS:
         return INTEGERS[bare]
@@ -354,10 +366,14 @@ def param_type(cpp: str, enums: dict, handles: set) -> str:
     raise Skip(f"takes `{cpp}`")
 
 
-def return_kind(cpp: str, enums: dict, handles: set):
+def return_kind(cpp: str, enums: dict, handles: set, chain: list):
     """(rust type, how, neutral) where `how` picks the call form."""
     bare = strip_type(cpp)
     if bare == "void":
+        return None, "plain", None
+    # A setter that returns the object itself, for chaining: the caller already
+    # holds it, so the wrapper drops the value.
+    if bare.endswith("&") and bare.rstrip("&").strip() in chain:
         return None, "plain", None
     if bare.endswith("&") or bare.endswith("*"):
         target = bare.rstrip("&*").strip()
@@ -427,7 +443,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
                 if slot_i is None or slot_m is None:
                     raise Skip("clang reported no slot")
                 params = [(param_name(n, arg), param_type(t, enums, handles)) for n, t in m["params"]]
-                ret, how, neutral = return_kind(m["ret"], enums, handles)
+                ret, how, neutral = return_kind(m["ret"], enums, handles, chain)
                 if how == "small" and params:
                     raise Skip("returns a small struct and takes arguments")
             except Skip as why:
@@ -470,7 +486,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
         "",
         "#![allow(unused_imports)]",
         "",
-        "use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};",
+        "use crate::omp::types::{Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4};",
         "use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};",
         "use crate::omp::*;",
         "",

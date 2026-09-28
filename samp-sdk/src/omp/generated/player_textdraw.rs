@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -19,38 +21,72 @@ opaque! {
 slots! {
     /// `Vector2 ITextDrawBase::getPosition()`
     SLOT_GET_POSITION: usize = 6, 5;
+    /// `ITextDrawBase & ITextDrawBase::setPosition(Vector2)`
+    SLOT_SET_POSITION: usize = 7, 6;
     /// `void ITextDrawBase::setText(StringView)`
     SLOT_SET_TEXT: usize = 8, 7;
     /// `StringView ITextDrawBase::getText()`
     SLOT_GET_TEXT: usize = 9, 8;
+    /// `ITextDrawBase & ITextDrawBase::setLetterSize(Vector2)`
+    SLOT_SET_LETTER_SIZE: usize = 10, 9;
     /// `Vector2 ITextDrawBase::getLetterSize()`
     SLOT_GET_LETTER_SIZE: usize = 11, 10;
+    /// `ITextDrawBase & ITextDrawBase::setTextSize(Vector2)`
+    SLOT_SET_TEXT_SIZE: usize = 12, 11;
     /// `Vector2 ITextDrawBase::getTextSize()`
     SLOT_GET_TEXT_SIZE: usize = 13, 12;
+    /// `ITextDrawBase & ITextDrawBase::setAlignment(TextDrawAlignmentTypes)`
+    SLOT_SET_ALIGNMENT: usize = 14, 13;
     /// `TextDrawAlignmentTypes ITextDrawBase::getAlignment()`
     SLOT_GET_ALIGNMENT: usize = 15, 14;
+    /// `ITextDrawBase & ITextDrawBase::setColour(Colour)`
+    SLOT_SET_COLOUR: usize = 16, 15;
     /// `Colour ITextDrawBase::getLetterColour()`
     SLOT_GET_LETTER_COLOUR: usize = 17, 16;
+    /// `ITextDrawBase & ITextDrawBase::useBox(bool)`
+    SLOT_USE_BOX: usize = 18, 17;
     /// `bool ITextDrawBase::hasBox()`
     SLOT_HAS_BOX: usize = 19, 18;
+    /// `ITextDrawBase & ITextDrawBase::setBoxColour(Colour)`
+    SLOT_SET_BOX_COLOUR: usize = 20, 19;
     /// `Colour ITextDrawBase::getBoxColour()`
     SLOT_GET_BOX_COLOUR: usize = 21, 20;
+    /// `ITextDrawBase & ITextDrawBase::setShadow(int)`
+    SLOT_SET_SHADOW: usize = 22, 21;
     /// `int ITextDrawBase::getShadow()`
     SLOT_GET_SHADOW: usize = 23, 22;
+    /// `ITextDrawBase & ITextDrawBase::setOutline(int)`
+    SLOT_SET_OUTLINE: usize = 24, 23;
     /// `int ITextDrawBase::getOutline()`
     SLOT_GET_OUTLINE: usize = 25, 24;
+    /// `ITextDrawBase & ITextDrawBase::setBackgroundColour(Colour)`
+    SLOT_SET_BACKGROUND_COLOUR: usize = 26, 25;
     /// `Colour ITextDrawBase::getBackgroundColour()`
     SLOT_GET_BACKGROUND_COLOUR: usize = 27, 26;
+    /// `ITextDrawBase & ITextDrawBase::setStyle(TextDrawStyle)`
+    SLOT_SET_STYLE: usize = 28, 27;
     /// `TextDrawStyle ITextDrawBase::getStyle()`
     SLOT_GET_STYLE: usize = 29, 28;
+    /// `ITextDrawBase & ITextDrawBase::setProportional(bool)`
+    SLOT_SET_PROPORTIONAL: usize = 30, 29;
     /// `bool ITextDrawBase::isProportional()`
     SLOT_IS_PROPORTIONAL: usize = 31, 30;
+    /// `ITextDrawBase & ITextDrawBase::setSelectable(bool)`
+    SLOT_SET_SELECTABLE: usize = 32, 31;
     /// `bool ITextDrawBase::isSelectable()`
     SLOT_IS_SELECTABLE: usize = 33, 32;
+    /// `ITextDrawBase & ITextDrawBase::setPreviewModel(int)`
+    SLOT_SET_PREVIEW_MODEL: usize = 34, 33;
     /// `int ITextDrawBase::getPreviewModel()`
     SLOT_GET_PREVIEW_MODEL: usize = 35, 34;
+    /// `ITextDrawBase & ITextDrawBase::setPreviewRotation(Vector3)`
+    SLOT_SET_PREVIEW_ROTATION: usize = 36, 35;
     /// `Vector3 ITextDrawBase::getPreviewRotation()`
     SLOT_GET_PREVIEW_ROTATION: usize = 37, 36;
+    /// `ITextDrawBase & ITextDrawBase::setPreviewVehicleColour(int, int)`
+    SLOT_SET_PREVIEW_VEHICLE_COLOUR: usize = 38, 37;
+    /// `ITextDrawBase & ITextDrawBase::setPreviewZoom(float)`
+    SLOT_SET_PREVIEW_ZOOM: usize = 40, 39;
     /// `float ITextDrawBase::getPreviewZoom()`
     SLOT_GET_PREVIEW_ZOOM: usize = 41, 40;
     /// `void ITextDrawBase::restream()`
@@ -64,6 +100,15 @@ slots! {
 }
 
 virtual_fns! {
+    /// `ITextDrawBase & ITextDrawBase::setPosition(Vector2)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_position(
+        player_textdraw: IPlayerTextDraw,
+        position: Vector2,
+    ) = [0, SLOT_SET_POSITION];
+
     /// `void ITextDrawBase::setText(StringView)`.
     ///
     /// # Safety
@@ -72,6 +117,33 @@ virtual_fns! {
         player_textdraw: IPlayerTextDraw,
         text: StringView,
     ) = [0, SLOT_SET_TEXT];
+
+    /// `ITextDrawBase & ITextDrawBase::setLetterSize(Vector2)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_letter_size(
+        player_textdraw: IPlayerTextDraw,
+        size: Vector2,
+    ) = [0, SLOT_SET_LETTER_SIZE];
+
+    /// `ITextDrawBase & ITextDrawBase::setTextSize(Vector2)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_text_size(
+        player_textdraw: IPlayerTextDraw,
+        size: Vector2,
+    ) = [0, SLOT_SET_TEXT_SIZE];
+
+    /// `ITextDrawBase & ITextDrawBase::setAlignment(TextDrawAlignmentTypes)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_alignment(
+        player_textdraw: IPlayerTextDraw,
+        alignment: i32,
+    ) = [0, SLOT_SET_ALIGNMENT];
 
     /// `TextDrawAlignmentTypes ITextDrawBase::getAlignment()`.
     ///
@@ -82,6 +154,24 @@ virtual_fns! {
         player_textdraw: IPlayerTextDraw,
     ) -> i32 = [0, SLOT_GET_ALIGNMENT] or 0;
 
+    /// `ITextDrawBase & ITextDrawBase::setColour(Colour)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_colour(
+        player_textdraw: IPlayerTextDraw,
+        colour: Colour,
+    ) = [0, SLOT_SET_COLOUR];
+
+    /// `ITextDrawBase & ITextDrawBase::useBox(bool)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_use_box(
+        player_textdraw: IPlayerTextDraw,
+        use_value: bool,
+    ) = [0, SLOT_USE_BOX];
+
     /// `bool ITextDrawBase::hasBox()`.
     ///
     /// # Safety
@@ -90,6 +180,24 @@ virtual_fns! {
     pub fn player_textdraw_has_box(
         player_textdraw: IPlayerTextDraw,
     ) -> bool = [0, SLOT_HAS_BOX] or false;
+
+    /// `ITextDrawBase & ITextDrawBase::setBoxColour(Colour)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_box_colour(
+        player_textdraw: IPlayerTextDraw,
+        colour: Colour,
+    ) = [0, SLOT_SET_BOX_COLOUR];
+
+    /// `ITextDrawBase & ITextDrawBase::setShadow(int)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_shadow(
+        player_textdraw: IPlayerTextDraw,
+        shadow: i32,
+    ) = [0, SLOT_SET_SHADOW];
 
     /// `int ITextDrawBase::getShadow()`.
     ///
@@ -100,6 +208,15 @@ virtual_fns! {
         player_textdraw: IPlayerTextDraw,
     ) -> i32 = [0, SLOT_GET_SHADOW] or 0;
 
+    /// `ITextDrawBase & ITextDrawBase::setOutline(int)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_outline(
+        player_textdraw: IPlayerTextDraw,
+        outline: i32,
+    ) = [0, SLOT_SET_OUTLINE];
+
     /// `int ITextDrawBase::getOutline()`.
     ///
     /// # Safety
@@ -108,6 +225,24 @@ virtual_fns! {
     pub fn player_textdraw_outline(
         player_textdraw: IPlayerTextDraw,
     ) -> i32 = [0, SLOT_GET_OUTLINE] or 0;
+
+    /// `ITextDrawBase & ITextDrawBase::setBackgroundColour(Colour)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_background_colour(
+        player_textdraw: IPlayerTextDraw,
+        colour: Colour,
+    ) = [0, SLOT_SET_BACKGROUND_COLOUR];
+
+    /// `ITextDrawBase & ITextDrawBase::setStyle(TextDrawStyle)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_style(
+        player_textdraw: IPlayerTextDraw,
+        style: i32,
+    ) = [0, SLOT_SET_STYLE];
 
     /// `TextDrawStyle ITextDrawBase::getStyle()`.
     ///
@@ -118,6 +253,15 @@ virtual_fns! {
         player_textdraw: IPlayerTextDraw,
     ) -> i32 = [0, SLOT_GET_STYLE] or 0;
 
+    /// `ITextDrawBase & ITextDrawBase::setProportional(bool)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_proportional(
+        player_textdraw: IPlayerTextDraw,
+        proportional: bool,
+    ) = [0, SLOT_SET_PROPORTIONAL];
+
     /// `bool ITextDrawBase::isProportional()`.
     ///
     /// # Safety
@@ -126,6 +270,15 @@ virtual_fns! {
     pub fn player_textdraw_is_proportional(
         player_textdraw: IPlayerTextDraw,
     ) -> bool = [0, SLOT_IS_PROPORTIONAL] or false;
+
+    /// `ITextDrawBase & ITextDrawBase::setSelectable(bool)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_selectable(
+        player_textdraw: IPlayerTextDraw,
+        selectable: bool,
+    ) = [0, SLOT_SET_SELECTABLE];
 
     /// `bool ITextDrawBase::isSelectable()`.
     ///
@@ -136,6 +289,15 @@ virtual_fns! {
         player_textdraw: IPlayerTextDraw,
     ) -> bool = [0, SLOT_IS_SELECTABLE] or false;
 
+    /// `ITextDrawBase & ITextDrawBase::setPreviewModel(int)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_preview_model(
+        player_textdraw: IPlayerTextDraw,
+        model: i32,
+    ) = [0, SLOT_SET_PREVIEW_MODEL];
+
     /// `int ITextDrawBase::getPreviewModel()`.
     ///
     /// # Safety
@@ -145,6 +307,15 @@ virtual_fns! {
         player_textdraw: IPlayerTextDraw,
     ) -> i32 = [0, SLOT_GET_PREVIEW_MODEL] or 0;
 
+    /// `ITextDrawBase & ITextDrawBase::setPreviewRotation(Vector3)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_preview_rotation(
+        player_textdraw: IPlayerTextDraw,
+        rotation: Vector3,
+    ) = [0, SLOT_SET_PREVIEW_ROTATION];
+
     /// `Vector3 ITextDrawBase::getPreviewRotation()`.
     ///
     /// # Safety
@@ -153,6 +324,25 @@ virtual_fns! {
     pub fn player_textdraw_preview_rotation(
         player_textdraw: IPlayerTextDraw,
     ) -> Vector3 = [0, SLOT_GET_PREVIEW_ROTATION] or Vector3::ZERO;
+
+    /// `ITextDrawBase & ITextDrawBase::setPreviewVehicleColour(int, int)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_preview_vehicle_colour(
+        player_textdraw: IPlayerTextDraw,
+        colour1: i32,
+        colour2: i32,
+    ) = [0, SLOT_SET_PREVIEW_VEHICLE_COLOUR];
+
+    /// `ITextDrawBase & ITextDrawBase::setPreviewZoom(float)`.
+    ///
+    /// # Safety
+    /// `player_textdraw` must be a live `IPlayerTextDraw`.
+    pub fn player_textdraw_set_preview_zoom(
+        player_textdraw: IPlayerTextDraw,
+        zoom: f32,
+    ) = [0, SLOT_SET_PREVIEW_ZOOM];
 
     /// `float ITextDrawBase::getPreviewZoom()`.
     ///
@@ -304,21 +494,4 @@ pub unsafe fn player_textdraw_background_colour(
 }
 
 // What the generator left out, and why.
-// skipped: `ITextDrawBase & ITextDrawBase::setPosition(Vector2)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setLetterSize(Vector2)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setTextSize(Vector2)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setAlignment(TextDrawAlignmentTypes)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setColour(Colour)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::useBox(bool)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setBoxColour(Colour)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setShadow(int)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setOutline(int)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setBackgroundColour(Colour)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setStyle(TextDrawStyle)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setProportional(bool)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setSelectable(bool)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setPreviewModel(int)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setPreviewRotation(Vector3)` — returns `ITextDrawBase &`, which the SDK does not mirror
-// skipped: `ITextDrawBase & ITextDrawBase::setPreviewVehicleColour(int, int)` — returns `ITextDrawBase &`, which the SDK does not mirror
 // skipped: `Pair<int, int> ITextDrawBase::getPreviewVehicleColour()` — returns `Pair<int, int>`
-// skipped: `ITextDrawBase & ITextDrawBase::setPreviewZoom(float)` — returns `ITextDrawBase &`, which the SDK does not mirror

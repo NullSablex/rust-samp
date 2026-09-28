@@ -7,7 +7,9 @@
 
 #![allow(unused_imports)]
 
-use crate::omp::types::{Colour, StringView, UID, Vector2, Vector3, Vector4};
+use crate::omp::types::{
+    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+};
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
@@ -17,11 +19,20 @@ opaque! {
 }
 
 slots! {
+    /// `std::size_t IDatabaseResultSetRow::getFieldCount()`
+    SLOT_GET_FIELD_COUNT: usize = 0, 0;
     /// `bool IDatabaseResultSetRow::isFieldNameAvailable(StringView)`
     SLOT_IS_FIELD_NAME_AVAILABLE: usize = 1, 1;
 }
 
 virtual_fns! {
+    /// `std::size_t IDatabaseResultSetRow::getFieldCount()`.
+    ///
+    /// # Safety
+    /// `row` must be a live `IDatabaseResultSetRow`.
+    #[must_use]
+    pub fn db_row_field_count(row: IDatabaseResultSetRow) -> usize = [0, SLOT_GET_FIELD_COUNT] or 0;
+
     /// `bool IDatabaseResultSetRow::isFieldNameAvailable(StringView)`.
     ///
     /// # Safety
@@ -34,11 +45,10 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `std::size_t IDatabaseResultSetRow::getFieldCount()` — returns `std::size_t`
-// skipped: `StringView IDatabaseResultSetRow::getFieldName(std::size_t)` — takes `std::size_t`
-// skipped: `StringView IDatabaseResultSetRow::getFieldString(std::size_t)` — takes `std::size_t`
-// skipped: `long IDatabaseResultSetRow::getFieldInt(std::size_t)` — takes `std::size_t`
-// skipped: `double IDatabaseResultSetRow::getFieldFloat(std::size_t)` — takes `std::size_t`
+// skipped: `StringView IDatabaseResultSetRow::getFieldName(std::size_t)` — returns a small struct and takes arguments
+// skipped: `StringView IDatabaseResultSetRow::getFieldString(std::size_t)` — returns a small struct and takes arguments
+// skipped: `long IDatabaseResultSetRow::getFieldInt(std::size_t)` — returns `long`
+// skipped: `double IDatabaseResultSetRow::getFieldFloat(std::size_t)` — returns `double`
 // skipped: `StringView IDatabaseResultSetRow::getFieldStringByName(StringView)` — returns a small struct and takes arguments
 // skipped: `long IDatabaseResultSetRow::getFieldIntByName(StringView)` — returns `long`
 // skipped: `double IDatabaseResultSetRow::getFieldFloatByName(StringView)` — returns `double`

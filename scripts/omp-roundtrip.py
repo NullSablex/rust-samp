@@ -38,7 +38,8 @@ COMPARABLE = {"i32", "u32", "i16", "u16", "i8", "u8", "i64", "u64", "f32", "bool
               "Vector3", "Vector4"}
 # Setter type -> getter return type for the values the ABI returns through a
 # small-struct slot, which the wrapper hands back as an `Option`.
-WRAPPED = {"StringView": "Option<String>", "Colour": "Option<Colour>"}
+WRAPPED = {"StringView": "Option<String>", "Colour": "Option<Colour>",
+           **{d: f"Option<{d}>" for d in ("Milliseconds", "Seconds", "Minutes", "Hours")}}
 
 ENTRY = re.compile(
     r"pub fn (\w+)\(\s*(\w+): (\w+)((?:,\s*\w+: [^,)]+)*),?\s*\)\s*(?:->\s*([^=]+?))?\s*=",
@@ -82,13 +83,15 @@ def pairs(found: dict) -> dict[str, list[tuple[str, str, str]]]:
         m = re.match(r"(\w+?)_set_(\w+)$", setter)
         if not m or len(w["params"]) != 1:
             continue
-        ty = w["params"][0]
+        # A `const T &` parameter is a Rust reference; the value compared is `T`.
+        by_ref = w["params"][0].startswith("&")
+        ty = w["params"][0].lstrip("&")
         getter = f"{m.group(1)}_{m.group(2)}"
         g = found.get(getter)
         if not g or g["handle"] != w["handle"] or g["params"]:
             continue
         if (ty in COMPARABLE and g["ret"] == ty) or WRAPPED.get(ty) == g["ret"]:
-            out.setdefault(w["handle"], []).append((getter, setter, ty))
+            out.setdefault(w["handle"], []).append((getter, setter, ty, by_ref))
     return out
 
 
@@ -111,7 +114,8 @@ def render(by_handle: dict) -> str:
             f"/// `handle` must be a live `{handle}`.",
             f"pub unsafe fn {fn}(handle: *mut {handle}, report: &mut Report) {{",
         ]
-        for getter, setter, ty in sorted(by_handle[handle]):
+        for getter, setter, ty, by_ref in sorted(by_handle[handle]):
+            amp = "&" if by_ref else ""
             lines.append(f'    report.begin("{getter}");')
             if ty == "StringView":
                 # Text goes in as a view and comes back as an owned copy.
@@ -125,14 +129,14 @@ def render(by_handle: dict) -> str:
                     f"        {setter}(handle, StringView::of(&before));",
                     "    }",
                 ]
-            elif ty == "Colour":
+            elif ty in WRAPPED:
                 lines += [
                     "    unsafe {",
                     f"        let before = {getter}(handle).unwrap_or_default();",
                     "        let want = before.other();",
-                    f"        {setter}(handle, want);",
+                    f"        {setter}(handle, {amp}want);",
                     f'        report.round_trip("{getter}", before, want, {getter}(handle).unwrap_or_default());',
-                    f"        {setter}(handle, before);",
+                    f"        {setter}(handle, {amp}before);",
                     "    }",
                 ]
             else:
@@ -140,9 +144,9 @@ def render(by_handle: dict) -> str:
                     "    unsafe {",
                     f"        let before: {ty} = {getter}(handle);",
                     "        let want = before.other();",
-                    f"        {setter}(handle, want);",
+                    f"        {setter}(handle, {amp}want);",
                     f'        report.round_trip("{getter}", before, want, {getter}(handle));',
-                    f"        {setter}(handle, before);",
+                    f"        {setter}(handle, {amp}before);",
                     "    }",
                 ]
         lines += ["}", ""]

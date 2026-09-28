@@ -33,6 +33,19 @@ pub unsafe fn round_trips_actor(handle: *mut IActor, report: &mut Report) {
 /// # Safety
 /// `handle` must be a live `ICheckpointData`.
 pub unsafe fn round_trips_checkpoint_data(handle: *mut ICheckpointData, report: &mut Report) {
+    report.begin("checkpoint_position");
+    unsafe {
+        let before: Vector3 = checkpoint_position(handle);
+        let want = before.other();
+        checkpoint_set_position(handle, &want);
+        report.round_trip(
+            "checkpoint_position",
+            before,
+            want,
+            checkpoint_position(handle),
+        );
+        checkpoint_set_position(handle, &before);
+    }
     report.begin("checkpoint_radius");
     unsafe {
         let before: f32 = checkpoint_radius(handle);
@@ -454,6 +467,110 @@ pub unsafe fn round_trips_player_object(handle: *mut IPlayerObject, report: &mut
 /// # Safety
 /// `handle` must be a live `IPlayerTextDraw`.
 pub unsafe fn round_trips_player_text_draw(handle: *mut IPlayerTextDraw, report: &mut Report) {
+    report.begin("player_textdraw_alignment");
+    unsafe {
+        let before: i32 = player_textdraw_alignment(handle);
+        let want = before.other();
+        player_textdraw_set_alignment(handle, want);
+        report.round_trip(
+            "player_textdraw_alignment",
+            before,
+            want,
+            player_textdraw_alignment(handle),
+        );
+        player_textdraw_set_alignment(handle, before);
+    }
+    report.begin("player_textdraw_box_colour");
+    unsafe {
+        let before = player_textdraw_box_colour(handle).unwrap_or_default();
+        let want = before.other();
+        player_textdraw_set_box_colour(handle, want);
+        report.round_trip(
+            "player_textdraw_box_colour",
+            before,
+            want,
+            player_textdraw_box_colour(handle).unwrap_or_default(),
+        );
+        player_textdraw_set_box_colour(handle, before);
+    }
+    report.begin("player_textdraw_outline");
+    unsafe {
+        let before: i32 = player_textdraw_outline(handle);
+        let want = before.other();
+        player_textdraw_set_outline(handle, want);
+        report.round_trip(
+            "player_textdraw_outline",
+            before,
+            want,
+            player_textdraw_outline(handle),
+        );
+        player_textdraw_set_outline(handle, before);
+    }
+    report.begin("player_textdraw_preview_model");
+    unsafe {
+        let before: i32 = player_textdraw_preview_model(handle);
+        let want = before.other();
+        player_textdraw_set_preview_model(handle, want);
+        report.round_trip(
+            "player_textdraw_preview_model",
+            before,
+            want,
+            player_textdraw_preview_model(handle),
+        );
+        player_textdraw_set_preview_model(handle, before);
+    }
+    report.begin("player_textdraw_preview_rotation");
+    unsafe {
+        let before: Vector3 = player_textdraw_preview_rotation(handle);
+        let want = before.other();
+        player_textdraw_set_preview_rotation(handle, want);
+        report.round_trip(
+            "player_textdraw_preview_rotation",
+            before,
+            want,
+            player_textdraw_preview_rotation(handle),
+        );
+        player_textdraw_set_preview_rotation(handle, before);
+    }
+    report.begin("player_textdraw_preview_zoom");
+    unsafe {
+        let before: f32 = player_textdraw_preview_zoom(handle);
+        let want = before.other();
+        player_textdraw_set_preview_zoom(handle, want);
+        report.round_trip(
+            "player_textdraw_preview_zoom",
+            before,
+            want,
+            player_textdraw_preview_zoom(handle),
+        );
+        player_textdraw_set_preview_zoom(handle, before);
+    }
+    report.begin("player_textdraw_shadow");
+    unsafe {
+        let before: i32 = player_textdraw_shadow(handle);
+        let want = before.other();
+        player_textdraw_set_shadow(handle, want);
+        report.round_trip(
+            "player_textdraw_shadow",
+            before,
+            want,
+            player_textdraw_shadow(handle),
+        );
+        player_textdraw_set_shadow(handle, before);
+    }
+    report.begin("player_textdraw_style");
+    unsafe {
+        let before: i32 = player_textdraw_style(handle);
+        let want = before.other();
+        player_textdraw_set_style(handle, want);
+        report.round_trip(
+            "player_textdraw_style",
+            before,
+            want,
+            player_textdraw_style(handle),
+        );
+        player_textdraw_set_style(handle, before);
+    }
     report.begin("player_textdraw_text");
     unsafe {
         let before = player_textdraw_text(handle).unwrap_or_default();
@@ -528,6 +645,32 @@ pub unsafe fn round_trips_race_checkpoint_data(
     handle: *mut IRaceCheckpointData,
     report: &mut Report,
 ) {
+    report.begin("race_checkpoint_next_position");
+    unsafe {
+        let before: Vector3 = race_checkpoint_next_position(handle);
+        let want = before.other();
+        race_checkpoint_set_next_position(handle, &want);
+        report.round_trip(
+            "race_checkpoint_next_position",
+            before,
+            want,
+            race_checkpoint_next_position(handle),
+        );
+        race_checkpoint_set_next_position(handle, &before);
+    }
+    report.begin("race_checkpoint_position");
+    unsafe {
+        let before: Vector3 = race_checkpoint_position(handle);
+        let want = before.other();
+        race_checkpoint_set_position(handle, &want);
+        report.round_trip(
+            "race_checkpoint_position",
+            before,
+            want,
+            race_checkpoint_position(handle),
+        );
+        race_checkpoint_set_position(handle, &before);
+    }
     report.begin("race_checkpoint_radius");
     unsafe {
         let before: f32 = race_checkpoint_radius(handle);
@@ -561,6 +704,108 @@ pub unsafe fn round_trips_race_checkpoint_data(
 /// # Safety
 /// `handle` must be a live `ITextDraw`.
 pub unsafe fn round_trips_text_draw(handle: *mut ITextDraw, report: &mut Report) {
+    report.begin("textdraw_alignment");
+    unsafe {
+        let before: i32 = textdraw_alignment(handle);
+        let want = before.other();
+        textdraw_set_alignment(handle, want);
+        report.round_trip(
+            "textdraw_alignment",
+            before,
+            want,
+            textdraw_alignment(handle),
+        );
+        textdraw_set_alignment(handle, before);
+    }
+    report.begin("textdraw_background_colour");
+    unsafe {
+        let before = textdraw_background_colour(handle).unwrap_or_default();
+        let want = before.other();
+        textdraw_set_background_colour(handle, want);
+        report.round_trip(
+            "textdraw_background_colour",
+            before,
+            want,
+            textdraw_background_colour(handle).unwrap_or_default(),
+        );
+        textdraw_set_background_colour(handle, before);
+    }
+    report.begin("textdraw_box_colour");
+    unsafe {
+        let before = textdraw_box_colour(handle).unwrap_or_default();
+        let want = before.other();
+        textdraw_set_box_colour(handle, want);
+        report.round_trip(
+            "textdraw_box_colour",
+            before,
+            want,
+            textdraw_box_colour(handle).unwrap_or_default(),
+        );
+        textdraw_set_box_colour(handle, before);
+    }
+    report.begin("textdraw_outline");
+    unsafe {
+        let before: i32 = textdraw_outline(handle);
+        let want = before.other();
+        textdraw_set_outline(handle, want);
+        report.round_trip("textdraw_outline", before, want, textdraw_outline(handle));
+        textdraw_set_outline(handle, before);
+    }
+    report.begin("textdraw_preview_model");
+    unsafe {
+        let before: i32 = textdraw_preview_model(handle);
+        let want = before.other();
+        textdraw_set_preview_model(handle, want);
+        report.round_trip(
+            "textdraw_preview_model",
+            before,
+            want,
+            textdraw_preview_model(handle),
+        );
+        textdraw_set_preview_model(handle, before);
+    }
+    report.begin("textdraw_preview_rotation");
+    unsafe {
+        let before: Vector3 = textdraw_preview_rotation(handle);
+        let want = before.other();
+        textdraw_set_preview_rotation(handle, want);
+        report.round_trip(
+            "textdraw_preview_rotation",
+            before,
+            want,
+            textdraw_preview_rotation(handle),
+        );
+        textdraw_set_preview_rotation(handle, before);
+    }
+    report.begin("textdraw_preview_zoom");
+    unsafe {
+        let before: f32 = textdraw_preview_zoom(handle);
+        let want = before.other();
+        textdraw_set_preview_zoom(handle, want);
+        report.round_trip(
+            "textdraw_preview_zoom",
+            before,
+            want,
+            textdraw_preview_zoom(handle),
+        );
+        textdraw_set_preview_zoom(handle, before);
+    }
+    report.begin("textdraw_shadow");
+    unsafe {
+        let before: i32 = textdraw_shadow(handle);
+        let want = before.other();
+        textdraw_set_shadow(handle, want);
+        report.round_trip("textdraw_shadow", before, want, textdraw_shadow(handle));
+        textdraw_set_shadow(handle, before);
+    }
+    report.begin("textdraw_style");
+    unsafe {
+        let before: i32 = textdraw_style(handle);
+        let want = before.other();
+        textdraw_set_style(handle, want);
+        report.round_trip("textdraw_style", before, want, textdraw_style(handle));
+        textdraw_set_style(handle, before);
+    }
     report.begin("textdraw_text");
     unsafe {
         let before = textdraw_text(handle).unwrap_or_default();
@@ -669,6 +914,19 @@ pub unsafe fn round_trips_vehicle(handle: *mut IVehicle, report: &mut Report) {
         let got = vehicle_plate(handle).unwrap_or_default();
         report.round_trip("vehicle_plate", before.clone(), want, got);
         vehicle_set_plate(handle, StringView::of(&before));
+    }
+    report.begin("vehicle_respawn_delay");
+    unsafe {
+        let before = vehicle_respawn_delay(handle).unwrap_or_default();
+        let want = before.other();
+        vehicle_set_respawn_delay(handle, want);
+        report.round_trip(
+            "vehicle_respawn_delay",
+            before,
+            want,
+            vehicle_respawn_delay(handle).unwrap_or_default(),
+        );
+        vehicle_set_respawn_delay(handle, before);
     }
     report.begin("vehicle_velocity");
     unsafe {
