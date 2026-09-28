@@ -422,6 +422,39 @@ def arg_bytes(signature: str) -> int:
     return total
 
 
+def split_params(text: str) -> list[str]:
+    """Top-level parameters of `f(a, b<c, d>, e)`, as written."""
+    inner = text[text.index("(") + 1 : text.rindex(")")]
+    out, depth, cur = [], 0, ""
+    for ch in inner:
+        depth += ch in "<(" 
+        depth -= ch in ">)"
+        if ch == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    return [p for p in (*out, cur.strip()) if p]
+
+
+def same_params(signature: str, demangled: str) -> bool:
+    """Whether the demangled symbol takes what the header's signature does.
+
+    The spellings differ — `StringView` demangles to the vendored view type,
+    `Vector2` to a `glm` vector — so the check is by count, and by exact name
+    only for the builtin and interface types that spell the same both ways."""
+    want, got = split_params(signature), split_params(demangled)
+    if len(want) != len(got):
+        return False
+    for w, g in zip(want, got):
+        w, g = w.replace("const", "").replace(" ", ""), g.replace("const", "").replace(" ", "")
+        plain = w.rstrip("&*")
+        if plain in ("int", "bool", "float") or plain.startswith("I"):
+            if w != g:
+                return False
+    return True
+
+
 def generated_slots():
     """(module, impl, library, [(signature, itanium, msvc)]) for every generated file."""
     spec = tomllib.loads((REPO / "scripts/omp-wrappers.toml").read_text())
@@ -456,10 +489,16 @@ def check_generated(linux: pathlib.Path | None, win: pathlib.Path | None, report
                 report.skipped += len(slots)
                 vtable = None
         if linux is not None and vtable is not None:
+            names = [re.search(r"::(\w+)\(", sig).group(1) for sig, _, _ in slots]
             for signature, itanium, _ in slots:
                 method = re.search(r"::(\w+)\(", signature).group(1)
                 found = vtable[itanium] if itanium < len(vtable) else ""
-                report.check(f"Itanium [{itanium}] {method}", True, f"::{method}(" in found or None)
+                ok = f"::{method}(" in found
+                # An overload is pinned by its parameters as well: the name alone
+                # would pass either one.
+                if ok and names.count(method) > 1:
+                    ok = same_params(signature, found)
+                report.check(f"Itanium [{itanium}] {method}", True, ok or None)
         if win is not None:
             dll = PortableExecutable(win / (f"{library}.exe" if library == "omp-server" else f"components/{library}.dll"))
             try:

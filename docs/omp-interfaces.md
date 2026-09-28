@@ -116,7 +116,7 @@ Those functions are generated from the open.mp SDK headers by
 `scripts/omp-wrappers.py`, one module per interface under
 `samp_sdk::omp::generated`. Each file lists at its end what was left out and
 why — a type the SDK does not mirror (`std::` containers, references to
-unmirrored structs), a C-style `...`, an overloaded name. A gap is written
+unmirrored structs), a C-style `...`, an overload no one has named. A gap is written
 down, never guessed at.
 
 Three things stand behind every generated function:
@@ -179,7 +179,8 @@ runs against real servers on both platforms.
 
 List it in `scripts/omp-wrappers.toml` — the interface, its header, the handle
 the wrappers take, their prefix, and the class implementing it in the server's
-binaries — then:
+binaries; an overloaded method is wrapped once each overload gets a name under
+`overloads` (`"create(Vector2,int)" = "create_preview"`) — then:
 
 ```sh
 scripts/omp-wrappers.py                    # regenerate samp-sdk/src/omp/generated/

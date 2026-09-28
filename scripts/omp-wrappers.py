@@ -403,6 +403,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
     header, leaf, handle, prefix = entry["header"], entry["class"], entry["handle"], entry["prefix"]
     arg = entry.get("this", prefix)
     skip = set(entry.get("skip", ()))
+    overloads = entry.get("overloads", {})
 
     records, enums = index_ast(ast_of(header, includes))
     chain = [c for c in primary_chain(records, leaf) if c not in NOT_OURS]
@@ -421,13 +422,20 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
             shown = [t for _, t in m["params"]] + (["..."] if m["variadic"] else [])
             signature = f"{m['ret']} {cls}::{m['name']}({', '.join(shown)})"
             name = rust_name(prefix, m["name"])
+            const = "SLOT_" + snake(m["name"]).upper()
             try:
                 if m["variadic"]:
                     raise Skip("variadic — a C-style `...` cannot go through a typed wrapper")
                 if m["name"] in skip:
                     raise Skip("covered by a hand-written wrapper under another name")
                 if counts[m["name"]] > 1:
-                    raise Skip("overloaded")
+                    # Named one by one in the TOML; clang's layout places each
+                    # overload, reversed order under MSVC included.
+                    own = overloads.get(key_of(signature))
+                    if own is None:
+                        raise Skip("overloaded")
+                    name = f"{prefix}_{own}"
+                    const = "SLOT_" + own.upper()
                 if name in taken:
                     raise Skip(f"`{name}` is written by hand")
                 key = key_of(signature)
@@ -450,7 +458,6 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
                 notes.append(f"// skipped: `{signature}` — {why}")
                 continue
 
-            const = "SLOT_" + snake(m["name"]).upper()
             slots.append(f"    /// `{signature}`")
             slots.append(f"    {const}: usize = {slot_i}, {slot_m};")
             doc = [

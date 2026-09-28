@@ -47,6 +47,10 @@ slots! {
     SLOT_SELECTING_OBJECT: usize = 9, 9;
     /// `void IPlayerObjectData::endEditing()`
     SLOT_END_EDITING: usize = 10, 10;
+    /// `void IPlayerObjectData::beginEditing(IObject &)`
+    SLOT_BEGIN_EDITING: usize = 11, 12;
+    /// `void IPlayerObjectData::beginEditing(IPlayerObject &)`
+    SLOT_BEGIN_EDITING_PLAYER_OBJECT: usize = 12, 11;
     /// `bool IPlayerObjectData::editingObject()`
     SLOT_EDITING_OBJECT: usize = 13, 13;
     /// `void IPlayerObjectData::editAttachedObject(int)`
@@ -107,6 +111,24 @@ virtual_fns! {
     /// `data` must be a live `IPlayerObjectData`.
     pub fn player_objects_end_editing(data: IPlayerObjectData) = [0, SLOT_END_EDITING];
 
+    /// `void IPlayerObjectData::beginEditing(IObject &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerObjectData`.
+    pub fn player_objects_begin_editing(
+        data: IPlayerObjectData,
+        object: *mut IObject,
+    ) = [0, SLOT_BEGIN_EDITING];
+
+    /// `void IPlayerObjectData::beginEditing(IPlayerObject &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerObjectData`.
+    pub fn player_objects_begin_editing_player_object(
+        data: IPlayerObjectData,
+        object: *mut IPlayerObject,
+    ) = [0, SLOT_BEGIN_EDITING_PLAYER_OBJECT];
+
     /// `bool IPlayerObjectData::editingObject()`.
     ///
     /// # Safety
@@ -129,5 +151,3 @@ virtual_fns! {
 // What the generator left out, and why.
 // skipped: `void IPlayerObjectData::setAttachedObject(int, const ObjectAttachmentSlotData &)` — takes `const ObjectAttachmentSlotData &`, which the SDK does not mirror
 // skipped: `const ObjectAttachmentSlotData & IPlayerObjectData::getAttachedObject(int)` — returns `const ObjectAttachmentSlotData &`, which the SDK does not mirror
-// skipped: `void IPlayerObjectData::beginEditing(IObject &)` — overloaded
-// skipped: `void IPlayerObjectData::beginEditing(IPlayerObject &)` — overloaded

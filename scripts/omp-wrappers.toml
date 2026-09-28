@@ -8,6 +8,10 @@
 #   prefix  the functions' prefix: `object` gives `object_set_model`
 #   module  the generated file's name
 #   this    optional name for the handle argument (defaults to `prefix`)
+#   overloads  optional: `method(ParamTypes)` -> the name each overload is
+#           wrapped under, spacing removed as in `key_of`. An overload left out
+#           is skipped; one listed is checked like any other slot, and on Linux
+#           by its parameter list as well as its name
 #   impl    the class implementing it in the official server binaries, and
 #   library the binary holding it (`Objects` for components/Objects.so|.dll,
 #           `omp-server` for the server itself); `check-abi-slots.py
@@ -23,6 +27,7 @@ module = "player"
 this = "player"
 impl = "Player"
 library = "omp-server"
+overloads = { "attachCameraToObject(IObject&)" = "attach_camera_to_object", "attachCameraToObject(IPlayerObject&)" = "attach_camera_to_player_object" }
 
 [[interface]]
 class = "IPlayerPool"
@@ -359,6 +364,7 @@ module = "player_objects"
 this = "data"
 impl = "PlayerObjectData"
 library = "Objects"
+overloads = { "beginEditing(IObject&)" = "begin_editing", "beginEditing(IPlayerObject&)" = "begin_editing_player_object" }
 
 [[interface]]
 class = "IPickup"
@@ -447,6 +453,7 @@ module = "player_textdraws"
 this = "data"
 impl = "PlayerTextDrawData"
 library = "TextDraws"
+overloads = { "create(Vector2,StringView)" = "create", "create(Vector2,int)" = "create_preview" }
 
 [[interface]]
 class = "ITextLabel"
@@ -485,6 +492,7 @@ module = "player_textlabels"
 this = "data"
 impl = "PlayerTextLabelData"
 library = "TextLabels"
+overloads = { "create(StringView,Colour,Vector3,float,bool)" = "create", "create(StringView,Colour,Vector3,float,bool,IPlayer&)" = "create_on_player", "create(StringView,Colour,Vector3,float,bool,IVehicle&)" = "create_on_vehicle" }
 
 [[interface]]
 class = "IVariablesComponent"

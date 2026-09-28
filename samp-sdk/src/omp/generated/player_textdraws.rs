@@ -41,6 +41,10 @@ slots! {
     SLOT_IS_SELECTING: usize = 4, 4;
     /// `void IPlayerTextDrawData::endSelection()`
     SLOT_END_SELECTION: usize = 5, 5;
+    /// `IPlayerTextDraw * IPlayerTextDrawData::create(Vector2, StringView)`
+    SLOT_CREATE: usize = 6, 7;
+    /// `IPlayerTextDraw * IPlayerTextDrawData::create(Vector2, int)`
+    SLOT_CREATE_PREVIEW: usize = 7, 6;
 }
 
 virtual_fns! {
@@ -67,8 +71,26 @@ virtual_fns! {
     /// # Safety
     /// `data` must be a live `IPlayerTextDrawData`.
     pub fn player_textdraws_end_selection(data: IPlayerTextDrawData) = [0, SLOT_END_SELECTION];
-}
 
-// What the generator left out, and why.
-// skipped: `IPlayerTextDraw * IPlayerTextDrawData::create(Vector2, StringView)` — overloaded
-// skipped: `IPlayerTextDraw * IPlayerTextDrawData::create(Vector2, int)` — overloaded
+    /// `IPlayerTextDraw * IPlayerTextDrawData::create(Vector2, StringView)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerTextDrawData`.
+    #[must_use]
+    pub fn player_textdraws_create(
+        data: IPlayerTextDrawData,
+        position: Vector2,
+        text: StringView,
+    ) -> *mut IPlayerTextDraw = [0, SLOT_CREATE] or std::ptr::null_mut();
+
+    /// `IPlayerTextDraw * IPlayerTextDrawData::create(Vector2, int)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerTextDrawData`.
+    #[must_use]
+    pub fn player_textdraws_create_preview(
+        data: IPlayerTextDrawData,
+        position: Vector2,
+        model: i32,
+    ) -> *mut IPlayerTextDraw = [0, SLOT_CREATE_PREVIEW] or std::ptr::null_mut();
+}

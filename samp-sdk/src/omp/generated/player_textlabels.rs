@@ -34,7 +34,57 @@ pub unsafe fn player_textlabels(player: *mut IPlayer) -> *mut IPlayerTextLabelDa
     unsafe { extension(player.cast::<u8>(), PLAYER_TEXTLABELS_UID) }.cast::<IPlayerTextLabelData>()
 }
 
-// What the generator left out, and why.
-// skipped: `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool)` — overloaded
-// skipped: `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool, IPlayer &)` — overloaded
-// skipped: `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool, IVehicle &)` — overloaded
+slots! {
+    /// `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool)`
+    SLOT_CREATE: usize = 3, 5;
+    /// `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool, IPlayer &)`
+    SLOT_CREATE_ON_PLAYER: usize = 4, 4;
+    /// `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool, IVehicle &)`
+    SLOT_CREATE_ON_VEHICLE: usize = 5, 3;
+}
+
+virtual_fns! {
+    /// `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerTextLabelData`.
+    #[must_use]
+    pub fn player_textlabels_create(
+        data: IPlayerTextLabelData,
+        text: StringView,
+        colour: Colour,
+        pos: Vector3,
+        draw_dist: f32,
+        los: bool,
+    ) -> *mut IPlayerTextLabel = [0, SLOT_CREATE] or std::ptr::null_mut();
+
+    /// `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool, IPlayer &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerTextLabelData`.
+    #[must_use]
+    pub fn player_textlabels_create_on_player(
+        data: IPlayerTextLabelData,
+        text: StringView,
+        colour: Colour,
+        pos: Vector3,
+        draw_dist: f32,
+        los: bool,
+        attach: *mut IPlayer,
+    ) -> *mut IPlayerTextLabel = [0, SLOT_CREATE_ON_PLAYER] or std::ptr::null_mut();
+
+    /// `IPlayerTextLabel * IPlayerTextLabelData::create(StringView, Colour, Vector3, float, bool, IVehicle &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerTextLabelData`.
+    #[must_use]
+    pub fn player_textlabels_create_on_vehicle(
+        data: IPlayerTextLabelData,
+        text: StringView,
+        colour: Colour,
+        pos: Vector3,
+        draw_dist: f32,
+        los: bool,
+        attach: *mut IVehicle,
+    ) -> *mut IPlayerTextLabel = [0, SLOT_CREATE_ON_VEHICLE] or std::ptr::null_mut();
+}

@@ -38,6 +38,10 @@ slots! {
     SLOT_INTERPOLATE_CAMERA_POSITION: usize = 22, 21;
     /// `void IPlayer::interpolateCameraLookAt(Vector3, Vector3, int, PlayerCameraCutType)`
     SLOT_INTERPOLATE_CAMERA_LOOK_AT: usize = 23, 22;
+    /// `void IPlayer::attachCameraToObject(IObject &)`
+    SLOT_ATTACH_CAMERA_TO_OBJECT: usize = 24, 24;
+    /// `void IPlayer::attachCameraToObject(IPlayerObject &)`
+    SLOT_ATTACH_CAMERA_TO_PLAYER_OBJECT: usize = 25, 23;
     /// `EPlayerNameStatus IPlayer::setName(StringView)`
     SLOT_SET_NAME: usize = 26, 25;
     /// `StringView IPlayer::getSerial()`
@@ -303,6 +307,24 @@ virtual_fns! {
         time: i32,
         cut_type: i32,
     ) = [0, SLOT_INTERPOLATE_CAMERA_LOOK_AT];
+
+    /// `void IPlayer::attachCameraToObject(IObject &)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_attach_camera_to_object(
+        player: IPlayer,
+        object: *mut IObject,
+    ) = [0, SLOT_ATTACH_CAMERA_TO_OBJECT];
+
+    /// `void IPlayer::attachCameraToObject(IPlayerObject &)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_attach_camera_to_player_object(
+        player: IPlayer,
+        object: *mut IPlayerObject,
+    ) = [0, SLOT_ATTACH_CAMERA_TO_PLAYER_OBJECT];
 
     /// `EPlayerNameStatus IPlayer::setName(StringView)`.
     ///
@@ -1015,8 +1037,6 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `void IPlayer::broadcastRPCToStreamed(int, Span<uint8_t>, int, bool)` — takes `Span<uint8_t>`
 // skipped: `void IPlayer::broadcastPacketToStreamed(Span<uint8_t>, int, bool)` — takes `Span<uint8_t>`
 // skipped: `void IPlayer::broadcastSyncPacket(Span<uint8_t>, int)` — takes `Span<uint8_t>`
-// skipped: `void IPlayer::attachCameraToObject(IObject &)` — overloaded
-// skipped: `void IPlayer::attachCameraToObject(IPlayerObject &)` — overloaded
 // skipped: `StringView IPlayer::getName()` — `player_name` is written by hand
 // skipped: `void IPlayer::giveWeapon(WeaponSlotData)` — takes `WeaponSlotData`
 // skipped: `void IPlayer::setWeaponAmmo(WeaponSlotData)` — takes `WeaponSlotData`

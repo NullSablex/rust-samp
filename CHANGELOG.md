@@ -245,7 +245,7 @@ The per-crate sections come first, then the ones belonging to the repository.
 #### Added
 
 - **Wrappers for nearly every open.mp interface, generated from the SDK
-  headers.** 596 functions over 53 interfaces, in `omp::generated` and
+  headers.** 605 functions over 53 interfaces, in `omp::generated` and
   re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
   `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
   checkpoints, text labels, player objects and text draws), every component,
@@ -254,7 +254,7 @@ The per-crate sections come first, then the ones belonging to the repository.
   `player_objects(player)`, ...). Each component interface gets its UID and its
   `ComponentInterface` impl. What the generator will not state with certainty —
   `std::` types, references to structs the SDK does not mirror, C-style `...`,
-  overloaded names — is listed at the end of each module with the reason, never
+  overloads not named in the TOML — is listed at the end of each module with the reason, never
   guessed.
 - The generator covers three more shapes, which brought 67 methods in —
   among them every setter of the text draws, the checkpoints' positions and the
@@ -262,6 +262,15 @@ The per-crate sections come first, then the ones belonging to the repository.
   taken by const reference) becomes a Rust reference, which is that pointer; a
   setter returning the object itself for chaining (`ITextDrawBase &`) drops the
   value, since the caller already holds the object; and `size_t` is `usize`.
+- Overloads, named one by one in `scripts/omp-wrappers.toml` (`overloads`):
+  `player_textdraws_create` and `_create_preview`, `player_textlabels_create`
+  and `_create_on_player`/`_create_on_vehicle`,
+  `player_objects_begin_editing` and `_begin_editing_player_object`,
+  `player_attach_camera_to_object` and `_attach_camera_to_player_object`. The
+  slot of each comes from clang's layout, which already places MSVC's reversed
+  order; `check-abi-slots.py` checks an overload on Linux by its parameters as
+  well as its name, since the name alone would pass either one. A per-player
+  text draw or text label can now be created, so their round trips run too.
 - `Milliseconds`, `Seconds`, `Minutes` and `Hours`, the `std::chrono`
   durations the headers take and return, laid out as the C++ classes are. The
   count of minutes and hours is an `int` under Microsoft's library and 64 bits
@@ -429,7 +438,8 @@ The per-crate sections come first, then the ones belonging to the repository.
   so. Round trips also cover `Vector3`, `Vector4`, `Colour` and text now, the
   return conventions most likely to differ between the ABIs, and the durations
   and const-reference setters the generator gained later, the global text
-  draw's included. 89 passed, 0 wrong, identically on open.mp Linux and on
+  draw's included, and the per-player text draws and text labels created
+  through the new overloads. 108 passed, 0 wrong, identically on open.mp Linux and on
   Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
   UB checks) and AddressSanitizer with leak detection on the host target both
@@ -439,9 +449,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
-  1045 slots `check-abi-slots.py --generated` can derive match the official
+  1061 slots `check-abi-slots.py --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
-  143 are declared underivable (the Windows server executable keeps RTTI for
+  145 are declared underivable (the Windows server executable keeps RTTI for
   three classes only, and tail-calling methods have no `ret N` of their own).
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that

@@ -494,6 +494,65 @@ unsafe fn per_player(player: *mut omp::IPlayer, at: Vector3, report: &mut Report
         by_uid,
     );
 
+    // Created through an overload of `create`, each named in the TOML.
+    let textdraws = unsafe { omp::player_textdraws(player) };
+    report.check(
+        "player_textdraws",
+        !textdraws.is_null(),
+        "no IPlayerTextDrawData",
+    );
+    if !textdraws.is_null() {
+        let td = unsafe {
+            omp::player_textdraws_create(
+                textdraws,
+                Vector2 { x: 100.0, y: 100.0 },
+                StringView::of("showcase"),
+            )
+        };
+        report.check("player_textdraws_create", !td.is_null(), "null");
+        if !td.is_null() {
+            unsafe { round_trips::round_trips_player_text_draw(td, report) };
+        }
+        let preview = unsafe {
+            omp::player_textdraws_create_preview(textdraws, Vector2 { x: 50.0, y: 50.0 }, 411)
+        };
+        report.check(
+            "player_textdraws_create_preview",
+            !preview.is_null(),
+            "null",
+        );
+        if !preview.is_null() {
+            report.check(
+                "player_textdraw_preview_model",
+                unsafe { omp::player_textdraw_preview_model(preview) } == 411,
+                unsafe { omp::player_textdraw_preview_model(preview) },
+            );
+        }
+    }
+
+    let labels = unsafe { omp::player_textlabels(player) };
+    report.check(
+        "player_textlabels",
+        !labels.is_null(),
+        "no IPlayerTextLabelData",
+    );
+    if !labels.is_null() {
+        let label = unsafe {
+            omp::player_textlabels_create(
+                labels,
+                StringView::of("showcase"),
+                omp::Colour::rgba(255, 255, 255, 255),
+                at,
+                20.0,
+                false,
+            )
+        };
+        report.check("player_textlabels_create", !label.is_null(), "null");
+        if !label.is_null() {
+            unsafe { round_trips::round_trips_player_text_label(label, report) };
+        }
+    }
+
     let menus = unsafe { omp::player_menus(player) };
     report.check("player_menus", !menus.is_null(), "no IPlayerMenuData");
     if !menus.is_null() {
