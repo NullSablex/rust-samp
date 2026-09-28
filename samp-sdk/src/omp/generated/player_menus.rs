@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;

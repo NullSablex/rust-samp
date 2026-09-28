@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -29,6 +30,10 @@ impl ComponentInterface for IConsoleComponent {
 slots! {
     /// `IEventDispatcher<ConsoleEventHandler> & IConsoleComponent::getEventDispatcher()`
     SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+    /// `void IConsoleComponent::send(StringView, const ConsoleCommandSenderData &)`
+    SLOT_SEND: usize = 19, 17;
+    /// `void IConsoleComponent::sendMessage(const ConsoleCommandSenderData &, StringView)`
+    SLOT_SEND_MESSAGE: usize = 20, 18;
 }
 
 virtual_fns! {
@@ -40,8 +45,24 @@ virtual_fns! {
     pub fn console_event_dispatcher(
         component: IConsoleComponent,
     ) -> *mut EventDispatcher<ConsoleHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
-}
 
-// What the generator left out, and why.
-// skipped: `void IConsoleComponent::send(StringView, const ConsoleCommandSenderData &)` — takes `const ConsoleCommandSenderData &`, which the SDK does not mirror
-// skipped: `void IConsoleComponent::sendMessage(const ConsoleCommandSenderData &, StringView)` — takes `const ConsoleCommandSenderData &`, which the SDK does not mirror
+    /// `void IConsoleComponent::send(StringView, const ConsoleCommandSenderData &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IConsoleComponent`.
+    pub fn console_send(
+        component: IConsoleComponent,
+        command: StringView,
+        sender: &ConsoleCommandSenderData,
+    ) = [0, SLOT_SEND];
+
+    /// `void IConsoleComponent::sendMessage(const ConsoleCommandSenderData &, StringView)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IConsoleComponent`.
+    pub fn console_send_message(
+        component: IConsoleComponent,
+        recipient: &ConsoleCommandSenderData,
+        message: StringView,
+    ) = [0, SLOT_SEND_MESSAGE];
+}

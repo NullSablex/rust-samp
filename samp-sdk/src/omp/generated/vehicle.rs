@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -25,12 +26,22 @@ slots! {
     SLOT_STREAM_IN_FOR_PLAYER: usize = 9, 8;
     /// `void IVehicle::streamOutForPlayer(IPlayer &)`
     SLOT_STREAM_OUT_FOR_PLAYER: usize = 10, 9;
+    /// `Pair<int, int> IVehicle::getColour()`
+    SLOT_GET_COLOUR: usize = 12, 11;
+    /// `bool IVehicle::updateFromDriverSync(const VehicleDriverSyncPacket &, IPlayer &)`
+    SLOT_UPDATE_FROM_DRIVER_SYNC: usize = 15, 14;
+    /// `bool IVehicle::updateFromPassengerSync(const VehiclePassengerSyncPacket &, IPlayer &)`
+    SLOT_UPDATE_FROM_PASSENGER_SYNC: usize = 16, 15;
     /// `bool IVehicle::updateFromUnoccupied(const VehicleUnoccupiedSyncPacket &, IPlayer &)`
     SLOT_UPDATE_FROM_UNOCCUPIED: usize = 17, 16;
     /// `bool IVehicle::updateFromTrailerSync(const VehicleTrailerSyncPacket &, IPlayer &)`
     SLOT_UPDATE_FROM_TRAILER_SYNC: usize = 18, 17;
+    /// `const FlatPtrHashSet<IPlayer> & IVehicle::streamedForPlayers()`
+    SLOT_STREAMED_FOR_PLAYERS: usize = 19, 18;
     /// `IPlayer * IVehicle::getDriver()`
     SLOT_GET_DRIVER: usize = 20, 19;
+    /// `const FlatHashSet<IPlayer *> & IVehicle::getPassengers()`
+    SLOT_GET_PASSENGERS: usize = 21, 20;
     /// `void IVehicle::setPlate(StringView)`
     SLOT_SET_PLATE: usize = 22, 21;
     /// `const StringView IVehicle::getPlate()`
@@ -91,6 +102,8 @@ slots! {
     SLOT_ADD_CARRIAGE: usize = 50, 49;
     /// `void IVehicle::updateCarriage(Vector3, Vector3)`
     SLOT_UPDATE_CARRIAGE: usize = 51, 50;
+    /// `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> & IVehicle::getCarriages()`
+    SLOT_GET_CARRIAGES: usize = 52, 51;
     /// `void IVehicle::setVelocity(Vector3)`
     SLOT_SET_VELOCITY: usize = 53, 52;
     /// `Vector3 IVehicle::getVelocity()`
@@ -103,6 +116,10 @@ slots! {
     SLOT_GET_LANDING_GEAR_STATE: usize = 58, 57;
     /// `bool IVehicle::hasBeenOccupied()`
     SLOT_HAS_BEEN_OCCUPIED: usize = 59, 58;
+    /// `const TimePoint & IVehicle::getLastOccupiedTime()`
+    SLOT_GET_LAST_OCCUPIED_TIME: usize = 60, 59;
+    /// `const TimePoint & IVehicle::getLastSpawnTime()`
+    SLOT_GET_LAST_SPAWN_TIME: usize = 61, 60;
     /// `bool IVehicle::isOccupied()`
     SLOT_IS_OCCUPIED: usize = 62, 61;
     /// `void IVehicle::setSiren(bool)`
@@ -164,6 +181,28 @@ virtual_fns! {
         player: *mut IPlayer,
     ) = [0, SLOT_STREAM_OUT_FOR_PLAYER];
 
+    /// `bool IVehicle::updateFromDriverSync(const VehicleDriverSyncPacket &, IPlayer &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_update_from_driver_sync(
+        vehicle: IVehicle,
+        vehicle_sync: &VehicleDriverSyncPacket,
+        player: *mut IPlayer,
+    ) -> bool = [0, SLOT_UPDATE_FROM_DRIVER_SYNC] or false;
+
+    /// `bool IVehicle::updateFromPassengerSync(const VehiclePassengerSyncPacket &, IPlayer &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_update_from_passenger_sync(
+        vehicle: IVehicle,
+        passenger_sync: &VehiclePassengerSyncPacket,
+        player: *mut IPlayer,
+    ) -> bool = [0, SLOT_UPDATE_FROM_PASSENGER_SYNC] or false;
+
     /// `bool IVehicle::updateFromUnoccupied(const VehicleUnoccupiedSyncPacket &, IPlayer &)`.
     ///
     /// # Safety
@@ -186,6 +225,15 @@ virtual_fns! {
         player: *mut IPlayer,
     ) -> bool = [0, SLOT_UPDATE_FROM_TRAILER_SYNC] or false;
 
+    /// `const FlatPtrHashSet<IPlayer> & IVehicle::streamedForPlayers()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_streamed_for_players(
+        vehicle: IVehicle,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_STREAMED_FOR_PLAYERS] or std::ptr::null();
+
     /// `IPlayer * IVehicle::getDriver()`.
     ///
     /// # Safety
@@ -194,6 +242,15 @@ virtual_fns! {
     pub fn vehicle_driver(
         vehicle: IVehicle,
     ) -> *mut IPlayer = [0, SLOT_GET_DRIVER] or std::ptr::null_mut();
+
+    /// `const FlatHashSet<IPlayer *> & IVehicle::getPassengers()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_passengers(
+        vehicle: IVehicle,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_GET_PASSENGERS] or std::ptr::null();
 
     /// `void IVehicle::setPlate(StringView)`.
     ///
@@ -417,6 +474,15 @@ virtual_fns! {
         veloc: Vector3,
     ) = [0, SLOT_UPDATE_CARRIAGE];
 
+    /// `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> & IVehicle::getCarriages()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_carriages(
+        vehicle: IVehicle,
+    ) -> *const [*mut IVehicle; 3] = [0, SLOT_GET_CARRIAGES] or std::ptr::null();
+
     /// `void IVehicle::setVelocity(Vector3)`.
     ///
     /// # Safety
@@ -466,6 +532,24 @@ virtual_fns! {
         vehicle: IVehicle,
     ) -> bool = [0, SLOT_HAS_BEEN_OCCUPIED] or false;
 
+    /// `const TimePoint & IVehicle::getLastOccupiedTime()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_last_occupied_time(
+        vehicle: IVehicle,
+    ) -> *const TimePoint = [0, SLOT_GET_LAST_OCCUPIED_TIME] or std::ptr::null();
+
+    /// `const TimePoint & IVehicle::getLastSpawnTime()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_last_spawn_time(
+        vehicle: IVehicle,
+    ) -> *const TimePoint = [0, SLOT_GET_LAST_SPAWN_TIME] or std::ptr::null();
+
     /// `bool IVehicle::isOccupied()`.
     ///
     /// # Safety
@@ -512,6 +596,15 @@ virtual_fns! {
     ) -> i32 = [0, SLOT_GET_LAST_DRIVER_POOL_ID] or 0;
 }
 
+/// `Pair<int, int> IVehicle::getColour()`.
+///
+/// # Safety
+/// `vehicle` must be a live `IVehicle`.
+#[must_use]
+pub unsafe fn vehicle_colour(vehicle: *mut IVehicle) -> Option<Pair<i32, i32>> {
+    call_vtable_small_struct!(vehicle.cast::<u8>(), 0, SLOT_GET_COLOUR, Pair<i32, i32>, unsafe { std::mem::zeroed::<Pair<i32, i32>>() })
+}
+
 /// `const StringView IVehicle::getPlate()`.
 ///
 /// # Safety
@@ -545,14 +638,6 @@ pub unsafe fn vehicle_respawn_delay(vehicle: *mut IVehicle) -> Option<Seconds> {
 
 // What the generator left out, and why.
 // skipped: `void IVehicle::setColour(int, int)` — `vehicle_set_colour` is written by hand
-// skipped: `Pair<int, int> IVehicle::getColour()` — returns `Pair<int, int>`
 // skipped: `void IVehicle::setHealth(float)` — `vehicle_set_health` is written by hand
 // skipped: `float IVehicle::getHealth()` — `vehicle_health` is written by hand
-// skipped: `bool IVehicle::updateFromDriverSync(const VehicleDriverSyncPacket &, IPlayer &)` — takes `const VehicleDriverSyncPacket &`, which the SDK does not mirror
-// skipped: `bool IVehicle::updateFromPassengerSync(const VehiclePassengerSyncPacket &, IPlayer &)` — takes `const VehiclePassengerSyncPacket &`, which the SDK does not mirror
-// skipped: `const FlatPtrHashSet<IPlayer> & IVehicle::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
-// skipped: `const FlatHashSet<IPlayer *> & IVehicle::getPassengers()` — returns `const FlatHashSet<IPlayer *> &`, which the SDK does not mirror
-// skipped: `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> & IVehicle::getCarriages()` — returns `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> &`, which the SDK does not mirror
 // skipped: `int IVehicle::getModel()` — `vehicle_model` is written by hand
-// skipped: `const TimePoint & IVehicle::getLastOccupiedTime()` — returns `const TimePoint &`, which the SDK does not mirror
-// skipped: `const TimePoint & IVehicle::getLastSpawnTime()` — returns `const TimePoint &`, which the SDK does not mirror

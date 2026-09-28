@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -86,6 +87,8 @@ slots! {
     SLOT_GET_PREVIEW_ROTATION: usize = 37, 36;
     /// `ITextDrawBase & ITextDrawBase::setPreviewVehicleColour(int, int)`
     SLOT_SET_PREVIEW_VEHICLE_COLOUR: usize = 38, 37;
+    /// `Pair<int, int> ITextDrawBase::getPreviewVehicleColour()`
+    SLOT_GET_PREVIEW_VEHICLE_COLOUR: usize = 39, 38;
     /// `ITextDrawBase & ITextDrawBase::setPreviewZoom(float)`
     SLOT_SET_PREVIEW_ZOOM: usize = 40, 39;
     /// `float ITextDrawBase::getPreviewZoom()`
@@ -494,5 +497,13 @@ pub unsafe fn player_textdraw_background_colour(
     )
 }
 
-// What the generator left out, and why.
-// skipped: `Pair<int, int> ITextDrawBase::getPreviewVehicleColour()` — returns `Pair<int, int>`
+/// `Pair<int, int> ITextDrawBase::getPreviewVehicleColour()`.
+///
+/// # Safety
+/// `player_textdraw` must be a live `IPlayerTextDraw`.
+#[must_use]
+pub unsafe fn player_textdraw_preview_vehicle_colour(
+    player_textdraw: *mut IPlayerTextDraw,
+) -> Option<Pair<i32, i32>> {
+    call_vtable_small_struct!(player_textdraw.cast::<u8>(), 0, SLOT_GET_PREVIEW_VEHICLE_COLOUR, Pair<i32, i32>, unsafe { std::mem::zeroed::<Pair<i32, i32>>() })
+}

@@ -105,6 +105,23 @@ impl SampPlugin for Showcase {
             let action = unsafe { omp::player_action(player) };
             self.report
                 .round_trip("player_action getter (from the NPC's sync)", 0, 1, action);
+            // The pool's set of bots, read from the hash table, holds the NPC.
+            if let Some(core) = samp::plugin::omp_core() {
+                let pool = unsafe { omp::player_pool(core) };
+                let bots = unsafe { omp::flat_set_entries(omp::players_bots(pool)) };
+                self.report
+                    .check("players_bots (FlatSet)", bots.contains(&player), bots.len());
+            }
+            unsafe { omp::player_set_time(player, omp::Hours(12), omp::Minutes(30)) };
+            let time = unsafe { omp::player_time(player) };
+            self.report.check(
+                "player_set_time / player_time (Pair)",
+                time.is_some_and(|p| p.first == omp::Hours(12) && p.second == omp::Minutes(30)),
+                time,
+            );
+            let skills = unsafe { omp::player_skill_levels(player) };
+            self.report
+                .check("player_skill_levels", !skills.is_null(), "null");
             let held = unsafe { omp::npc_weapon(npc.npc) };
             let weapon = unsafe { omp::player_armed_weapon(player) };
             self.report.round_trip(
@@ -140,6 +157,20 @@ impl SampPlugin for Showcase {
             (
                 events::NPC_DIED.load(Acquire),
                 events::NPC_DEATH_REASON.load(Acquire),
+            ),
+        );
+        r.check(
+            "event onPoolEntryCreated (player pool, generic template)",
+            events::POOL_CREATED.load(Acquire) >= 1,
+            events::POOL_CREATED.load(Acquire),
+        );
+        r.check(
+            "event onTick (core: Microseconds, TimePoint by value)",
+            events::CORE_TICKS.load(Acquire) > 10
+                && events::CORE_TICKS_SANE.load(Acquire) == events::CORE_TICKS.load(Acquire),
+            (
+                events::CORE_TICKS.load(Acquire),
+                events::CORE_TICKS_SANE.load(Acquire),
             ),
         );
         r.check(
@@ -201,6 +232,60 @@ impl Showcase {
 /// # Safety
 /// Called once the server has every component ready.
 #[allow(clippy::too_many_lines)]
+/// The config: raw pointers back, a `Span` filled, a callback object called,
+/// and a `BanEntry` — `HybridString`s inside — by reference.
+unsafe fn config(report: &mut Report) {
+    let Some(core) = samp::plugin::omp_core() else {
+        return;
+    };
+    let config = unsafe { omp::core_config(core) };
+
+    let bots = unsafe { omp::config_int(config, StringView::of("max_bots")) };
+    report.check(
+        "config_int",
+        !bots.is_null() && unsafe { *bots } > 0,
+        (!bots.is_null()).then(|| unsafe { *bots }),
+    );
+
+    let mut views = [StringView::EMPTY; 4];
+    let count = unsafe {
+        omp::config_strings(
+            config,
+            StringView::of("pawn.main_scripts"),
+            omp::Span::of(&mut views),
+        )
+    };
+    let first = (count >= 1)
+        .then(|| unsafe { views[0].to_owned_string() })
+        .flatten();
+    report.check(
+        "config_strings",
+        first.as_deref().is_some_and(|s| !s.is_empty()),
+        (count, first),
+    );
+
+    let mut enumerator = omp::OptionEnumeratorCallback::new(&raw const events::OPTION_VTABLE);
+    unsafe { omp::config_enum_options(config, &raw mut enumerator) };
+    let seen = events::OPTIONS_SEEN.load(std::sync::atomic::Ordering::Acquire);
+    report.check("config_enum_options", seen > 10, seen);
+
+    let ban = omp::BanEntry {
+        address: omp::HybridString::new("10.20.30.40").unwrap_or_default(),
+        time: omp::WorldTimePoint(0),
+        name: omp::HybridString::new("showcase").unwrap_or_default(),
+        reason: omp::HybridString::new("round trip").unwrap_or_default(),
+    };
+    unsafe { omp::config_add_ban(config, &ban) };
+    let banned = unsafe { omp::config_is_banned(config, &ban) };
+    unsafe { omp::config_remove_ban(config, &ban) };
+    let after = unsafe { omp::config_is_banned(config, &ban) };
+    report.check(
+        "config_add_ban / is_banned / remove_ban",
+        banned && !after,
+        (banned, after),
+    );
+}
+
 /// The mirrored structs, each through the call shape it travels in: by value,
 /// by `const &`, and as a pointer into the server's own copy.
 unsafe fn structs(npc: *mut omp::INPC, report: &mut Report) {
@@ -256,6 +341,21 @@ unsafe fn structs(npc: *mut omp::INPC, report: &mut Report) {
                 "entity_set_rotation",
                 angle.abs() < 1e-2 || (angle - 360.0).abs() < 1e-2,
                 angle,
+            );
+
+            unsafe { omp::vehicle_set_colour(vehicle, 3, 4) };
+            let colour = unsafe { omp::vehicle_colour(vehicle) };
+            report.check(
+                "vehicle_colour",
+                colour.is_some_and(|p| (p.first, p.second) == (3, 4)),
+                colour,
+            );
+            // `models()` counts vehicles per model, from 400: this one is 522.
+            let models = unsafe { omp::vehicles_models(c.as_ptr()) };
+            report.check(
+                "vehicles_models",
+                !models.is_null() && unsafe { (*models)[522 - 400] } >= 1,
+                (!models.is_null()).then(|| unsafe { (*models)[522 - 400] }),
             );
 
             let params = omp::VehicleParams {
@@ -396,6 +496,10 @@ unsafe fn structs(npc: *mut omp::INPC, report: &mut Report) {
 }
 
 unsafe fn exercise(report: &mut Report) -> Option<Npc> {
+    let (tick_handler, pool_handler) = unsafe { events::register_core() };
+    report.check("add_event_handler (core tick)", tick_handler, "refused");
+    report.check("add_event_handler (player pool)", pool_handler, "refused");
+    unsafe { config(report) };
     let (npc_handler, object_handler) = unsafe { events::register() };
     report.check("add_event_handler (NPC)", npc_handler, "refused");
     report.check("add_event_handler (object)", object_handler, "refused");

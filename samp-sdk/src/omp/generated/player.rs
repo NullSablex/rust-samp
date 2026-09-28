@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -17,6 +18,14 @@ use crate::omp::*;
 slots! {
     /// `void IPlayer::ban(StringView)`
     SLOT_BAN: usize = 7, 6;
+    /// `const PeerNetworkData & IPlayer::getNetworkData()`
+    SLOT_GET_NETWORK_DATA: usize = 9, 8;
+    /// `void IPlayer::broadcastRPCToStreamed(int, Span<uint8_t>, int, bool)`
+    SLOT_BROADCAST_RPC_TO_STREAMED: usize = 10, 9;
+    /// `void IPlayer::broadcastPacketToStreamed(Span<uint8_t>, int, bool)`
+    SLOT_BROADCAST_PACKET_TO_STREAMED: usize = 11, 10;
+    /// `void IPlayer::broadcastSyncPacket(Span<uint8_t>, int)`
+    SLOT_BROADCAST_SYNC_PACKET: usize = 12, 11;
     /// `void IPlayer::spawn()`
     SLOT_SPAWN: usize = 13, 12;
     /// `ClientVersion IPlayer::getClientVersion()`
@@ -53,6 +62,8 @@ slots! {
     SLOT_REMOVE_WEAPON: usize = 30, 29;
     /// `void IPlayer::setWeaponAmmo(WeaponSlotData)`
     SLOT_SET_WEAPON_AMMO: usize = 31, 30;
+    /// `const WeaponSlots & IPlayer::getWeapons()`
+    SLOT_GET_WEAPONS: usize = 32, 31;
     /// `WeaponSlotData IPlayer::getWeaponSlot(int)`
     SLOT_GET_WEAPON_SLOT: usize = 33, 32;
     /// `void IPlayer::resetWeapons()`
@@ -115,6 +126,8 @@ slots! {
     SLOT_TOGGLE_OTHER_NAME_TAG: usize = 69, 68;
     /// `void IPlayer::setTime(Hours, Minutes)`
     SLOT_SET_TIME: usize = 70, 69;
+    /// `Pair<Hours, Minutes> IPlayer::getTime()`
+    SLOT_GET_TIME: usize = 71, 70;
     /// `void IPlayer::useClock(bool)`
     SLOT_USE_CLOCK: usize = 72, 71;
     /// `bool IPlayer::hasClock()`
@@ -131,6 +144,8 @@ slots! {
     SLOT_GET_GRAVITY: usize = 84, 83;
     /// `void IPlayer::setWorldTime(Hours)`
     SLOT_SET_WORLD_TIME: usize = 85, 84;
+    /// `void IPlayer::applyAnimation(const AnimationData &, PlayerAnimationSyncType)`
+    SLOT_APPLY_ANIMATION: usize = 86, 85;
     /// `void IPlayer::clearAnimations(PlayerAnimationSyncType)`
     SLOT_CLEAR_ANIMATIONS: usize = 87, 86;
     /// `PlayerAnimationData IPlayer::getAnimationData()`
@@ -143,6 +158,8 @@ slots! {
     SLOT_IS_STREAMED_IN_FOR_PLAYER: usize = 91, 90;
     /// `void IPlayer::streamOutForPlayer(IPlayer &)`
     SLOT_STREAM_OUT_FOR_PLAYER: usize = 92, 91;
+    /// `const FlatPtrHashSet<IPlayer> & IPlayer::streamedForPlayers()`
+    SLOT_STREAMED_FOR_PLAYERS: usize = 93, 92;
     /// `PlayerState IPlayer::getState()`
     SLOT_GET_STATE: usize = 94, 93;
     /// `void IPlayer::setChatBubble(StringView, const Colour &, float, Milliseconds)`
@@ -183,8 +200,12 @@ slots! {
     SLOT_GET_VELOCITY: usize = 117, 116;
     /// `const PlayerKeyData & IPlayer::getKeyData()`
     SLOT_GET_KEY_DATA: usize = 120, 119;
+    /// `const StaticArray<uint16_t, NUM_SKILL_LEVELS> & IPlayer::getSkillLevels()`
+    SLOT_GET_SKILL_LEVELS: usize = 121, 120;
     /// `const PlayerAimData & IPlayer::getAimData()`
     SLOT_GET_AIM_DATA: usize = 122, 121;
+    /// `const PlayerBulletData & IPlayer::getBulletData()`
+    SLOT_GET_BULLET_DATA: usize = 123, 122;
     /// `void IPlayer::useCameraTargeting(bool)`
     SLOT_USE_CAMERA_TARGETING: usize = 124, 123;
     /// `bool IPlayer::hasCameraTargeting()`
@@ -243,6 +264,48 @@ virtual_fns! {
     /// # Safety
     /// `player` must be a live `IPlayer`.
     pub fn player_ban(player: IPlayer, reason: StringView) = [0, SLOT_BAN];
+
+    /// `const PeerNetworkData & IPlayer::getNetworkData()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_network_data(
+        player: IPlayer,
+    ) -> *const PeerNetworkData = [0, SLOT_GET_NETWORK_DATA] or std::ptr::null();
+
+    /// `void IPlayer::broadcastRPCToStreamed(int, Span<uint8_t>, int, bool)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_broadcast_rpc_to_streamed(
+        player: IPlayer,
+        id: i32,
+        data: Span<u8>,
+        channel: i32,
+        skip_from: bool,
+    ) = [0, SLOT_BROADCAST_RPC_TO_STREAMED];
+
+    /// `void IPlayer::broadcastPacketToStreamed(Span<uint8_t>, int, bool)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_broadcast_packet_to_streamed(
+        player: IPlayer,
+        data: Span<u8>,
+        channel: i32,
+        skip_from: bool,
+    ) = [0, SLOT_BROADCAST_PACKET_TO_STREAMED];
+
+    /// `void IPlayer::broadcastSyncPacket(Span<uint8_t>, int)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_broadcast_sync_packet(
+        player: IPlayer,
+        data: Span<u8>,
+        channel: i32,
+    ) = [0, SLOT_BROADCAST_SYNC_PACKET];
 
     /// `void IPlayer::spawn()`.
     ///
@@ -378,6 +441,15 @@ virtual_fns! {
         player: IPlayer,
         data: WeaponSlotData,
     ) = [0, SLOT_SET_WEAPON_AMMO];
+
+    /// `const WeaponSlots & IPlayer::getWeapons()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_weapons(
+        player: IPlayer,
+    ) -> *const [WeaponSlotData; 13] = [0, SLOT_GET_WEAPONS] or std::ptr::null();
 
     /// `void IPlayer::resetWeapons()`.
     ///
@@ -652,6 +724,16 @@ virtual_fns! {
     /// `player` must be a live `IPlayer`.
     pub fn player_set_world_time(player: IPlayer, time: Hours) = [0, SLOT_SET_WORLD_TIME];
 
+    /// `void IPlayer::applyAnimation(const AnimationData &, PlayerAnimationSyncType)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_apply_animation(
+        player: IPlayer,
+        animation: &AnimationData,
+        sync_type: i32,
+    ) = [0, SLOT_APPLY_ANIMATION];
+
     /// `void IPlayer::clearAnimations(PlayerAnimationSyncType)`.
     ///
     /// # Safety
@@ -694,6 +776,15 @@ virtual_fns! {
         player: IPlayer,
         other: *mut IPlayer,
     ) = [0, SLOT_STREAM_OUT_FOR_PLAYER];
+
+    /// `const FlatPtrHashSet<IPlayer> & IPlayer::streamedForPlayers()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_streamed_for_players(
+        player: IPlayer,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_STREAMED_FOR_PLAYERS] or std::ptr::null();
 
     /// `PlayerState IPlayer::getState()`.
     ///
@@ -860,6 +951,15 @@ virtual_fns! {
         player: IPlayer,
     ) -> *const PlayerKeyData = [0, SLOT_GET_KEY_DATA] or std::ptr::null();
 
+    /// `const StaticArray<uint16_t, NUM_SKILL_LEVELS> & IPlayer::getSkillLevels()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_skill_levels(
+        player: IPlayer,
+    ) -> *const [u16; 11] = [0, SLOT_GET_SKILL_LEVELS] or std::ptr::null();
+
     /// `const PlayerAimData & IPlayer::getAimData()`.
     ///
     /// # Safety
@@ -868,6 +968,15 @@ virtual_fns! {
     pub fn player_aim_data(
         player: IPlayer,
     ) -> *const PlayerAimData = [0, SLOT_GET_AIM_DATA] or std::ptr::null();
+
+    /// `const PlayerBulletData & IPlayer::getBulletData()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_bullet_data(
+        player: IPlayer,
+    ) -> *const PlayerBulletData = [0, SLOT_GET_BULLET_DATA] or std::ptr::null();
 
     /// `void IPlayer::useCameraTargeting(bool)`.
     ///
@@ -1161,6 +1270,15 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
     unsafe { view.to_owned_string() }
 }
 
+/// `Pair<Hours, Minutes> IPlayer::getTime()`.
+///
+/// # Safety
+/// `player` must be a live `IPlayer`.
+#[must_use]
+pub unsafe fn player_time(player: *mut IPlayer) -> Option<Pair<Hours, Minutes>> {
+    call_vtable_small_struct!(player.cast::<u8>(), 0, SLOT_GET_TIME, Pair<Hours, Minutes>, unsafe { std::mem::zeroed::<Pair<Hours, Minutes>>() })
+}
+
 /// `PlayerAnimationData IPlayer::getAnimationData()`.
 ///
 /// # Safety
@@ -1179,12 +1297,7 @@ pub unsafe fn player_animation_data(player: *mut IPlayer) -> Option<PlayerAnimat
 // What the generator left out, and why.
 // skipped: `void IPlayer::kick()` — `player_kick` is written by hand
 // skipped: `bool IPlayer::isBot()` — `player_is_bot` is written by hand
-// skipped: `const PeerNetworkData & IPlayer::getNetworkData()` — returns `const PeerNetworkData &`, which the SDK does not mirror
-// skipped: `void IPlayer::broadcastRPCToStreamed(int, Span<uint8_t>, int, bool)` — takes `Span<uint8_t>`
-// skipped: `void IPlayer::broadcastPacketToStreamed(Span<uint8_t>, int, bool)` — takes `Span<uint8_t>`
-// skipped: `void IPlayer::broadcastSyncPacket(Span<uint8_t>, int)` — takes `Span<uint8_t>`
 // skipped: `StringView IPlayer::getName()` — `player_name` is written by hand
-// skipped: `const WeaponSlots & IPlayer::getWeapons()` — returns `const WeaponSlots &`, which the SDK does not mirror
 // skipped: `void IPlayer::setDrunkLevel(int)` — `player_set_drunk_level` is written by hand
 // skipped: `void IPlayer::setControllable(bool)` — `player_set_controllable` is written by hand
 // skipped: `void IPlayer::setWantedLevel(unsigned int)` — `player_set_wanted_level` is written by hand
@@ -1192,15 +1305,12 @@ pub unsafe fn player_animation_data(player: *mut IPlayer) -> Option<PlayerAnimat
 // skipped: `void IPlayer::setMoney(int)` — `player_set_money` is written by hand
 // skipped: `void IPlayer::giveMoney(int)` — `player_give_money` is written by hand
 // skipped: `int IPlayer::getMoney()` — `player_money` is written by hand
-// skipped: `Pair<Hours, Minutes> IPlayer::getTime()` — returns `Pair<Hours, Minutes>`
 // skipped: `void IPlayer::setHealth(float)` — `player_set_health` is written by hand
 // skipped: `float IPlayer::getHealth()` — `player_health` is written by hand
 // skipped: `void IPlayer::setScore(int)` — `player_set_score` is written by hand
 // skipped: `int IPlayer::getScore()` — `player_score` is written by hand
 // skipped: `void IPlayer::setArmour(float)` — `player_set_armour` is written by hand
 // skipped: `float IPlayer::getArmour()` — `player_armour` is written by hand
-// skipped: `void IPlayer::applyAnimation(const AnimationData &, PlayerAnimationSyncType)` — takes `const AnimationData &`, which the SDK does not mirror
-// skipped: `const FlatPtrHashSet<IPlayer> & IPlayer::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `void IPlayer::setTeam(int)` — `player_set_team` is written by hand
 // skipped: `int IPlayer::getTeam()` — `player_team` is written by hand
 // skipped: `void IPlayer::setSkin(int, bool)` — `player_set_skin` is written by hand
@@ -1208,5 +1318,3 @@ pub unsafe fn player_animation_data(player: *mut IPlayer) -> Option<PlayerAnimat
 // skipped: `void IPlayer::setWeather(int)` — `player_set_weather` is written by hand
 // skipped: `void IPlayer::setInterior(unsigned int)` — `player_set_interior` is written by hand
 // skipped: `unsigned int IPlayer::getInterior()` — `player_interior` is written by hand
-// skipped: `const StaticArray<uint16_t, NUM_SKILL_LEVELS> & IPlayer::getSkillLevels()` — returns `const StaticArray<uint16_t, NUM_SKILL_LEVELS> &`, which the SDK does not mirror
-// skipped: `const PlayerBulletData & IPlayer::getBulletData()` — returns `const PlayerBulletData &`, which the SDK does not mirror

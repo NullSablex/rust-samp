@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -33,6 +34,8 @@ slots! {
     SLOT_SET_POSITION: usize = 13, 12;
     /// `bool IBaseGangZone::isPlayerInside(const IPlayer &)`
     SLOT_IS_PLAYER_INSIDE: usize = 14, 13;
+    /// `const FlatHashSet<IPlayer *> & IBaseGangZone::getShownFor()`
+    SLOT_GET_SHOWN_FOR: usize = 15, 14;
     /// `const Colour IBaseGangZone::getFlashingColourForPlayer(IPlayer &)`
     SLOT_GET_FLASHING_COLOUR_FOR_PLAYER: usize = 16, 15;
     /// `const Colour IBaseGangZone::getColourForPlayer(IPlayer &)`
@@ -130,6 +133,15 @@ virtual_fns! {
         player: *mut IPlayer,
     ) -> bool = [0, SLOT_IS_PLAYER_INSIDE] or false;
 
+    /// `const FlatHashSet<IPlayer *> & IBaseGangZone::getShownFor()`.
+    ///
+    /// # Safety
+    /// `gangzone` must be a live `IGangZone`.
+    #[must_use]
+    pub fn gangzone_shown_for(
+        gangzone: IGangZone,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_GET_SHOWN_FOR] or std::ptr::null();
+
     /// `void IBaseGangZone::setLegacyPlayer(IPlayer *)`.
     ///
     /// # Safety
@@ -172,6 +184,3 @@ pub unsafe fn gangzone_colour_for_player(
 ) -> Option<Colour> {
     call_vtable_small_struct!(gangzone.cast::<u8>(), 0, SLOT_GET_COLOUR_FOR_PLAYER, Colour, Colour::default(), (*mut IPlayer) (player))
 }
-
-// What the generator left out, and why.
-// skipped: `const FlatHashSet<IPlayer *> & IBaseGangZone::getShownFor()` — returns `const FlatHashSet<IPlayer *> &`, which the SDK does not mirror

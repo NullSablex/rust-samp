@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -17,6 +18,8 @@ use crate::omp::*;
 slots! {
     /// `IEventDispatcher<TextDrawEventHandler> & ITextDrawsComponent::getEventDispatcher()`
     SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+    /// `ITextDraw * ITextDrawsComponent::create(Vector2, StringView)`
+    SLOT_CREATE: usize = 19, 18;
     /// `ITextDraw * ITextDrawsComponent::create(Vector2, int)`
     SLOT_CREATE_PREVIEW: usize = 20, 17;
 }
@@ -31,6 +34,17 @@ virtual_fns! {
         component: ITextDrawsComponent,
     ) -> *mut EventDispatcher<TextDrawHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
 
+    /// `ITextDraw * ITextDrawsComponent::create(Vector2, StringView)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ITextDrawsComponent`.
+    #[must_use]
+    pub fn textdraws_create(
+        component: ITextDrawsComponent,
+        position: Vector2,
+        text: StringView,
+    ) -> *mut ITextDraw = [0, SLOT_CREATE] or std::ptr::null_mut();
+
     /// `ITextDraw * ITextDrawsComponent::create(Vector2, int)`.
     ///
     /// # Safety
@@ -42,6 +56,3 @@ virtual_fns! {
         model: i32,
     ) -> *mut ITextDraw = [0, SLOT_CREATE_PREVIEW] or std::ptr::null_mut();
 }
-
-// What the generator left out, and why.
-// skipped: `ITextDraw * ITextDrawsComponent::create(Vector2, StringView)` — overloaded

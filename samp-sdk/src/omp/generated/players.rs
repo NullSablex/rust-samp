@@ -7,14 +7,23 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `const FlatPtrHashSet<IPlayer> & IPlayerPool::entries()`
+    SLOT_ENTRIES: usize = 6, 5;
+    /// `const FlatPtrHashSet<IPlayer> & IPlayerPool::players()`
+    SLOT_PLAYERS: usize = 7, 6;
+    /// `const FlatPtrHashSet<IPlayer> & IPlayerPool::bots()`
+    SLOT_BOTS: usize = 8, 7;
+    /// `IEventDispatcher<PoolEventHandler<IPlayer>> & IPlayerPool::getPoolEventDispatcher()`
+    SLOT_GET_POOL_EVENT_DISPATCHER: usize = 19, 18;
     /// `bool IPlayerPool::isNameTaken(StringView, const IPlayer *)`
     SLOT_IS_NAME_TAKEN: usize = 20, 19;
     /// `void IPlayerPool::sendClientMessageToAll(const Colour &, StringView)`
@@ -31,6 +40,12 @@ slots! {
     SLOT_SEND_EMPTY_DEATH_MESSAGE_TO_ALL: usize = 26, 25;
     /// `void IPlayerPool::createExplosionForAll(Vector3, int, float)`
     SLOT_CREATE_EXPLOSION_FOR_ALL: usize = 27, 26;
+    /// `Pair<NewConnectionResult, IPlayer *> IPlayerPool::requestPlayer(const PeerNetworkData &, const PeerRequestParams &)`
+    SLOT_REQUEST_PLAYER: usize = 28, 27;
+    /// `void IPlayerPool::broadcastPacket(Span<uint8_t>, int, const IPlayer *, bool)`
+    SLOT_BROADCAST_PACKET: usize = 29, 28;
+    /// `void IPlayerPool::broadcastRPC(int, Span<uint8_t>, int, const IPlayer *, bool)`
+    SLOT_BROADCAST_RPC: usize = 30, 29;
     /// `bool IPlayerPool::isNameValid(StringView)`
     SLOT_IS_NAME_VALID: usize = 31, 30;
     /// `void IPlayerPool::allowNickNameCharacter(char, bool)`
@@ -42,6 +57,42 @@ slots! {
 }
 
 virtual_fns! {
+    /// `const FlatPtrHashSet<IPlayer> & IPlayerPool::entries()`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    #[must_use]
+    pub fn players_entries(
+        pool: IPlayerPool,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_ENTRIES] or std::ptr::null();
+
+    /// `const FlatPtrHashSet<IPlayer> & IPlayerPool::players()`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    #[must_use]
+    pub fn players_players(
+        pool: IPlayerPool,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_PLAYERS] or std::ptr::null();
+
+    /// `const FlatPtrHashSet<IPlayer> & IPlayerPool::bots()`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    #[must_use]
+    pub fn players_bots(
+        pool: IPlayerPool,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_BOTS] or std::ptr::null();
+
+    /// `IEventDispatcher<PoolEventHandler<IPlayer>> & IPlayerPool::getPoolEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    #[must_use]
+    pub fn players_pool_event_dispatcher(
+        pool: IPlayerPool,
+    ) -> *mut EventDispatcher<PlayerPoolHandler> = [0, SLOT_GET_POOL_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `bool IPlayerPool::isNameTaken(StringView, const IPlayer *)`.
     ///
     /// # Safety
@@ -123,6 +174,31 @@ virtual_fns! {
         radius: f32,
     ) = [0, SLOT_CREATE_EXPLOSION_FOR_ALL];
 
+    /// `void IPlayerPool::broadcastPacket(Span<uint8_t>, int, const IPlayer *, bool)`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    pub fn players_broadcast_packet(
+        pool: IPlayerPool,
+        data: Span<u8>,
+        channel: i32,
+        skip_from: *mut IPlayer,
+        dispatch_events: bool,
+    ) = [0, SLOT_BROADCAST_PACKET];
+
+    /// `void IPlayerPool::broadcastRPC(int, Span<uint8_t>, int, const IPlayer *, bool)`.
+    ///
+    /// # Safety
+    /// `pool` must be a live `IPlayerPool`.
+    pub fn players_broadcast_rpc(
+        pool: IPlayerPool,
+        id: i32,
+        data: Span<u8>,
+        channel: i32,
+        skip_from: *mut IPlayer,
+        dispatch_events: bool,
+    ) = [0, SLOT_BROADCAST_RPC];
+
     /// `bool IPlayerPool::isNameValid(StringView)`.
     ///
     /// # Safety
@@ -154,6 +230,19 @@ virtual_fns! {
     ) -> bool = [0, SLOT_IS_NICK_NAME_CHARACTER_ALLOWED] or false;
 }
 
+/// `Pair<NewConnectionResult, IPlayer *> IPlayerPool::requestPlayer(const PeerNetworkData &, const PeerRequestParams &)`.
+///
+/// # Safety
+/// `pool` must be a live `IPlayerPool`.
+#[must_use]
+pub unsafe fn players_request_player(
+    pool: *mut IPlayerPool,
+    net_data: &PeerNetworkData,
+    params: &PeerRequestParams,
+) -> Option<Pair<i32, *mut IPlayer>> {
+    call_vtable_small_struct!(pool.cast::<u8>(), 0, SLOT_REQUEST_PLAYER, Pair<i32, *mut IPlayer>, unsafe { std::mem::zeroed::<Pair<i32, *mut IPlayer>>() }, (&PeerNetworkData, &PeerRequestParams) (net_data, params))
+}
+
 /// `Colour IPlayerPool::getDefaultColour(int)`.
 ///
 /// # Safety
@@ -171,9 +260,6 @@ pub unsafe fn players_default_colour(pool: *mut IPlayerPool, pid: i32) -> Option
 }
 
 // What the generator left out, and why.
-// skipped: `const FlatPtrHashSet<IPlayer> & IPlayerPool::entries()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
-// skipped: `const FlatPtrHashSet<IPlayer> & IPlayerPool::players()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
-// skipped: `const FlatPtrHashSet<IPlayer> & IPlayerPool::bots()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `IEventDispatcher<PlayerSpawnEventHandler> & IPlayerPool::getPlayerSpawnDispatcher()` — `PlayerSpawnHandler` and its dispatcher are written by hand
 // skipped: `IEventDispatcher<PlayerConnectEventHandler> & IPlayerPool::getPlayerConnectDispatcher()` — `PlayerConnectHandler` and its dispatcher are written by hand
 // skipped: `IEventDispatcher<PlayerStreamEventHandler> & IPlayerPool::getPlayerStreamDispatcher()` — `PlayerStreamHandler` and its dispatcher are written by hand
@@ -184,7 +270,3 @@ pub unsafe fn players_default_colour(pool: *mut IPlayerPool, pid: i32) -> Option
 // skipped: `IEventDispatcher<PlayerClickEventHandler> & IPlayerPool::getPlayerClickDispatcher()` — `PlayerClickHandler` and its dispatcher are written by hand
 // skipped: `IEventDispatcher<PlayerCheckEventHandler> & IPlayerPool::getPlayerCheckDispatcher()` — `PlayerCheckHandler` and its dispatcher are written by hand
 // skipped: `IEventDispatcher<PlayerUpdateEventHandler> & IPlayerPool::getPlayerUpdateDispatcher()` — `PlayerUpdateHandler` and its dispatcher are written by hand
-// skipped: `IEventDispatcher<PoolEventHandler<IPlayer>> & IPlayerPool::getPoolEventDispatcher()` — returns `IEventDispatcher<PoolEventHandler<IPlayer>> &`, which the SDK does not mirror
-// skipped: `Pair<NewConnectionResult, IPlayer *> IPlayerPool::requestPlayer(const PeerNetworkData &, const PeerRequestParams &)` — takes `const PeerNetworkData &`, which the SDK does not mirror
-// skipped: `void IPlayerPool::broadcastPacket(Span<uint8_t>, int, const IPlayer *, bool)` — takes `Span<uint8_t>`
-// skipped: `void IPlayerPool::broadcastRPC(int, Span<uint8_t>, int, const IPlayer *, bool)` — takes `Span<uint8_t>`

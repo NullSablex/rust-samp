@@ -16,6 +16,7 @@
 
 pub mod component;
 pub mod component_api;
+pub mod containers;
 pub mod core;
 pub mod dispatch;
 pub mod events;
@@ -34,6 +35,7 @@ pub mod world;
 // be edited alongside every new function, and grew by batches.
 pub use component::*;
 pub use component_api::*;
+pub use containers::*;
 pub use core::*;
 pub use dispatch::*;
 pub use events::*;

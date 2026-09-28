@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -41,6 +42,8 @@ slots! {
     SLOT_RESET_ATTACHMENT: usize = 17, 16;
     /// `const ObjectAttachmentData & IBaseObject::getAttachmentData()`
     SLOT_GET_ATTACHMENT_DATA: usize = 18, 17;
+    /// `bool IBaseObject::getMaterialData(uint32_t, const ObjectMaterialData *&)`
+    SLOT_GET_MATERIAL_DATA: usize = 19, 18;
     /// `void IBaseObject::setMaterial(uint32_t, int, StringView, StringView, Colour)`
     SLOT_SET_MATERIAL: usize = 20, 19;
     /// `void IBaseObject::setMaterialText(uint32_t, StringView, ObjectMaterialSize, StringView, int, bool, Colour, Colour, ObjectMaterialTextAlign)`
@@ -153,6 +156,17 @@ virtual_fns! {
         object: IObject,
     ) -> *const ObjectAttachmentData = [0, SLOT_GET_ATTACHMENT_DATA] or std::ptr::null();
 
+    /// `bool IBaseObject::getMaterialData(uint32_t, const ObjectMaterialData *&)`.
+    ///
+    /// # Safety
+    /// `object` must be a live `IObject`.
+    #[must_use]
+    pub fn object_material_data(
+        object: IObject,
+        material_index: u32,
+        out: *mut *const ObjectMaterialData,
+    ) -> bool = [0, SLOT_GET_MATERIAL_DATA] or false;
+
     /// `void IBaseObject::setMaterial(uint32_t, int, StringView, StringView, Colour)`.
     ///
     /// # Safety
@@ -206,6 +220,3 @@ virtual_fns! {
         sync_rotation: bool,
     ) = [0, SLOT_ATTACH_TO_OBJECT];
 }
-
-// What the generator left out, and why.
-// skipped: `bool IBaseObject::getMaterialData(uint32_t, const ObjectMaterialData *&)` — takes `const ObjectMaterialData *&`, which the SDK does not mirror

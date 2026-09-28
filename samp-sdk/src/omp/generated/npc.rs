@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -50,6 +51,8 @@ slots! {
     SLOT_SET_SKIN: usize = 19, 18;
     /// `bool INPC::isStreamedInForPlayer(const IPlayer &)`
     SLOT_IS_STREAMED_IN_FOR_PLAYER: usize = 20, 19;
+    /// `const FlatPtrHashSet<IPlayer> & INPC::streamedForPlayers()`
+    SLOT_STREAMED_FOR_PLAYERS: usize = 21, 20;
     /// `void INPC::setInterior(unsigned int)`
     SLOT_SET_INTERIOR: usize = 22, 21;
     /// `unsigned int INPC::getInterior()`
@@ -202,6 +205,8 @@ slots! {
     SLOT_SET_ANIMATION: usize = 96, 95;
     /// `void INPC::getAnimation(int &, float &, bool &, bool &, bool &, bool &, int &)`
     SLOT_GET_ANIMATION: usize = 97, 96;
+    /// `void INPC::applyAnimation(const AnimationData &)`
+    SLOT_APPLY_ANIMATION: usize = 98, 97;
     /// `void INPC::clearAnimations()`
     SLOT_CLEAR_ANIMATIONS: usize = 99, 98;
     /// `void INPC::setSpecialAction(PlayerSpecialAction)`
@@ -383,6 +388,15 @@ virtual_fns! {
         npc: INPC,
         other: *mut IPlayer,
     ) -> bool = [0, SLOT_IS_STREAMED_IN_FOR_PLAYER] or false;
+
+    /// `const FlatPtrHashSet<IPlayer> & INPC::streamedForPlayers()`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    #[must_use]
+    pub fn npc_streamed_for_players(
+        npc: INPC,
+    ) -> *const FlatSet<IPlayer> = [0, SLOT_STREAMED_FOR_PLAYERS] or std::ptr::null();
 
     /// `void INPC::setInterior(unsigned int)`.
     ///
@@ -1002,6 +1016,15 @@ virtual_fns! {
         time: &mut i32,
     ) = [0, SLOT_GET_ANIMATION];
 
+    /// `void INPC::applyAnimation(const AnimationData &)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_apply_animation(
+        npc: INPC,
+        animation_data: &AnimationData,
+    ) = [0, SLOT_APPLY_ANIMATION];
+
     /// `void INPC::clearAnimations()`.
     ///
     /// # Safety
@@ -1225,7 +1248,3 @@ virtual_fns! {
         npc: INPC,
     ) -> Vector3 = [0, SLOT_GET_POSITION_MOVING_TO] or Vector3::ZERO;
 }
-
-// What the generator left out, and why.
-// skipped: `const FlatPtrHashSet<IPlayer> & INPC::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
-// skipped: `void INPC::applyAnimation(const AnimationData &)` — takes `const AnimationData &`, which the SDK does not mirror

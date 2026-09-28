@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -42,6 +43,8 @@ slots! {
     SLOT_GET_FIELD_INT_BY_NAME: usize = 15, 14;
     /// `double IDatabaseResultSet::getFieldFloatByName(StringView)`
     SLOT_GET_FIELD_FLOAT_BY_NAME: usize = 16, 15;
+    /// `LegacyDBResult & IDatabaseResultSet::getLegacyDBResult()`
+    SLOT_GET_LEGACY_DB_RESULT: usize = 17, 16;
 }
 
 virtual_fns! {
@@ -119,6 +122,15 @@ virtual_fns! {
         result: IDatabaseResultSet,
         field_name: StringView,
     ) -> f64 = [0, SLOT_GET_FIELD_FLOAT_BY_NAME] or 0.0;
+
+    /// `LegacyDBResult & IDatabaseResultSet::getLegacyDBResult()`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_legacy_db_result(
+        result: IDatabaseResultSet,
+    ) -> *mut LegacyDBResult = [0, SLOT_GET_LEGACY_DB_RESULT] or std::ptr::null_mut();
 }
 
 /// `StringView IDatabaseResultSet::getFieldName(std::size_t)`.
@@ -180,6 +192,3 @@ pub unsafe fn db_result_field_string_by_name(
     )?;
     unsafe { view.to_owned_string() }
 }
-
-// What the generator left out, and why.
-// skipped: `LegacyDBResult & IDatabaseResultSet::getLegacyDBResult()` — returns `LegacyDBResult &`, which the SDK does not mirror

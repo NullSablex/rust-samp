@@ -99,6 +99,7 @@ pub unsafe fn event_handler_count<H>(dispatcher: *mut EventDispatcher<H>) -> usi
 /// };
 /// ```
 macro_rules! event_handler {
+    // Every entry with the C++ body's default: a `DEFAULT` vtable too.
     (
         $(#[$meta:meta])*
         $name:ident for $handler:ident {
@@ -106,6 +107,50 @@ macro_rules! event_handler {
                 $(#[$fmeta:meta])*
                 $field:ident: fn($($arg:ty),* $(,)?) $(-> $ret:ty)? = $default:expr
             ),* $(,)?
+        }
+    ) => {
+        $crate::omp::dispatch::event_handler!(@types
+            $(#[$meta])* $name for $handler {
+                $($(#[$fmeta])* $field: fn($($arg),*) $(-> $ret)?),*
+            }
+        );
+
+        impl $name {
+            /// Every entry doing what the C++ handler's own body does.
+            pub const DEFAULT: Self = Self {
+                $($field: {
+                    #[cfg(not(target_env = "msvc"))]
+                    unsafe extern "C" fn f(_: *mut $handler, $(_: $arg),*) $(-> $ret)? { $default }
+                    #[cfg(target_env = "msvc")]
+                    unsafe extern "thiscall" fn f(_: *mut $handler, $(_: $arg),*) $(-> $ret)? { $default }
+                    f
+                }),*
+            };
+        }
+    };
+    // An interface of pure methods — a callback the plugin implements whole.
+    (
+        $(#[$meta:meta])*
+        $name:ident for $handler:ident {
+            $(
+                $(#[$fmeta:meta])*
+                $field:ident: fn($($arg:ty),* $(,)?) $(-> $ret:ty)?
+            ),* $(,)?
+        }
+    ) => {
+        $crate::omp::dispatch::event_handler!(@types
+            $(#[$meta])* $name for $handler {
+                $($(#[$fmeta])* $field: fn($($arg),*) $(-> $ret)?),*
+            }
+        );
+    };
+    (@types
+        $(#[$meta:meta])*
+        $name:ident for $handler:ident {
+            $(
+                $(#[$fmeta:meta])*
+                $field:ident: fn($($arg:ty),*) $(-> $ret:ty)?
+            ),*
         }
     ) => {
         $(#[$meta])*
@@ -122,19 +167,6 @@ macro_rules! event_handler {
         #[derive(Clone, Copy)]
         pub struct $name {
             $($(#[$fmeta])* pub $field: unsafe extern "thiscall" fn(*mut $handler, $($arg),*) $(-> $ret)?),*
-        }
-
-        impl $name {
-            /// Every entry doing what the C++ handler's own body does.
-            pub const DEFAULT: Self = Self {
-                $($field: {
-                    #[cfg(not(target_env = "msvc"))]
-                    unsafe extern "C" fn f(_: *mut $handler, $(_: $arg),*) $(-> $ret)? { $default }
-                    #[cfg(target_env = "msvc")]
-                    unsafe extern "thiscall" fn f(_: *mut $handler, $(_: $arg),*) $(-> $ret)? { $default }
-                    f
-                }),*
-            };
         }
 
         /// Object the server calls through [`

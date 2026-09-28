@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -19,6 +20,10 @@ slots! {
     SLOT_SET_SKIN: usize = 6, 5;
     /// `int IActor::getSkin()`
     SLOT_GET_SKIN: usize = 7, 6;
+    /// `void IActor::applyAnimation(const AnimationData &)`
+    SLOT_APPLY_ANIMATION: usize = 8, 7;
+    /// `const AnimationData & IActor::getAnimation()`
+    SLOT_GET_ANIMATION: usize = 9, 8;
     /// `void IActor::clearAnimations()`
     SLOT_CLEAR_ANIMATIONS: usize = 10, 9;
     /// `void IActor::setHealth(float)`
@@ -52,6 +57,24 @@ virtual_fns! {
     /// `actor` must be a live `IActor`.
     #[must_use]
     pub fn actor_skin(actor: IActor) -> i32 = [0, SLOT_GET_SKIN] or 0;
+
+    /// `void IActor::applyAnimation(const AnimationData &)`.
+    ///
+    /// # Safety
+    /// `actor` must be a live `IActor`.
+    pub fn actor_apply_animation(
+        actor: IActor,
+        animation: &AnimationData,
+    ) = [0, SLOT_APPLY_ANIMATION];
+
+    /// `const AnimationData & IActor::getAnimation()`.
+    ///
+    /// # Safety
+    /// `actor` must be a live `IActor`.
+    #[must_use]
+    pub fn actor_animation(
+        actor: IActor,
+    ) -> *const AnimationData = [0, SLOT_GET_ANIMATION] or std::ptr::null();
 
     /// `void IActor::clearAnimations()`.
     ///
@@ -122,7 +145,3 @@ virtual_fns! {
         actor: IActor,
     ) -> *const ActorSpawnData = [0, SLOT_GET_SPAWN_DATA] or std::ptr::null();
 }
-
-// What the generator left out, and why.
-// skipped: `void IActor::applyAnimation(const AnimationData &)` — takes `const AnimationData &`, which the SDK does not mirror
-// skipped: `const AnimationData & IActor::getAnimation()` — returns `const AnimationData &`, which the SDK does not mirror

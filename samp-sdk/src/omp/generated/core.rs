@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -21,8 +22,12 @@ slots! {
     SLOT_GET_NETWORK_BIT_STREAM_VERSION: usize = 7, 6;
     /// `IPlayerPool & ICore::getPlayers()`
     SLOT_GET_PLAYERS: usize = 8, 7;
+    /// `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 9, 8;
     /// `IConfig & ICore::getConfig()`
     SLOT_GET_CONFIG: usize = 10, 9;
+    /// `const FlatPtrHashSet<INetwork> & ICore::getNetworks()`
+    SLOT_GET_NETWORKS: usize = 11, 10;
     /// `unsigned int ICore::getTickCount()`
     SLOT_GET_TICK_COUNT: usize = 12, 11;
     /// `void ICore::setGravity(float)`
@@ -37,6 +42,8 @@ slots! {
     SLOT_USE_STUNT_BONUSES: usize = 17, 16;
     /// `void ICore::setData(SettableCoreDataType, StringView)`
     SLOT_SET_DATA: usize = 18, 17;
+    /// `void ICore::setThreadSleep(Microseconds)`
+    SLOT_SET_THREAD_SLEEP: usize = 19, 18;
     /// `void ICore::useDynTicks(const bool)`
     SLOT_USE_DYN_TICKS: usize = 20, 19;
     /// `void ICore::resetAll()`
@@ -47,10 +54,16 @@ slots! {
     SLOT_GET_WEAPON_NAME: usize = 23, 22;
     /// `void ICore::connectBot(StringView, StringView)`
     SLOT_CONNECT_BOT: usize = 24, 23;
+    /// `void ICore::requestHTTP(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)`
+    SLOT_REQUEST_HTTP: usize = 25, 24;
     /// `unsigned int ICore::tickRate()`
     SLOT_TICK_RATE: usize = 26, 25;
+    /// `bool ICore::sha256(StringView, StringView, StaticArray<char, 64 + 1> &)`
+    SLOT_SHA256: usize = 27, 26;
     /// `StringView ICore::getVersionHash()`
     SLOT_GET_VERSION_HASH: usize = 28, 27;
+    /// `void ICore::requestHTTP4(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)`
+    SLOT_REQUEST_HTTP4: usize = 29, 28;
 }
 
 virtual_fns! {
@@ -72,12 +85,30 @@ virtual_fns! {
         core: ICore,
     ) -> *mut IPlayerPool = [0, SLOT_GET_PLAYERS] or std::ptr::null_mut();
 
+    /// `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    #[must_use]
+    pub fn core_event_dispatcher(
+        core: ICore,
+    ) -> *mut EventDispatcher<CoreHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `IConfig & ICore::getConfig()`.
     ///
     /// # Safety
     /// `core` must be a live `ICore`.
     #[must_use]
     pub fn core_config(core: ICore) -> *mut IConfig = [0, SLOT_GET_CONFIG] or std::ptr::null_mut();
+
+    /// `const FlatPtrHashSet<INetwork> & ICore::getNetworks()`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    #[must_use]
+    pub fn core_networks(
+        core: ICore,
+    ) -> *const FlatSet<std::ffi::c_void> = [0, SLOT_GET_NETWORKS] or std::ptr::null();
 
     /// `unsigned int ICore::getTickCount()`.
     ///
@@ -123,6 +154,12 @@ virtual_fns! {
     /// `core` must be a live `ICore`.
     pub fn core_set_data(core: ICore, type_value: i32, data: StringView) = [0, SLOT_SET_DATA];
 
+    /// `void ICore::setThreadSleep(Microseconds)`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    pub fn core_set_thread_sleep(core: ICore, value: Microseconds) = [0, SLOT_SET_THREAD_SLEEP];
+
     /// `void ICore::useDynTicks(const bool)`.
     ///
     /// # Safety
@@ -151,12 +188,48 @@ virtual_fns! {
         script: StringView,
     ) = [0, SLOT_CONNECT_BOT];
 
+    /// `void ICore::requestHTTP(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    pub fn core_request_http(
+        core: ICore,
+        handler: *mut HTTPResponseHandler,
+        type_value: i32,
+        url: StringView,
+        data: StringView,
+    ) = [0, SLOT_REQUEST_HTTP];
+
     /// `unsigned int ICore::tickRate()`.
     ///
     /// # Safety
     /// `core` must be a live `ICore`.
     #[must_use]
     pub fn core_tick_rate(core: ICore) -> u32 = [0, SLOT_TICK_RATE] or 0;
+
+    /// `bool ICore::sha256(StringView, StringView, StaticArray<char, 64 + 1> &)`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    #[must_use]
+    pub fn core_sha256(
+        core: ICore,
+        password: StringView,
+        salt: StringView,
+        output: &mut [i8; 65],
+    ) -> bool = [0, SLOT_SHA256] or false;
+
+    /// `void ICore::requestHTTP4(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)`.
+    ///
+    /// # Safety
+    /// `core` must be a live `ICore`.
+    pub fn core_request_http4(
+        core: ICore,
+        handler: *mut HTTPResponseHandler,
+        type_value: i32,
+        url: StringView,
+        data: StringView,
+    ) = [0, SLOT_REQUEST_HTTP4];
 }
 
 /// `SemanticVersion ICore::getVersion()`.
@@ -206,11 +279,3 @@ pub unsafe fn core_version_hash(core: *mut ICore) -> Option<String> {
     )?;
     unsafe { view.to_owned_string() }
 }
-
-// What the generator left out, and why.
-// skipped: `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()` — returns the dispatcher of `CoreEventHandler`, which `onTick` takes a value the SDK does not mirror
-// skipped: `const FlatPtrHashSet<INetwork> & ICore::getNetworks()` — returns `const FlatPtrHashSet<INetwork> &`, which the SDK does not mirror
-// skipped: `void ICore::setThreadSleep(Microseconds)` — takes `Microseconds`
-// skipped: `void ICore::requestHTTP(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)` — takes `HTTPResponseHandler *`, which the SDK does not mirror
-// skipped: `bool ICore::sha256(StringView, StringView, StaticArray<char, 64 + 1> &)` — takes `StaticArray<char, 64 + 1> &`, which the SDK does not mirror
-// skipped: `void ICore::requestHTTP4(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)` — takes `HTTPResponseHandler *`, which the SDK does not mirror

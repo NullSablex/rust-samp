@@ -245,7 +245,7 @@ The per-crate sections come first, then the ones belonging to the repository.
 #### Added
 
 - **Wrappers for nearly every open.mp interface, generated from the SDK
-  headers.** 703 functions over 53 interfaces, in `omp::generated` and
+  headers.** 762 functions over 53 interfaces, in `omp::generated` and
   re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
   `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
   checkpoints, text labels, player objects and text draws), every component,
@@ -298,6 +298,32 @@ The per-crate sections come first, then the ones belonging to the repository.
   arrives as a whole word, the value in its low bits: the rule return values
   already follow. The player groups and the vehicles' keep their hand-written
   handlers.
+- **Nothing the headers declare is left without a wrapper.** The last gaps
+  closed with what they needed:
+  - `Pair<A, B>`, `Span<T>`, `HybridString<N>` and `FlatSet<T>` in
+    `omp::containers`, laid out as the C++ types are. `flat_set_entries` reads
+    a `robin_hood` set (`players_bots`, `vehicle_passengers`, ...) and fails
+    closed, bounded by the table's own allocation — as the extension-map walk
+    already did.
+  - Structs with anonymous unions (`ObjectMaterialData`, `PeerAddress`,
+    `ConsoleCommandSenderData`, the vehicle sync packets), with bit-fields
+    (collected into one `bits_*` integer), with pointers, and with
+    `HybridString`s (`BanEntry`, `AnimationData`) — the last ones by reference
+    only, since the ABIs pass them by value differently. 36 types in all, each
+    with its layout asserted per ABI.
+  - Arrays (`StaticArray<T, N>`, `WeaponSlots`) as `[T; N]`, their bounds
+    evaluated from the headers' constants and confirmed by clang before
+    anything is written; raw pointers back (`config_int`); out-pointers
+    (`const T *&`); enum out-parameters.
+  - Interfaces the server calls back through — `HTTPResponseHandler`,
+    `OptionEnumeratorCallback`, the core's `onTick`, the player pool's
+    `PoolEventHandler<IPlayer>` — as handlers; a pure interface has no
+    `DEFAULT`, since the plugin implements it whole.
+  - `Microseconds`, `TimePoint` and `WorldTimePoint`; the unit of the last is
+    the standard library's, hence `WORLD_TICKS_PER_SECOND`.
+  - The overloaded `create` of text draws, text labels and vehicles under the
+    generator's names too (`textdraws_create`, ...), beside the hand-written
+    `create_*`.
 - A getter returning a small struct can take arguments: `config_string`,
   `core_weapon_name`, `player_weapon_slot`, `players_default_colour`, the
   database rows' `field_string`/`field_name`, the menu's `cell` and
@@ -492,7 +518,13 @@ The per-crate sections come first, then the ones belonging to the repository.
   handlers were registered and fired by the server with no client — an NPC's
   create [1], destroy [2], spawn [3] and death [8] with its reason, an
   object's `onMoved` [0] — and `config_string`/`core_weapon_name` read a
-  `StringView` back past an argument. 130 passed, 0 wrong, identically on open.mp Linux and on
+  `StringView` back past an argument. The containers were proven the same
+  way: `config_strings` filling a `Span`, `config_enum_options` calling a
+  callback object, a `BanEntry` added, found and removed, `vehicle_colour`
+  and `player_time` as `Pair`s, the NPC found in `players_bots` through the
+  hash-table walk, `vehicles_models` as an array, and the core's `onTick`
+  receiving sane `Microseconds` and a steady `TimePoint` on every tick. 143
+  passed, 0 wrong, identically on open.mp Linux and on
   Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
   UB checks) and AddressSanitizer with leak detection on the host target both
@@ -502,9 +534,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
-  1238 slots `check-abi-slots.py --generated` can derive match the official
+  1337 slots `check-abi-slots.py --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
-  164 are declared underivable (the Windows server executable keeps RTTI for
+  183 are declared underivable (the Windows server executable keeps RTTI for
   three classes only, and tail-calling methods have no `ret N` of their own).
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that

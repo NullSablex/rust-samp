@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -17,6 +18,8 @@ use crate::omp::*;
 slots! {
     /// `IEventDispatcher<GangZoneEventHandler> & IGangZonesComponent::getEventDispatcher()`
     SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+    /// `const FlatHashSet<IGangZone *> & IGangZonesComponent::getCheckingGangZones()`
+    SLOT_GET_CHECKING_GANG_ZONES: usize = 20, 18;
     /// `void IGangZonesComponent::useGangZoneCheck(IGangZone &, bool)`
     SLOT_USE_GANG_ZONE_CHECK: usize = 21, 19;
     /// `int IGangZonesComponent::toLegacyID(int)`
@@ -40,6 +43,15 @@ virtual_fns! {
     pub fn gangzones_event_dispatcher(
         component: IGangZonesComponent,
     ) -> *mut EventDispatcher<GangZoneHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
+    /// `const FlatHashSet<IGangZone *> & IGangZonesComponent::getCheckingGangZones()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IGangZonesComponent`.
+    #[must_use]
+    pub fn gangzones_checking_gang_zones(
+        component: IGangZonesComponent,
+    ) -> *const FlatSet<IGangZone> = [0, SLOT_GET_CHECKING_GANG_ZONES] or std::ptr::null();
 
     /// `void IGangZonesComponent::useGangZoneCheck(IGangZone &, bool)`.
     ///
@@ -102,4 +114,3 @@ virtual_fns! {
 
 // What the generator left out, and why.
 // skipped: `IGangZone * IGangZonesComponent::create(GangZonePos)` — covered by a hand-written wrapper under another name
-// skipped: `const FlatHashSet<IGangZone *> & IGangZonesComponent::getCheckingGangZones()` — returns `const FlatHashSet<IGangZone *> &`, which the SDK does not mirror

@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -22,23 +23,74 @@ opaque! {
 slots! {
     /// `const StringView IConfig::getString(StringView)`
     SLOT_GET_STRING: usize = 6, 5;
+    /// `int * IConfig::getInt(StringView)`
+    SLOT_GET_INT: usize = 7, 6;
+    /// `float * IConfig::getFloat(StringView)`
+    SLOT_GET_FLOAT: usize = 8, 7;
+    /// `size_t IConfig::getStrings(StringView, Span<StringView>)`
+    SLOT_GET_STRINGS: usize = 9, 8;
     /// `size_t IConfig::getStringsCount(StringView)`
     SLOT_GET_STRINGS_COUNT: usize = 10, 9;
     /// `ConfigOptionType IConfig::getType(StringView)`
     SLOT_GET_TYPE: usize = 11, 10;
     /// `size_t IConfig::getBansCount()`
     SLOT_GET_BANS_COUNT: usize = 12, 11;
+    /// `const BanEntry & IConfig::getBan(size_t)`
+    SLOT_GET_BAN: usize = 13, 12;
+    /// `void IConfig::addBan(const BanEntry &)`
+    SLOT_ADD_BAN: usize = 14, 13;
     /// `void IConfig::removeBan(size_t)`
     SLOT_REMOVE_BAN_AT: usize = 15, 15;
+    /// `void IConfig::removeBan(const BanEntry &)`
+    SLOT_REMOVE_BAN: usize = 16, 14;
     /// `void IConfig::writeBans()`
     SLOT_WRITE_BANS: usize = 17, 16;
     /// `void IConfig::reloadBans()`
     SLOT_RELOAD_BANS: usize = 18, 17;
     /// `void IConfig::clearBans()`
     SLOT_CLEAR_BANS: usize = 19, 18;
+    /// `bool IConfig::isBanned(const BanEntry &)`
+    SLOT_IS_BANNED: usize = 20, 19;
+    /// `Pair<bool, StringView> IConfig::getNameFromAlias(StringView)`
+    SLOT_GET_NAME_FROM_ALIAS: usize = 21, 20;
+    /// `void IConfig::enumOptions(OptionEnumeratorCallback &)`
+    SLOT_ENUM_OPTIONS: usize = 22, 21;
+    /// `bool * IConfig::getBool(StringView)`
+    SLOT_GET_BOOL: usize = 23, 22;
 }
 
 virtual_fns! {
+    /// `int * IConfig::getInt(StringView)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_int(
+        config: IConfig,
+        key: StringView,
+    ) -> *mut i32 = [0, SLOT_GET_INT] or std::ptr::null_mut();
+
+    /// `float * IConfig::getFloat(StringView)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_float(
+        config: IConfig,
+        key: StringView,
+    ) -> *mut f32 = [0, SLOT_GET_FLOAT] or std::ptr::null_mut();
+
+    /// `size_t IConfig::getStrings(StringView, Span<StringView>)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_strings(
+        config: IConfig,
+        key: StringView,
+        output: Span<StringView>,
+    ) -> usize = [0, SLOT_GET_STRINGS] or 0;
+
     /// `size_t IConfig::getStringsCount(StringView)`.
     ///
     /// # Safety
@@ -63,11 +115,33 @@ virtual_fns! {
     #[must_use]
     pub fn config_bans_count(config: IConfig) -> usize = [0, SLOT_GET_BANS_COUNT] or 0;
 
+    /// `const BanEntry & IConfig::getBan(size_t)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_ban(
+        config: IConfig,
+        index: usize,
+    ) -> *const BanEntry = [0, SLOT_GET_BAN] or std::ptr::null();
+
+    /// `void IConfig::addBan(const BanEntry &)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    pub fn config_add_ban(config: IConfig, entry: &BanEntry) = [0, SLOT_ADD_BAN];
+
     /// `void IConfig::removeBan(size_t)`.
     ///
     /// # Safety
     /// `config` must be a live `IConfig`.
     pub fn config_remove_ban_at(config: IConfig, index: usize) = [0, SLOT_REMOVE_BAN_AT];
+
+    /// `void IConfig::removeBan(const BanEntry &)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    pub fn config_remove_ban(config: IConfig, entry: &BanEntry) = [0, SLOT_REMOVE_BAN];
 
     /// `void IConfig::writeBans()`.
     ///
@@ -86,6 +160,35 @@ virtual_fns! {
     /// # Safety
     /// `config` must be a live `IConfig`.
     pub fn config_clear_bans(config: IConfig) = [0, SLOT_CLEAR_BANS];
+
+    /// `bool IConfig::isBanned(const BanEntry &)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_is_banned(
+        config: IConfig,
+        entry: &BanEntry,
+    ) -> bool = [0, SLOT_IS_BANNED] or false;
+
+    /// `void IConfig::enumOptions(OptionEnumeratorCallback &)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    pub fn config_enum_options(
+        config: IConfig,
+        callback: *mut OptionEnumeratorCallback,
+    ) = [0, SLOT_ENUM_OPTIONS];
+
+    /// `bool * IConfig::getBool(StringView)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    #[must_use]
+    pub fn config_bool(
+        config: IConfig,
+        key: StringView,
+    ) -> *mut bool = [0, SLOT_GET_BOOL] or std::ptr::null_mut();
 }
 
 /// `const StringView IConfig::getString(StringView)`.
@@ -105,14 +208,14 @@ pub unsafe fn config_string(config: *mut IConfig, key: StringView) -> Option<Str
     unsafe { view.to_owned_string() }
 }
 
-// What the generator left out, and why.
-// skipped: `int * IConfig::getInt(StringView)` — returns `int *`, which the SDK does not mirror
-// skipped: `float * IConfig::getFloat(StringView)` — returns `float *`, which the SDK does not mirror
-// skipped: `size_t IConfig::getStrings(StringView, Span<StringView>)` — takes `Span<StringView>`
-// skipped: `const BanEntry & IConfig::getBan(size_t)` — returns `const BanEntry &`, which the SDK does not mirror
-// skipped: `void IConfig::addBan(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
-// skipped: `void IConfig::removeBan(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
-// skipped: `bool IConfig::isBanned(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
-// skipped: `Pair<bool, StringView> IConfig::getNameFromAlias(StringView)` — returns `Pair<bool, StringView>`
-// skipped: `void IConfig::enumOptions(OptionEnumeratorCallback &)` — takes `OptionEnumeratorCallback &`, which the SDK does not mirror
-// skipped: `bool * IConfig::getBool(StringView)` — returns `bool *`, which the SDK does not mirror
+/// `Pair<bool, StringView> IConfig::getNameFromAlias(StringView)`.
+///
+/// # Safety
+/// `config` must be a live `IConfig`.
+#[must_use]
+pub unsafe fn config_name_from_alias(
+    config: *mut IConfig,
+    alias: StringView,
+) -> Option<Pair<bool, StringView>> {
+    call_vtable_small_struct!(config.cast::<u8>(), 0, SLOT_GET_NAME_FROM_ALIAS, Pair<bool, StringView>, unsafe { std::mem::zeroed::<Pair<bool, StringView>>() }, (StringView) (alias))
+}

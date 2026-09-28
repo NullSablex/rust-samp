@@ -8,9 +8,11 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::dispatch::event_handler;
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    Vector2, Vector3, Vector4,
 };
 use crate::omp::*;
 
@@ -38,11 +40,19 @@ event_handler! {
     /// `ConsoleEventHandler` in `Server/Components/Console/console.hpp`.
     ConsoleHandlerVTable for ConsoleHandler {
         /// `bool onConsoleText(StringView, StringView, const ConsoleCommandSenderData &)`.
-        on_console_text: fn(StringView, StringView, *const std::ffi::c_void) -> bool = false,
+        on_console_text: fn(StringView, StringView, *const ConsoleCommandSenderData) -> bool = false,
         /// `void onRconLoginAttempt(IPlayer &, StringView, bool)`.
         on_rcon_login_attempt: fn(*mut IPlayer, StringView, u32) = (),
         /// `void onConsoleCommandListRequest(FlatHashSet<StringView> &)`.
         on_console_command_list_request: fn(*mut std::ffi::c_void) = (),
+    }
+}
+
+event_handler! {
+    /// `CoreEventHandler` in `core.hpp`.
+    CoreHandlerVTable for CoreHandler {
+        /// `void onTick(Microseconds, TimePoint)`.
+        on_tick: fn(Microseconds, TimePoint),
     }
 }
 
@@ -55,6 +65,14 @@ event_handler! {
         on_player_leave_gang_zone: fn(*mut IPlayer, *mut IGangZone) = (),
         /// `void onPlayerClickGangZone(IPlayer &, IGangZone &)`.
         on_player_click_gang_zone: fn(*mut IPlayer, *mut IGangZone) = (),
+    }
+}
+
+event_handler! {
+    /// `HTTPResponseHandler` in `core.hpp`.
+    HTTPResponseHandlerVTable for HTTPResponseHandler {
+        /// `void onHTTPResponse(int, StringView)`.
+        on_http_response: fn(i32, StringView),
     }
 }
 
@@ -139,6 +157,14 @@ event_handler! {
 }
 
 event_handler! {
+    /// `OptionEnumeratorCallback` in `core.hpp`.
+    OptionEnumeratorCallbackVTable for OptionEnumeratorCallback {
+        /// `bool proc(StringView, ConfigOptionType)`.
+        proc: fn(StringView, i32) -> bool,
+    }
+}
+
+event_handler! {
     /// `PickupEventHandler` in `Server/Components/Pickups/pickups.hpp`.
     PickupHandlerVTable for PickupHandler {
         /// `void onPlayerPickUpPickup(IPlayer &, IPickup &)`.
@@ -179,6 +205,16 @@ event_handler! {
 }
 
 event_handler! {
+    /// `PoolEventHandler<IPlayer>` in `pool.hpp`.
+    PlayerPoolHandlerVTable for PlayerPoolHandler {
+        /// `void onPoolEntryCreated(IPlayer &)`.
+        on_pool_entry_created: fn(*mut IPlayer) = (),
+        /// `void onPoolEntryDestroyed(IPlayer &)`.
+        on_pool_entry_destroyed: fn(*mut IPlayer) = (),
+    }
+}
+
+event_handler! {
     /// `TextDrawEventHandler` in `Server/Components/TextDraws/textdraws.hpp`.
     TextDrawHandlerVTable for TextDrawHandler {
         /// `void onPlayerClickTextDraw(IPlayer &, ITextDraw &)`.
@@ -191,6 +227,3 @@ event_handler! {
         on_player_cancel_player_text_draw_selection: fn(*mut IPlayer) -> bool = false,
     }
 }
-
-// What the generator did not write, and why.
-// skipped: `CoreEventHandler` — `onTick` takes a value the SDK does not mirror

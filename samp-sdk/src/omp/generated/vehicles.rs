@@ -7,19 +7,50 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `StaticArray<uint8_t, MAX_VEHICLE_MODELS> & IVehiclesComponent::models()`
+    SLOT_MODELS: usize = 18, 16;
+    /// `IVehicle * IVehiclesComponent::create(bool, int, Vector3, float, int, int, Seconds, bool)`
+    SLOT_CREATE: usize = 19, 18;
     /// `IVehicle * IVehiclesComponent::create(const VehicleSpawnData &)`
     SLOT_CREATE_FROM_SPAWN_DATA: usize = 20, 17;
 }
 
 virtual_fns! {
+    /// `StaticArray<uint8_t, MAX_VEHICLE_MODELS> & IVehiclesComponent::models()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IVehiclesComponent`.
+    #[must_use]
+    pub fn vehicles_models(
+        component: IVehiclesComponent,
+    ) -> *mut [u8; 212] = [0, SLOT_MODELS] or std::ptr::null_mut();
+
+    /// `IVehicle * IVehiclesComponent::create(bool, int, Vector3, float, int, int, Seconds, bool)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IVehiclesComponent`.
+    #[must_use]
+    pub fn vehicles_create(
+        component: IVehiclesComponent,
+        is_static: bool,
+        model_id: i32,
+        position: Vector3,
+        z: f32,
+        colour1: i32,
+        colour2: i32,
+        respawn_delay: Seconds,
+        add_siren: bool,
+    ) -> *mut IVehicle = [0, SLOT_CREATE] or std::ptr::null_mut();
+
     /// `IVehicle * IVehiclesComponent::create(const VehicleSpawnData &)`.
     ///
     /// # Safety
@@ -32,6 +63,4 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `StaticArray<uint8_t, MAX_VEHICLE_MODELS> & IVehiclesComponent::models()` — returns `StaticArray<uint8_t, MAX_VEHICLE_MODELS> &`, which the SDK does not mirror
-// skipped: `IVehicle * IVehiclesComponent::create(bool, int, Vector3, float, int, int, Seconds, bool)` — overloaded
 // skipped: `IEventDispatcher<VehicleEventHandler> & IVehiclesComponent::getEventDispatcher()` — `VehicleHandler` and its dispatcher are written by hand

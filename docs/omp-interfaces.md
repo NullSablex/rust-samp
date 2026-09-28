@@ -179,6 +179,26 @@ Three things stand behind every generated function:
   running server — set a value, read it back, restore it. It is run on open.mp
   Linux and Windows before a release.
 
+## Containers
+
+The headers pass a few generic types, mirrored in `samp::omp::containers`:
+
+| C++ | Rust |
+| --- | --- |
+| `Pair<A, B>` | `Pair<A, B>` (`first`, `second`) |
+| `Span<T>` | `Span<T>` — build one with `Span::of(&mut slice)` |
+| `HybridString<N>` | `HybridString<N>` — `new(&str)` inline, `to_string_lossy()` |
+| `StaticArray<T, N>` | `[T; N]` |
+| `FlatPtrHashSet<T>`, `FlatHashSet<T*>` | `FlatSet<T>` — read with `flat_set_entries` |
+
+```rust
+let bots = unsafe { samp::omp::flat_set_entries(samp::omp::players_bots(pool)) };
+```
+
+`flat_set_entries` reads a `robin_hood` table's internals, not an ABI, so it
+fails closed: bounded by the table's own allocation, and empty when the
+counts disagree.
+
 ## Finding players and vehicles
 
 ```rust

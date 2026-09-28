@@ -293,6 +293,25 @@ durations! {
     Hours(HoursRep);
 }
 
+durations! {
+    /// `std::chrono::microseconds`.
+    Microseconds(i64);
+    /// `TimePoint`, a `std::chrono::steady_clock::time_point`: nanoseconds
+    /// since an unspecified start, under both standard libraries.
+    TimePoint(i64);
+    /// `WorldTimePoint`, a `std::chrono::system_clock::time_point`. The unit is
+    /// the library's: nanoseconds under libstdc++, 100-nanosecond ticks under
+    /// Microsoft's — hence [`WORLD_TICKS_PER_SECOND`].
+    WorldTimePoint(i64);
+}
+
+/// Ticks of a [`WorldTimePoint`] per second, on this target.
+#[cfg(target_env = "msvc")]
+pub const WORLD_TICKS_PER_SECOND: i64 = 10_000_000;
+/// Ticks of a [`WorldTimePoint`] per second, on this target.
+#[cfg(not(target_env = "msvc"))]
+pub const WORLD_TICKS_PER_SECOND: i64 = 1_000_000_000;
+
 /// Component type.
 ///
 /// Equivalent to `ComponentType` in `component.hpp`.

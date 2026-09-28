@@ -7,9 +7,10 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -40,6 +41,8 @@ slots! {
     SLOT_HIDE: usize = 3, 3;
     /// `void IPlayerDialogData::show(IPlayer &, int, DialogStyle, StringView, StringView, StringView, StringView)`
     SLOT_SHOW: usize = 4, 4;
+    /// `void IPlayerDialogData::get(int &, DialogStyle &, StringView &, StringView &, StringView &, StringView &)`
+    SLOT_GET: usize = 5, 5;
     /// `int IPlayerDialogData::getActiveID()`
     SLOT_GET_ACTIVE_ID: usize = 6, 6;
 }
@@ -66,6 +69,20 @@ virtual_fns! {
         button2: StringView,
     ) = [0, SLOT_SHOW];
 
+    /// `void IPlayerDialogData::get(int &, DialogStyle &, StringView &, StringView &, StringView &, StringView &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerDialogData`.
+    pub fn player_dialogs_get(
+        data: IPlayerDialogData,
+        id: &mut i32,
+        style: &mut i32,
+        title: &mut StringView,
+        body: &mut StringView,
+        button1: &mut StringView,
+        button2: &mut StringView,
+    ) = [0, SLOT_GET];
+
     /// `int IPlayerDialogData::getActiveID()`.
     ///
     /// # Safety
@@ -73,6 +90,3 @@ virtual_fns! {
     #[must_use]
     pub fn player_dialogs_active_id(data: IPlayerDialogData) -> i32 = [0, SLOT_GET_ACTIVE_ID] or 0;
 }
-
-// What the generator left out, and why.
-// skipped: `void IPlayerDialogData::get(int &, DialogStyle &, StringView &, StringView &, StringView &, StringView &)` — takes `DialogStyle &`, which the SDK does not mirror

@@ -7,14 +7,17 @@
 
 #![allow(unused_imports)]
 
+use crate::omp::containers::{FlatSet, HybridString, Pair, Span};
 use crate::omp::types::{
-    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
-    Vector4,
+    Colour, GTAQuat, Hours, Microseconds, Milliseconds, Minutes, Seconds, StringView, TimePoint,
+    UID, Vector2, Vector3, Vector4, WorldTimePoint,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool)`
+    SLOT_CREATE: usize = 18, 18;
     /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IPlayer &)`
     SLOT_CREATE_ON_PLAYER: usize = 19, 17;
     /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IVehicle &)`
@@ -22,6 +25,21 @@ slots! {
 }
 
 virtual_fns! {
+    /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ITextLabelsComponent`.
+    #[must_use]
+    pub fn textlabels_create(
+        component: ITextLabelsComponent,
+        text: StringView,
+        colour: Colour,
+        pos: Vector3,
+        draw_dist: f32,
+        vw: i32,
+        los: bool,
+    ) -> *mut ITextLabel = [0, SLOT_CREATE] or std::ptr::null_mut();
+
     /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IPlayer &)`.
     ///
     /// # Safety
@@ -54,6 +72,3 @@ virtual_fns! {
         attach: *mut IVehicle,
     ) -> *mut ITextLabel = [0, SLOT_CREATE_ON_VEHICLE] or std::ptr::null_mut();
 }
-
-// What the generator left out, and why.
-// skipped: `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool)` — overloaded

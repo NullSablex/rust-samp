@@ -402,6 +402,7 @@ ARG_BYTES = {
     "int64_t": 8, "uint64_t": 8, "UID": 8, "long long": 8, "unsigned long long": 8,
     # `std::chrono` under Microsoft's library: minutes and hours count in an `int`.
     "Milliseconds": 8, "Seconds": 8, "Minutes": 4, "Hours": 4,
+    "Microseconds": 8, "TimePoint": 8, "WorldTimePoint": 8, "double": 8,
 }
 # Returned by value, so through a pointer pushed with the arguments.
 RETURNED_BY_POINTER = ("Vector2", "Vector3", "Vector4", "StringView", "Colour",
@@ -422,6 +423,14 @@ ARG_BYTES.update({name: (size + 3) // 4 * 4 for name, size in MIRRORED_SIZES.ite
 RETURNED_BY_POINTER = (*RETURNED_BY_POINTER, "GangZonePos", "GTAQuat", "SemanticVersion", *MIRRORED_SIZES)
 
 
+def generic_bytes(bare: str) -> int | None:
+    """Stack bytes of a by-value template argument: a `Span` is a pointer and a
+    count."""
+    if re.match(r"(?:nonstd::span_lite::)?[Ss]pan<", bare):
+        return 8
+    return None
+
+
 def arg_bytes(signature: str) -> int:
     """What the MSVC callee pops for this signature, hidden return pointer included.
 
@@ -429,10 +438,11 @@ def arg_bytes(signature: str) -> int:
     pointer pushed with the arguments."""
     ret = signature.split("(")[0].rsplit(" ", 1)[0].replace("const", "").strip()
     args = signature[signature.index("(") + 1 : signature.rindex(")")]
-    total = 4 if ret in RETURNED_BY_POINTER else 0
-    for arg in filter(None, (a.strip() for a in args.split(","))):
+    total = 4 if ret in RETURNED_BY_POINTER or ret.startswith("Pair<") else 0
+    # Split at top-level commas only: `StaticArray<char, 64 + 1> &` is one.
+    for arg in split_params(signature):
         bare = arg.replace("const", "").strip()
-        total += 4 if bare.endswith(("&", "*")) else ARG_BYTES.get(bare, 4)
+        total += 4 if bare.endswith(("&", "*")) else (generic_bytes(bare) or ARG_BYTES.get(bare, 4))
     return total
 
 
