@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -23,6 +24,14 @@ slots! {
     SLOT_GET_FIELD_COUNT: usize = 0, 0;
     /// `bool IDatabaseResultSetRow::isFieldNameAvailable(StringView)`
     SLOT_IS_FIELD_NAME_AVAILABLE: usize = 1, 1;
+    /// `long IDatabaseResultSetRow::getFieldInt(std::size_t)`
+    SLOT_GET_FIELD_INT: usize = 4, 4;
+    /// `double IDatabaseResultSetRow::getFieldFloat(std::size_t)`
+    SLOT_GET_FIELD_FLOAT: usize = 5, 5;
+    /// `long IDatabaseResultSetRow::getFieldIntByName(StringView)`
+    SLOT_GET_FIELD_INT_BY_NAME: usize = 7, 7;
+    /// `double IDatabaseResultSetRow::getFieldFloatByName(StringView)`
+    SLOT_GET_FIELD_FLOAT_BY_NAME: usize = 8, 8;
 }
 
 virtual_fns! {
@@ -42,13 +51,49 @@ virtual_fns! {
         row: IDatabaseResultSetRow,
         field_name: StringView,
     ) -> bool = [0, SLOT_IS_FIELD_NAME_AVAILABLE] or false;
+
+    /// `long IDatabaseResultSetRow::getFieldInt(std::size_t)`.
+    ///
+    /// # Safety
+    /// `row` must be a live `IDatabaseResultSetRow`.
+    #[must_use]
+    pub fn db_row_field_int(
+        row: IDatabaseResultSetRow,
+        field_index: usize,
+    ) -> i32 = [0, SLOT_GET_FIELD_INT] or 0;
+
+    /// `double IDatabaseResultSetRow::getFieldFloat(std::size_t)`.
+    ///
+    /// # Safety
+    /// `row` must be a live `IDatabaseResultSetRow`.
+    #[must_use]
+    pub fn db_row_field_float(
+        row: IDatabaseResultSetRow,
+        field_index: usize,
+    ) -> f64 = [0, SLOT_GET_FIELD_FLOAT] or 0.0;
+
+    /// `long IDatabaseResultSetRow::getFieldIntByName(StringView)`.
+    ///
+    /// # Safety
+    /// `row` must be a live `IDatabaseResultSetRow`.
+    #[must_use]
+    pub fn db_row_field_int_by_name(
+        row: IDatabaseResultSetRow,
+        field_name: StringView,
+    ) -> i32 = [0, SLOT_GET_FIELD_INT_BY_NAME] or 0;
+
+    /// `double IDatabaseResultSetRow::getFieldFloatByName(StringView)`.
+    ///
+    /// # Safety
+    /// `row` must be a live `IDatabaseResultSetRow`.
+    #[must_use]
+    pub fn db_row_field_float_by_name(
+        row: IDatabaseResultSetRow,
+        field_name: StringView,
+    ) -> f64 = [0, SLOT_GET_FIELD_FLOAT_BY_NAME] or 0.0;
 }
 
 // What the generator left out, and why.
 // skipped: `StringView IDatabaseResultSetRow::getFieldName(std::size_t)` — returns a small struct and takes arguments
 // skipped: `StringView IDatabaseResultSetRow::getFieldString(std::size_t)` — returns a small struct and takes arguments
-// skipped: `long IDatabaseResultSetRow::getFieldInt(std::size_t)` — returns `long`
-// skipped: `double IDatabaseResultSetRow::getFieldFloat(std::size_t)` — returns `double`
 // skipped: `StringView IDatabaseResultSetRow::getFieldStringByName(StringView)` — returns a small struct and takes arguments
-// skipped: `long IDatabaseResultSetRow::getFieldIntByName(StringView)` — returns `long`
-// skipped: `double IDatabaseResultSetRow::getFieldFloatByName(StringView)` — returns `double`

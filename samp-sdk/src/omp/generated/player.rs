@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -46,8 +47,12 @@ slots! {
     SLOT_SET_NAME: usize = 26, 25;
     /// `StringView IPlayer::getSerial()`
     SLOT_GET_SERIAL: usize = 28, 27;
+    /// `void IPlayer::giveWeapon(WeaponSlotData)`
+    SLOT_GIVE_WEAPON: usize = 29, 28;
     /// `void IPlayer::removeWeapon(uint8_t)`
     SLOT_REMOVE_WEAPON: usize = 30, 29;
+    /// `void IPlayer::setWeaponAmmo(WeaponSlotData)`
+    SLOT_SET_WEAPON_AMMO: usize = 31, 30;
     /// `void IPlayer::resetWeapons()`
     SLOT_RESET_WEAPONS: usize = 34, 33;
     /// `void IPlayer::setArmedWeapon(uint32_t)`
@@ -64,8 +69,12 @@ slots! {
     SLOT_GET_DRUNK_LEVEL: usize = 41, 40;
     /// `void IPlayer::setColour(Colour)`
     SLOT_SET_COLOUR: usize = 42, 41;
+    /// `const Colour & IPlayer::getColour()`
+    SLOT_GET_COLOUR: usize = 43, 42;
     /// `void IPlayer::setOtherColour(IPlayer &, Colour)`
     SLOT_SET_OTHER_COLOUR: usize = 44, 43;
+    /// `bool IPlayer::getOtherColour(IPlayer &, Colour &)`
+    SLOT_GET_OTHER_COLOUR: usize = 45, 44;
     /// `bool IPlayer::getControllable()`
     SLOT_GET_CONTROLLABLE: usize = 47, 46;
     /// `void IPlayer::setSpectating(bool)`
@@ -112,6 +121,8 @@ slots! {
     SLOT_USE_WIDESCREEN: usize = 74, 73;
     /// `bool IPlayer::hasWidescreen()`
     SLOT_HAS_WIDESCREEN: usize = 75, 74;
+    /// `void IPlayer::setTransform(GTAQuat)`
+    SLOT_SET_TRANSFORM: usize = 76, 75;
     /// `void IPlayer::setGravity(float)`
     SLOT_SET_GRAVITY: usize = 83, 82;
     /// `float IPlayer::getGravity()`
@@ -120,6 +131,10 @@ slots! {
     SLOT_SET_WORLD_TIME: usize = 85, 84;
     /// `void IPlayer::clearAnimations(PlayerAnimationSyncType)`
     SLOT_CLEAR_ANIMATIONS: usize = 87, 86;
+    /// `PlayerAnimationData IPlayer::getAnimationData()`
+    SLOT_GET_ANIMATION_DATA: usize = 88, 87;
+    /// `PlayerSurfingData IPlayer::getSurfingData()`
+    SLOT_GET_SURFING_DATA: usize = 89, 88;
     /// `void IPlayer::streamInForPlayer(IPlayer &)`
     SLOT_STREAM_IN_FOR_PLAYER: usize = 90, 89;
     /// `bool IPlayer::isStreamedInForPlayer(const IPlayer &)`
@@ -142,6 +157,8 @@ slots! {
     SLOT_HIDE_GAME_TEXT: usize = 104, 103;
     /// `bool IPlayer::hasGameText(int)`
     SLOT_HAS_GAME_TEXT: usize = 105, 104;
+    /// `bool IPlayer::getGameText(int, StringView &, Milliseconds &, Milliseconds &)`
+    SLOT_GET_GAME_TEXT: usize = 106, 105;
     /// `int IPlayer::getWeather()`
     SLOT_GET_WEATHER: usize = 108, 107;
     /// `void IPlayer::setWorldBounds(Vector4)`
@@ -162,6 +179,10 @@ slots! {
     SLOT_SET_VELOCITY: usize = 116, 115;
     /// `Vector3 IPlayer::getVelocity()`
     SLOT_GET_VELOCITY: usize = 117, 116;
+    /// `const PlayerKeyData & IPlayer::getKeyData()`
+    SLOT_GET_KEY_DATA: usize = 120, 119;
+    /// `const PlayerAimData & IPlayer::getAimData()`
+    SLOT_GET_AIM_DATA: usize = 122, 121;
     /// `void IPlayer::useCameraTargeting(bool)`
     SLOT_USE_CAMERA_TARGETING: usize = 124, 123;
     /// `bool IPlayer::hasCameraTargeting()`
@@ -186,6 +207,8 @@ slots! {
     SLOT_SPECTATE_PLAYER: usize = 134, 133;
     /// `void IPlayer::spectateVehicle(IVehicle &, PlayerSpectateMode)`
     SLOT_SPECTATE_VEHICLE: usize = 135, 134;
+    /// `const PlayerSpectateData & IPlayer::getSpectateData()`
+    SLOT_GET_SPECTATE_DATA: usize = 136, 135;
     /// `void IPlayer::sendClientCheck(int, int, int, int)`
     SLOT_SEND_CLIENT_CHECK: usize = 137, 136;
     /// `void IPlayer::toggleGhostMode(bool)`
@@ -333,11 +356,26 @@ virtual_fns! {
     #[must_use]
     pub fn player_set_name(player: IPlayer, name: StringView) -> i32 = [0, SLOT_SET_NAME] or 0;
 
+    /// `void IPlayer::giveWeapon(WeaponSlotData)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_give_weapon(player: IPlayer, weapon: WeaponSlotData) = [0, SLOT_GIVE_WEAPON];
+
     /// `void IPlayer::removeWeapon(uint8_t)`.
     ///
     /// # Safety
     /// `player` must be a live `IPlayer`.
     pub fn player_remove_weapon(player: IPlayer, weapon: u8) = [0, SLOT_REMOVE_WEAPON];
+
+    /// `void IPlayer::setWeaponAmmo(WeaponSlotData)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_set_weapon_ammo(
+        player: IPlayer,
+        data: WeaponSlotData,
+    ) = [0, SLOT_SET_WEAPON_AMMO];
 
     /// `void IPlayer::resetWeapons()`.
     ///
@@ -384,6 +422,15 @@ virtual_fns! {
     /// `player` must be a live `IPlayer`.
     pub fn player_set_colour(player: IPlayer, colour: Colour) = [0, SLOT_SET_COLOUR];
 
+    /// `const Colour & IPlayer::getColour()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_colour(
+        player: IPlayer,
+    ) -> *const Colour = [0, SLOT_GET_COLOUR] or std::ptr::null();
+
     /// `void IPlayer::setOtherColour(IPlayer &, Colour)`.
     ///
     /// # Safety
@@ -393,6 +440,17 @@ virtual_fns! {
         other: *mut IPlayer,
         colour: Colour,
     ) = [0, SLOT_SET_OTHER_COLOUR];
+
+    /// `bool IPlayer::getOtherColour(IPlayer &, Colour &)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_other_colour(
+        player: IPlayer,
+        other: *mut IPlayer,
+        colour: &mut Colour,
+    ) -> bool = [0, SLOT_GET_OTHER_COLOUR] or false;
 
     /// `bool IPlayer::getControllable()`.
     ///
@@ -567,6 +625,12 @@ virtual_fns! {
     #[must_use]
     pub fn player_has_widescreen(player: IPlayer) -> bool = [0, SLOT_HAS_WIDESCREEN] or false;
 
+    /// `void IPlayer::setTransform(GTAQuat)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    pub fn player_set_transform(player: IPlayer, tm: GTAQuat) = [0, SLOT_SET_TRANSFORM];
+
     /// `void IPlayer::setGravity(float)`.
     ///
     /// # Safety
@@ -591,6 +655,15 @@ virtual_fns! {
     /// # Safety
     /// `player` must be a live `IPlayer`.
     pub fn player_clear_animations(player: IPlayer, sync_type: i32) = [0, SLOT_CLEAR_ANIMATIONS];
+
+    /// `PlayerSurfingData IPlayer::getSurfingData()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_surfing_data(
+        player: IPlayer,
+    ) -> PlayerSurfingData = [0, SLOT_GET_SURFING_DATA] or PlayerSurfingData::default();
 
     /// `void IPlayer::streamInForPlayer(IPlayer &)`.
     ///
@@ -692,6 +765,19 @@ virtual_fns! {
         style: i32,
     ) -> bool = [0, SLOT_HAS_GAME_TEXT] or false;
 
+    /// `bool IPlayer::getGameText(int, StringView &, Milliseconds &, Milliseconds &)`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_game_text(
+        player: IPlayer,
+        style: i32,
+        message: &mut StringView,
+        time: &mut Milliseconds,
+        remaining: &mut Milliseconds,
+    ) -> bool = [0, SLOT_GET_GAME_TEXT] or false;
+
     /// `int IPlayer::getWeather()`.
     ///
     /// # Safety
@@ -762,6 +848,24 @@ virtual_fns! {
     /// `player` must be a live `IPlayer`.
     #[must_use]
     pub fn player_velocity(player: IPlayer) -> Vector3 = [0, SLOT_GET_VELOCITY] or Vector3::ZERO;
+
+    /// `const PlayerKeyData & IPlayer::getKeyData()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_key_data(
+        player: IPlayer,
+    ) -> *const PlayerKeyData = [0, SLOT_GET_KEY_DATA] or std::ptr::null();
+
+    /// `const PlayerAimData & IPlayer::getAimData()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_aim_data(
+        player: IPlayer,
+    ) -> *const PlayerAimData = [0, SLOT_GET_AIM_DATA] or std::ptr::null();
 
     /// `void IPlayer::useCameraTargeting(bool)`.
     ///
@@ -869,6 +973,15 @@ virtual_fns! {
         target: *mut IVehicle,
         mode: i32,
     ) = [0, SLOT_SPECTATE_VEHICLE];
+
+    /// `const PlayerSpectateData & IPlayer::getSpectateData()`.
+    ///
+    /// # Safety
+    /// `player` must be a live `IPlayer`.
+    #[must_use]
+    pub fn player_spectate_data(
+        player: IPlayer,
+    ) -> *const PlayerSpectateData = [0, SLOT_GET_SPECTATE_DATA] or std::ptr::null();
 
     /// `void IPlayer::sendClientCheck(int, int, int, int)`.
     ///
@@ -1030,6 +1143,21 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
     unsafe { view.to_owned_string() }
 }
 
+/// `PlayerAnimationData IPlayer::getAnimationData()`.
+///
+/// # Safety
+/// `player` must be a live `IPlayer`.
+#[must_use]
+pub unsafe fn player_animation_data(player: *mut IPlayer) -> Option<PlayerAnimationData> {
+    call_vtable_small_struct!(
+        player.cast::<u8>(),
+        0,
+        SLOT_GET_ANIMATION_DATA,
+        PlayerAnimationData,
+        PlayerAnimationData::default()
+    )
+}
+
 // What the generator left out, and why.
 // skipped: `void IPlayer::kick()` — `player_kick` is written by hand
 // skipped: `bool IPlayer::isBot()` — `player_is_bot` is written by hand
@@ -1038,13 +1166,9 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `void IPlayer::broadcastPacketToStreamed(Span<uint8_t>, int, bool)` — takes `Span<uint8_t>`
 // skipped: `void IPlayer::broadcastSyncPacket(Span<uint8_t>, int)` — takes `Span<uint8_t>`
 // skipped: `StringView IPlayer::getName()` — `player_name` is written by hand
-// skipped: `void IPlayer::giveWeapon(WeaponSlotData)` — takes `WeaponSlotData`
-// skipped: `void IPlayer::setWeaponAmmo(WeaponSlotData)` — takes `WeaponSlotData`
 // skipped: `const WeaponSlots & IPlayer::getWeapons()` — returns `const WeaponSlots &`, which the SDK does not mirror
-// skipped: `WeaponSlotData IPlayer::getWeaponSlot(int)` — returns `WeaponSlotData`
+// skipped: `WeaponSlotData IPlayer::getWeaponSlot(int)` — returns a small struct and takes arguments
 // skipped: `void IPlayer::setDrunkLevel(int)` — `player_set_drunk_level` is written by hand
-// skipped: `const Colour & IPlayer::getColour()` — returns `const Colour &`, which the SDK does not mirror
-// skipped: `bool IPlayer::getOtherColour(IPlayer &, Colour &)` — takes `Colour &`, which the SDK does not mirror
 // skipped: `void IPlayer::setControllable(bool)` — `player_set_controllable` is written by hand
 // skipped: `void IPlayer::setWantedLevel(unsigned int)` — `player_set_wanted_level` is written by hand
 // skipped: `unsigned int IPlayer::getWantedLevel()` — `player_wanted_level` is written by hand
@@ -1052,7 +1176,6 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `void IPlayer::giveMoney(int)` — `player_give_money` is written by hand
 // skipped: `int IPlayer::getMoney()` — `player_money` is written by hand
 // skipped: `Pair<Hours, Minutes> IPlayer::getTime()` — returns `Pair<Hours, Minutes>`
-// skipped: `void IPlayer::setTransform(GTAQuat)` — takes `GTAQuat`
 // skipped: `void IPlayer::setHealth(float)` — `player_set_health` is written by hand
 // skipped: `float IPlayer::getHealth()` — `player_health` is written by hand
 // skipped: `void IPlayer::setScore(int)` — `player_set_score` is written by hand
@@ -1060,19 +1183,13 @@ pub unsafe fn player_last_played_audio(player: *mut IPlayer) -> Option<String> {
 // skipped: `void IPlayer::setArmour(float)` — `player_set_armour` is written by hand
 // skipped: `float IPlayer::getArmour()` — `player_armour` is written by hand
 // skipped: `void IPlayer::applyAnimation(const AnimationData &, PlayerAnimationSyncType)` — takes `const AnimationData &`, which the SDK does not mirror
-// skipped: `PlayerAnimationData IPlayer::getAnimationData()` — returns `PlayerAnimationData`
-// skipped: `PlayerSurfingData IPlayer::getSurfingData()` — returns `PlayerSurfingData`
 // skipped: `const FlatPtrHashSet<IPlayer> & IPlayer::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `void IPlayer::setTeam(int)` — `player_set_team` is written by hand
 // skipped: `int IPlayer::getTeam()` — `player_team` is written by hand
 // skipped: `void IPlayer::setSkin(int, bool)` — `player_set_skin` is written by hand
 // skipped: `int IPlayer::getSkin()` — `player_skin` is written by hand
-// skipped: `bool IPlayer::getGameText(int, StringView &, Milliseconds &, Milliseconds &)` — takes `StringView &`, which the SDK does not mirror
 // skipped: `void IPlayer::setWeather(int)` — `player_set_weather` is written by hand
 // skipped: `void IPlayer::setInterior(unsigned int)` — `player_set_interior` is written by hand
 // skipped: `unsigned int IPlayer::getInterior()` — `player_interior` is written by hand
-// skipped: `const PlayerKeyData & IPlayer::getKeyData()` — returns `const PlayerKeyData &`, which the SDK does not mirror
 // skipped: `const StaticArray<uint16_t, NUM_SKILL_LEVELS> & IPlayer::getSkillLevels()` — returns `const StaticArray<uint16_t, NUM_SKILL_LEVELS> &`, which the SDK does not mirror
-// skipped: `const PlayerAimData & IPlayer::getAimData()` — returns `const PlayerAimData &`, which the SDK does not mirror
 // skipped: `const PlayerBulletData & IPlayer::getBulletData()` — returns `const PlayerBulletData &`, which the SDK does not mirror
-// skipped: `const PlayerSpectateData & IPlayer::getSpectateData()` — returns `const PlayerSpectateData &`, which the SDK does not mirror

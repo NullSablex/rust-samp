@@ -8,11 +8,32 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
-// What the generator left out, and why.
-// skipped: `const PlayerClass & IClass::getClass()` — returns `const PlayerClass &`, which the SDK does not mirror
-// skipped: `void IClass::setClass(const PlayerClass &)` — takes `const PlayerClass &`, which the SDK does not mirror
+slots! {
+    /// `const PlayerClass & IClass::getClass()`
+    SLOT_GET_CLASS: usize = 6, 5;
+    /// `void IClass::setClass(const PlayerClass &)`
+    SLOT_SET_CLASS: usize = 7, 6;
+}
+
+virtual_fns! {
+    /// `const PlayerClass & IClass::getClass()`.
+    ///
+    /// # Safety
+    /// `class` must be a live `IClass`.
+    #[must_use]
+    pub fn class_class(
+        class: IClass,
+    ) -> *const PlayerClass = [0, SLOT_GET_CLASS] or std::ptr::null();
+
+    /// `void IClass::setClass(const PlayerClass &)`.
+    ///
+    /// # Safety
+    /// `class` must be a live `IClass`.
+    pub fn class_set_class(class: IClass, data: &PlayerClass) = [0, SLOT_SET_CLASS];
+}

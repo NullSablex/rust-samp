@@ -8,16 +8,29 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `void IMenu::setColumnHeader(StringView, MenuColumn)`
+    SLOT_SET_COLUMN_HEADER: usize = 6, 5;
+    /// `int IMenu::addCell(StringView, MenuColumn)`
+    SLOT_ADD_CELL: usize = 7, 6;
+    /// `void IMenu::disableRow(MenuRow)`
+    SLOT_DISABLE_ROW: usize = 8, 7;
+    /// `bool IMenu::isRowEnabled(MenuRow)`
+    SLOT_IS_ROW_ENABLED: usize = 9, 8;
     /// `void IMenu::disable()`
     SLOT_DISABLE: usize = 10, 9;
     /// `bool IMenu::isEnabled()`
     SLOT_IS_ENABLED: usize = 11, 10;
+    /// `const Vector2 & IMenu::getPosition()`
+    SLOT_GET_POSITION: usize = 12, 11;
+    /// `int IMenu::getRowCount(MenuColumn)`
+    SLOT_GET_ROW_COUNT: usize = 13, 12;
     /// `int IMenu::getColumnCount()`
     SLOT_GET_COLUMN_COUNT: usize = 14, 13;
     /// `Vector2 IMenu::getColumnWidths()`
@@ -31,6 +44,40 @@ slots! {
 }
 
 virtual_fns! {
+    /// `void IMenu::setColumnHeader(StringView, MenuColumn)`.
+    ///
+    /// # Safety
+    /// `menu` must be a live `IMenu`.
+    pub fn menu_set_column_header(
+        menu: IMenu,
+        header: StringView,
+        column: u8,
+    ) = [0, SLOT_SET_COLUMN_HEADER];
+
+    /// `int IMenu::addCell(StringView, MenuColumn)`.
+    ///
+    /// # Safety
+    /// `menu` must be a live `IMenu`.
+    #[must_use]
+    pub fn menu_add_cell(
+        menu: IMenu,
+        item_text: StringView,
+        column: u8,
+    ) -> i32 = [0, SLOT_ADD_CELL] or 0;
+
+    /// `void IMenu::disableRow(MenuRow)`.
+    ///
+    /// # Safety
+    /// `menu` must be a live `IMenu`.
+    pub fn menu_disable_row(menu: IMenu, row: u8) = [0, SLOT_DISABLE_ROW];
+
+    /// `bool IMenu::isRowEnabled(MenuRow)`.
+    ///
+    /// # Safety
+    /// `menu` must be a live `IMenu`.
+    #[must_use]
+    pub fn menu_is_row_enabled(menu: IMenu, row: u8) -> bool = [0, SLOT_IS_ROW_ENABLED] or false;
+
     /// `void IMenu::disable()`.
     ///
     /// # Safety
@@ -43,6 +90,22 @@ virtual_fns! {
     /// `menu` must be a live `IMenu`.
     #[must_use]
     pub fn menu_is_enabled(menu: IMenu) -> bool = [0, SLOT_IS_ENABLED] or false;
+
+    /// `const Vector2 & IMenu::getPosition()`.
+    ///
+    /// # Safety
+    /// `menu` must be a live `IMenu`.
+    #[must_use]
+    pub fn menu_position(
+        menu: IMenu,
+    ) -> *const Vector2 = [0, SLOT_GET_POSITION] or std::ptr::null();
+
+    /// `int IMenu::getRowCount(MenuColumn)`.
+    ///
+    /// # Safety
+    /// `menu` must be a live `IMenu`.
+    #[must_use]
+    pub fn menu_row_count(menu: IMenu, column: u8) -> i32 = [0, SLOT_GET_ROW_COUNT] or 0;
 
     /// `int IMenu::getColumnCount()`.
     ///
@@ -86,11 +149,5 @@ pub unsafe fn menu_column_widths(menu: *mut IMenu) -> Option<Vector2> {
 }
 
 // What the generator left out, and why.
-// skipped: `void IMenu::setColumnHeader(StringView, MenuColumn)` — takes `MenuColumn`
-// skipped: `int IMenu::addCell(StringView, MenuColumn)` — takes `MenuColumn`
-// skipped: `void IMenu::disableRow(MenuRow)` — takes `MenuRow`
-// skipped: `bool IMenu::isRowEnabled(MenuRow)` — takes `MenuRow`
-// skipped: `const Vector2 & IMenu::getPosition()` — returns `const Vector2 &`, which the SDK does not mirror
-// skipped: `int IMenu::getRowCount(MenuColumn)` — takes `MenuColumn`
-// skipped: `const StringView IMenu::getColumnHeader(MenuColumn)` — takes `MenuColumn`
-// skipped: `const StringView IMenu::getCell(MenuColumn, MenuRow)` — takes `MenuColumn`
+// skipped: `const StringView IMenu::getColumnHeader(MenuColumn)` — returns a small struct and takes arguments
+// skipped: `const StringView IMenu::getCell(MenuColumn, MenuRow)` — returns a small struct and takes arguments

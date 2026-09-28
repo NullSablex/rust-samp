@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -74,4 +75,4 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `void IPlayerDialogData::get(int &, DialogStyle &, StringView &, StringView &, StringView &, StringView &)` — takes `int &`, which the SDK does not mirror
+// skipped: `void IPlayerDialogData::get(int &, DialogStyle &, StringView &, StringView &, StringView &, StringView &)` — takes `DialogStyle &`, which the SDK does not mirror

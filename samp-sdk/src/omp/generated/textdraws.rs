@@ -8,12 +8,30 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
+slots! {
+    /// `ITextDraw * ITextDrawsComponent::create(Vector2, int)`
+    SLOT_CREATE_PREVIEW: usize = 20, 17;
+}
+
+virtual_fns! {
+    /// `ITextDraw * ITextDrawsComponent::create(Vector2, int)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ITextDrawsComponent`.
+    #[must_use]
+    pub fn textdraws_create_preview(
+        component: ITextDrawsComponent,
+        position: Vector2,
+        model: i32,
+    ) -> *mut ITextDraw = [0, SLOT_CREATE_PREVIEW] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
 // skipped: `IEventDispatcher<TextDrawEventHandler> & ITextDrawsComponent::getEventDispatcher()` — returns `IEventDispatcher<TextDrawEventHandler> &`, which the SDK does not mirror
 // skipped: `ITextDraw * ITextDrawsComponent::create(Vector2, StringView)` — overloaded
-// skipped: `ITextDraw * ITextDrawsComponent::create(Vector2, int)` — overloaded

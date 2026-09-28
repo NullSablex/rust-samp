@@ -211,6 +211,8 @@ as_returned!(
     isize,
     super::types::Vector3,
     super::types::Vector4,
+    super::types::GTAQuat,
+    super::world::GangZonePos,
 );
 
 impl<T> VirtualReturn for *mut T {

@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -26,14 +27,20 @@ slots! {
     SLOT_SET_CAMERA_COLLISION: usize = 10, 9;
     /// `bool IBaseObject::getCameraCollision()`
     SLOT_GET_CAMERA_COLLISION: usize = 11, 10;
+    /// `void IBaseObject::move(const ObjectMoveData &)`
+    SLOT_MOVE: usize = 12, 11;
     /// `bool IBaseObject::isMoving()`
     SLOT_IS_MOVING: usize = 13, 12;
     /// `void IBaseObject::stop()`
     SLOT_STOP: usize = 14, 13;
+    /// `const ObjectMoveData & IBaseObject::getMovingData()`
+    SLOT_GET_MOVING_DATA: usize = 15, 14;
     /// `void IBaseObject::attachToVehicle(IVehicle &, Vector3, Vector3)`
     SLOT_ATTACH_TO_VEHICLE: usize = 16, 15;
     /// `void IBaseObject::resetAttachment()`
     SLOT_RESET_ATTACHMENT: usize = 17, 16;
+    /// `const ObjectAttachmentData & IBaseObject::getAttachmentData()`
+    SLOT_GET_ATTACHMENT_DATA: usize = 18, 17;
     /// `void IBaseObject::setMaterial(uint32_t, int, StringView, StringView, Colour)`
     SLOT_SET_MATERIAL: usize = 20, 19;
     /// `void IBaseObject::setMaterialText(uint32_t, StringView, ObjectMaterialSize, StringView, int, bool, Colour, Colour, ObjectMaterialTextAlign)`
@@ -94,6 +101,12 @@ virtual_fns! {
         player_object: IPlayerObject,
     ) -> bool = [0, SLOT_GET_CAMERA_COLLISION] or false;
 
+    /// `void IBaseObject::move(const ObjectMoveData &)`.
+    ///
+    /// # Safety
+    /// `player_object` must be a live `IPlayerObject`.
+    pub fn player_object_move(player_object: IPlayerObject, data: &ObjectMoveData) = [0, SLOT_MOVE];
+
     /// `bool IBaseObject::isMoving()`.
     ///
     /// # Safety
@@ -108,6 +121,15 @@ virtual_fns! {
     /// # Safety
     /// `player_object` must be a live `IPlayerObject`.
     pub fn player_object_stop(player_object: IPlayerObject) = [0, SLOT_STOP];
+
+    /// `const ObjectMoveData & IBaseObject::getMovingData()`.
+    ///
+    /// # Safety
+    /// `player_object` must be a live `IPlayerObject`.
+    #[must_use]
+    pub fn player_object_moving_data(
+        player_object: IPlayerObject,
+    ) -> *const ObjectMoveData = [0, SLOT_GET_MOVING_DATA] or std::ptr::null();
 
     /// `void IBaseObject::attachToVehicle(IVehicle &, Vector3, Vector3)`.
     ///
@@ -127,6 +149,15 @@ virtual_fns! {
     pub fn player_object_reset_attachment(
         player_object: IPlayerObject,
     ) = [0, SLOT_RESET_ATTACHMENT];
+
+    /// `const ObjectAttachmentData & IBaseObject::getAttachmentData()`.
+    ///
+    /// # Safety
+    /// `player_object` must be a live `IPlayerObject`.
+    #[must_use]
+    pub fn player_object_attachment_data(
+        player_object: IPlayerObject,
+    ) -> *const ObjectAttachmentData = [0, SLOT_GET_ATTACHMENT_DATA] or std::ptr::null();
 
     /// `void IBaseObject::setMaterial(uint32_t, int, StringView, StringView, Colour)`.
     ///
@@ -182,7 +213,4 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `void IBaseObject::move(const ObjectMoveData &)` — takes `const ObjectMoveData &`, which the SDK does not mirror
-// skipped: `const ObjectMoveData & IBaseObject::getMovingData()` — returns `const ObjectMoveData &`, which the SDK does not mirror
-// skipped: `const ObjectAttachmentData & IBaseObject::getAttachmentData()` — returns `const ObjectAttachmentData &`, which the SDK does not mirror
 // skipped: `bool IBaseObject::getMaterialData(uint32_t, const ObjectMaterialData *&)` — takes `const ObjectMaterialData *&`, which the SDK does not mirror

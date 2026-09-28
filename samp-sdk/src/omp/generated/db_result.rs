@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -27,6 +28,14 @@ slots! {
     SLOT_GET_FIELD_COUNT: usize = 8, 7;
     /// `bool IDatabaseResultSet::isFieldNameAvailable(StringView)`
     SLOT_IS_FIELD_NAME_AVAILABLE: usize = 9, 8;
+    /// `long IDatabaseResultSet::getFieldInt(std::size_t)`
+    SLOT_GET_FIELD_INT: usize = 12, 11;
+    /// `double IDatabaseResultSet::getFieldFloat(std::size_t)`
+    SLOT_GET_FIELD_FLOAT: usize = 13, 12;
+    /// `long IDatabaseResultSet::getFieldIntByName(StringView)`
+    SLOT_GET_FIELD_INT_BY_NAME: usize = 15, 14;
+    /// `double IDatabaseResultSet::getFieldFloatByName(StringView)`
+    SLOT_GET_FIELD_FLOAT_BY_NAME: usize = 16, 15;
 }
 
 virtual_fns! {
@@ -64,14 +73,50 @@ virtual_fns! {
         result: IDatabaseResultSet,
         field_name: StringView,
     ) -> bool = [0, SLOT_IS_FIELD_NAME_AVAILABLE] or false;
+
+    /// `long IDatabaseResultSet::getFieldInt(std::size_t)`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_field_int(
+        result: IDatabaseResultSet,
+        field_index: usize,
+    ) -> i32 = [0, SLOT_GET_FIELD_INT] or 0;
+
+    /// `double IDatabaseResultSet::getFieldFloat(std::size_t)`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_field_float(
+        result: IDatabaseResultSet,
+        field_index: usize,
+    ) -> f64 = [0, SLOT_GET_FIELD_FLOAT] or 0.0;
+
+    /// `long IDatabaseResultSet::getFieldIntByName(StringView)`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_field_int_by_name(
+        result: IDatabaseResultSet,
+        field_name: StringView,
+    ) -> i32 = [0, SLOT_GET_FIELD_INT_BY_NAME] or 0;
+
+    /// `double IDatabaseResultSet::getFieldFloatByName(StringView)`.
+    ///
+    /// # Safety
+    /// `result` must be a live `IDatabaseResultSet`.
+    #[must_use]
+    pub fn db_result_field_float_by_name(
+        result: IDatabaseResultSet,
+        field_name: StringView,
+    ) -> f64 = [0, SLOT_GET_FIELD_FLOAT_BY_NAME] or 0.0;
 }
 
 // What the generator left out, and why.
 // skipped: `StringView IDatabaseResultSet::getFieldName(std::size_t)` — returns a small struct and takes arguments
 // skipped: `StringView IDatabaseResultSet::getFieldString(std::size_t)` — returns a small struct and takes arguments
-// skipped: `long IDatabaseResultSet::getFieldInt(std::size_t)` — returns `long`
-// skipped: `double IDatabaseResultSet::getFieldFloat(std::size_t)` — returns `double`
 // skipped: `StringView IDatabaseResultSet::getFieldStringByName(StringView)` — returns a small struct and takes arguments
-// skipped: `long IDatabaseResultSet::getFieldIntByName(StringView)` — returns `long`
-// skipped: `double IDatabaseResultSet::getFieldFloatByName(StringView)` — returns `double`
 // skipped: `LegacyDBResult & IDatabaseResultSet::getLegacyDBResult()` — returns `LegacyDBResult &`, which the SDK does not mirror

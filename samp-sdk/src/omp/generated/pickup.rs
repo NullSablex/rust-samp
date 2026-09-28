@@ -8,12 +8,17 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `void IBasePickup::setType(PickupType, bool)`
+    SLOT_SET_TYPE: usize = 6, 5;
+    /// `PickupType IBasePickup::getType()`
+    SLOT_GET_TYPE: usize = 7, 6;
     /// `void IBasePickup::setPositionNoUpdate(Vector3)`
     SLOT_SET_POSITION_NO_UPDATE: usize = 8, 7;
     /// `void IBasePickup::setModel(int, bool)`
@@ -37,6 +42,19 @@ slots! {
 }
 
 virtual_fns! {
+    /// `void IBasePickup::setType(PickupType, bool)`.
+    ///
+    /// # Safety
+    /// `pickup` must be a live `IPickup`.
+    pub fn pickup_set_type(pickup: IPickup, type_value: u8, update: bool) = [0, SLOT_SET_TYPE];
+
+    /// `PickupType IBasePickup::getType()`.
+    ///
+    /// # Safety
+    /// `pickup` must be a live `IPickup`.
+    #[must_use]
+    pub fn pickup_type(pickup: IPickup) -> u8 = [0, SLOT_GET_TYPE] or 0;
+
     /// `void IBasePickup::setPositionNoUpdate(Vector3)`.
     ///
     /// # Safety
@@ -125,7 +143,3 @@ virtual_fns! {
         pickup: IPickup,
     ) -> *mut IPlayer = [0, SLOT_GET_LEGACY_PLAYER] or std::ptr::null_mut();
 }
-
-// What the generator left out, and why.
-// skipped: `void IBasePickup::setType(PickupType, bool)` — takes `PickupType`
-// skipped: `PickupType IBasePickup::getType()` — returns `PickupType`

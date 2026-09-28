@@ -15,9 +15,11 @@
 //! less.
 
 use super::component_api::ComponentInterface;
-use super::players::{ENTITY_OFFSET, SLOT_ENTITY_GET_ID};
+use super::players::{
+    ENTITY_OFFSET, SLOT_ENTITY_GET_ID, SLOT_ENTITY_GET_ROTATION, SLOT_ENTITY_SET_ROTATION,
+};
 use super::server::ServerComponent;
-use super::types::{Colour, StringView, UID, Vector2, Vector3};
+use super::types::{Colour, GTAQuat, StringView, UID, Vector2, Vector3};
 use super::vtable::{call_vtable, opaque, slots, virtual_fns};
 
 /// UID of the Open Multiplayer `TextDraws` component.
@@ -100,7 +102,7 @@ opaque! {
 
 /// The rectangle a gang zone covers, as `GangZonePos` declares it.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct GangZonePos {
     pub min: Vector2,
     pub max: Vector2,
@@ -373,6 +375,19 @@ virtual_fns! {
     /// `IEntity`, which every entity in the SDK does.
     #[must_use]
     pub fn entity_id(entity: u8) -> i32 = [ENTITY_OFFSET, SLOT_ENTITY_GET_ID] or -1;
+
+    /// `IEntity::getRotation()` for any entity, as [`entity_id`] reaches it.
+    ///
+    /// # Safety
+    /// As for [`entity_id`].
+    #[must_use]
+    pub fn entity_rotation(entity: u8) -> GTAQuat = [ENTITY_OFFSET, SLOT_ENTITY_GET_ROTATION] or GTAQuat::IDENTITY;
+
+    /// `IEntity::setRotation(GTAQuat)` for any entity, as [`entity_id`] reaches it.
+    ///
+    /// # Safety
+    /// As for [`entity_id`].
+    pub fn entity_set_rotation(entity: u8, rotation: GTAQuat) = [ENTITY_OFFSET, SLOT_ENTITY_SET_ROTATION];
 }
 
 // Each interface knows its own UID, so `omp_query::<Component<I>>()` finds it.

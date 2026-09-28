@@ -159,6 +159,186 @@ impl Showcase {
 /// # Safety
 /// Called once the server has every component ready.
 #[allow(clippy::too_many_lines)]
+/// The mirrored structs, each through the call shape it travels in: by value,
+/// by `const &`, and as a pointer into the server's own copy.
+unsafe fn structs(npc: *mut omp::INPC, report: &mut Report) {
+    let at = Vector3 {
+        x: 5.0,
+        y: 6.0,
+        z: 7.0,
+    };
+
+    if let Some(c) = omp_query::<Component<omp::IVehiclesComponent>>() {
+        let spawn = omp::VehicleSpawnData {
+            respawn_delay: omp::Seconds(60),
+            model_id: 522,
+            position: at,
+            z_rotation: 90.0,
+            colour1: 3,
+            colour2: 4,
+            siren: false,
+            interior: 0,
+        };
+        let vehicle = unsafe { omp::vehicles_create_from_spawn_data(c.as_ptr(), &spawn) };
+        report.check(
+            "vehicles_create_from_spawn_data",
+            !vehicle.is_null(),
+            "null",
+        );
+        if !vehicle.is_null() {
+            let back = unsafe { omp::vehicle_spawn_data(vehicle) };
+            report.check(
+                "vehicle_spawn_data",
+                !back.is_null() && unsafe { *back } == spawn,
+                (!back.is_null()).then(|| unsafe { *back }),
+            );
+
+            // The quaternion's field order, against an angle the server keeps
+            // separately: a yaw of 90 degrees has only `w` and `z` set, and a
+            // wrong order would put them elsewhere.
+            unsafe { omp::vehicle_set_z_angle(vehicle, 90.0) };
+            let q = unsafe { omp::entity_rotation(vehicle.cast::<u8>()) };
+            let half = std::f32::consts::FRAC_1_SQRT_2;
+            report.check(
+                "entity_rotation",
+                (q.w.abs() - half).abs() < 1e-3
+                    && (q.z.abs() - half).abs() < 1e-3
+                    && q.x.abs() < 1e-3
+                    && q.y.abs() < 1e-3,
+                q,
+            );
+            let flat = omp::GTAQuat::IDENTITY;
+            unsafe { omp::entity_set_rotation(vehicle.cast::<u8>(), flat) };
+            let angle = unsafe { omp::vehicle_z_angle(vehicle) };
+            report.check(
+                "entity_set_rotation",
+                angle.abs() < 1e-2 || (angle - 360.0).abs() < 1e-2,
+                angle,
+            );
+
+            let params = omp::VehicleParams {
+                engine: 1,
+                lights: 0,
+                ..omp::VehicleParams::default()
+            };
+            unsafe { omp::vehicle_set_params(vehicle, &params) };
+            let read = unsafe { omp::vehicle_params(vehicle) };
+            report.check(
+                "vehicle_params",
+                !read.is_null() && unsafe { *read } == params,
+                (!read.is_null()).then(|| unsafe { *read }),
+            );
+
+            if let Some(labels) = omp_query::<Component<omp::ITextLabelsComponent>>() {
+                let label = unsafe {
+                    omp::textlabels_create_on_vehicle(
+                        labels.as_ptr(),
+                        StringView::of("on a vehicle"),
+                        omp::Colour::rgba(255, 255, 255, 255),
+                        Vector3::ZERO,
+                        20.0,
+                        0,
+                        false,
+                        vehicle,
+                    )
+                };
+                report.check("textlabels_create_on_vehicle", !label.is_null(), "null");
+                if !label.is_null() {
+                    let data = unsafe { omp::textlabel_attachment_data(label) };
+                    let id = unsafe { omp::vehicle_id(vehicle) };
+                    report.check(
+                        "textlabel_attachment_data",
+                        !data.is_null() && unsafe { (*data).vehicle_id } == id,
+                        (!data.is_null()).then(|| unsafe { *data }),
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(c) = omp_query::<Component<omp::ITextDrawsComponent>>() {
+        let td =
+            unsafe { omp::textdraws_create_preview(c.as_ptr(), Vector2 { x: 10.0, y: 10.0 }, 411) };
+        report.check("textdraws_create_preview", !td.is_null(), "null");
+        if !td.is_null() {
+            report.check(
+                "textdraw_preview_model",
+                unsafe { omp::textdraw_preview_model(td) } == 411,
+                unsafe { omp::textdraw_preview_model(td) },
+            );
+        }
+    }
+
+    if let Some(c) = omp_query::<Component<omp::IGangZonesComponent>>() {
+        let area = omp::GangZonePos {
+            min: Vector2 { x: 0.0, y: 0.0 },
+            max: Vector2 { x: 10.0, y: 10.0 },
+        };
+        let zone = unsafe { omp::create_gangzone(c.as_ptr(), area) };
+        if !zone.is_null() {
+            let moved = omp::GangZonePos {
+                min: Vector2 { x: 1.0, y: 2.0 },
+                max: Vector2 { x: 30.0, y: 40.0 },
+            };
+            unsafe { omp::gangzone_set_position(zone, &moved) };
+            let got = unsafe { omp::gangzone_position(zone) };
+            report.check("gangzone_position", got == moved, got);
+        }
+    }
+
+    if let Some(c) = omp_query::<Component<omp::IObjectsComponent>>() {
+        let object = unsafe { omp::create_object(c.as_ptr(), 1337, at, Vector3::ZERO, 0.0) };
+        if !object.is_null() {
+            let target = omp::ObjectMoveData {
+                target_pos: Vector3 {
+                    x: 50.0,
+                    y: 60.0,
+                    z: 70.0,
+                },
+                target_rot: Vector3::ZERO,
+                speed: 1.0,
+            };
+            unsafe { omp::object_move(object, &target) };
+            let moving = unsafe { omp::object_moving_data(object) };
+            report.check(
+                "object_moving_data",
+                !moving.is_null() && unsafe { (*moving).target_pos } == target.target_pos,
+                (!moving.is_null()).then(|| unsafe { *moving }),
+            );
+        }
+    }
+
+    if let Some(c) = omp_query::<Component<omp::IClassesComponent>>() {
+        let weapons = [omp::WeaponSlot::default(); omp::MAX_WEAPON_SLOTS];
+        let class = unsafe { omp::create_class(c.as_ptr(), 47, 2, at, 0.0, &weapons) };
+        if !class.is_null() {
+            let data = unsafe { omp::class_class(class) };
+            report.check(
+                "class_class",
+                !data.is_null() && unsafe { ((*data).skin, (*data).team) } == (47, 2),
+                (!data.is_null()).then(|| unsafe { ((*data).skin, (*data).team) }),
+            );
+        }
+    }
+
+    if !npc.is_null() {
+        // A quarter turn about z, already normalised.
+        let half = std::f32::consts::FRAC_1_SQRT_2;
+        let turn = omp::GTAQuat {
+            w: half,
+            x: 0.0,
+            y: 0.0,
+            z: half,
+        };
+        unsafe { omp::npc_set_rotation(npc, &turn, true) };
+        let got = unsafe { omp::npc_rotation(npc) };
+        let close = [got.w - turn.w, got.x, got.y, got.z - turn.z]
+            .iter()
+            .all(|d| d.abs() < 1e-3);
+        report.check("npc_rotation", close, got);
+    }
+}
+
 unsafe fn exercise(report: &mut Report) -> Option<Npc> {
     let at = Vector3 {
         x: 1.0,
@@ -297,6 +477,7 @@ unsafe fn exercise(report: &mut Report) -> Option<Npc> {
         if !npc.is_null() {
             unsafe { omp::npc_spawn(npc) };
             unsafe { round_trips::round_trips_npc(npc, report) };
+            unsafe { structs(npc, report) };
 
             let player = unsafe { omp::npc_player(npc) };
             let mut vehicle = std::ptr::null_mut();

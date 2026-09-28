@@ -8,12 +8,15 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `SemanticVersion ICore::getVersion()`
+    SLOT_GET_VERSION: usize = 6, 5;
     /// `int ICore::getNetworkBitStreamVersion()`
     SLOT_GET_NETWORK_BIT_STREAM_VERSION: usize = 7, 6;
     /// `IPlayerPool & ICore::getPlayers()`
@@ -154,6 +157,21 @@ virtual_fns! {
     pub fn core_tick_rate(core: ICore) -> u32 = [0, SLOT_TICK_RATE] or 0;
 }
 
+/// `SemanticVersion ICore::getVersion()`.
+///
+/// # Safety
+/// `core` must be a live `ICore`.
+#[must_use]
+pub unsafe fn core_version(core: *mut ICore) -> Option<SemanticVersion> {
+    call_vtable_small_struct!(
+        core.cast::<u8>(),
+        0,
+        SLOT_GET_VERSION,
+        SemanticVersion,
+        SemanticVersion::new(0, 0, 0)
+    )
+}
+
 /// `StringView ICore::getVersionHash()`.
 ///
 /// # Safety
@@ -171,7 +189,6 @@ pub unsafe fn core_version_hash(core: *mut ICore) -> Option<String> {
 }
 
 // What the generator left out, and why.
-// skipped: `SemanticVersion ICore::getVersion()` — returns `SemanticVersion`
 // skipped: `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()` — returns `IEventDispatcher<CoreEventHandler> &`, which the SDK does not mirror
 // skipped: `const FlatPtrHashSet<INetwork> & ICore::getNetworks()` — returns `const FlatPtrHashSet<INetwork> &`, which the SDK does not mirror
 // skipped: `void ICore::setThreadSleep(Microseconds)` — takes `Microseconds`

@@ -8,13 +8,30 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
+slots! {
+    /// `IVehicle * IVehiclesComponent::create(const VehicleSpawnData &)`
+    SLOT_CREATE_FROM_SPAWN_DATA: usize = 20, 17;
+}
+
+virtual_fns! {
+    /// `IVehicle * IVehiclesComponent::create(const VehicleSpawnData &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IVehiclesComponent`.
+    #[must_use]
+    pub fn vehicles_create_from_spawn_data(
+        component: IVehiclesComponent,
+        data: &VehicleSpawnData,
+    ) -> *mut IVehicle = [0, SLOT_CREATE_FROM_SPAWN_DATA] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
 // skipped: `StaticArray<uint8_t, MAX_VEHICLE_MODELS> & IVehiclesComponent::models()` — returns `StaticArray<uint8_t, MAX_VEHICLE_MODELS> &`, which the SDK does not mirror
 // skipped: `IVehicle * IVehiclesComponent::create(bool, int, Vector3, float, int, int, Seconds, bool)` — overloaded
-// skipped: `IVehicle * IVehiclesComponent::create(const VehicleSpawnData &)` — overloaded
 // skipped: `IEventDispatcher<VehicleEventHandler> & IVehiclesComponent::getEventDispatcher()` — returns `IEventDispatcher<VehicleEventHandler> &`, which the SDK does not mirror

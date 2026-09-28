@@ -107,8 +107,20 @@ answers `entity_id`.
 
 A value the header takes by `const &` is a Rust reference
 (`checkpoint_set_position(cp, &pos)`); a setter that returns the object for
-chaining returns nothing here. Times use the SDK's `Milliseconds`, `Seconds`,
-`Minutes` and `Hours`, laid out as `std::chrono` is on each ABI.
+chaining returns nothing here, and one that fills an argument (`T &`) takes a
+`&mut`. Times use the SDK's `Milliseconds`, `Seconds`, `Minutes` and
+`Hours`, laid out as `std::chrono` is on each ABI; rotations use `GTAQuat`.
+
+Structs the headers pass by value — `VehicleParams`, `VehicleSpawnData`,
+`PlayerClass`, `ObjectMoveData` and the rest — are mirrored from the headers
+too, with their C++ defaults and an assertion of every field's offset per ABI.
+A getter returning `const T &` gives a `*const T` into the server's copy:
+
+```rust
+let params = VehicleParams { engine: 1, ..VehicleParams::default() };
+unsafe { samp::omp::vehicle_set_params(vehicle, &params) };
+let now = unsafe { *samp::omp::vehicle_params(vehicle) };
+```
 
 ## Generated wrappers
 

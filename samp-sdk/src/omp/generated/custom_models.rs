@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -28,8 +29,12 @@ impl ComponentInterface for ICustomModelsComponent {
 slots! {
     /// `bool ICustomModelsComponent::addCustomModel(ModelType, int32_t, int32_t, StringView, StringView, int32_t, uint8_t, uint8_t)`
     SLOT_ADD_CUSTOM_MODEL: usize = 18, 16;
+    /// `bool ICustomModelsComponent::getBaseModel(uint32_t &, uint32_t &)`
+    SLOT_GET_BASE_MODEL: usize = 19, 17;
     /// `bool ICustomModelsComponent::isValidCustomModel(int32_t)`
     SLOT_IS_VALID_CUSTOM_MODEL: usize = 22, 20;
+    /// `bool ICustomModelsComponent::getCustomModelPath(int32_t, StringView &, StringView &)`
+    SLOT_GET_CUSTOM_MODEL_PATH: usize = 23, 21;
 }
 
 virtual_fns! {
@@ -50,6 +55,17 @@ virtual_fns! {
         time_off: u8,
     ) -> bool = [0, SLOT_ADD_CUSTOM_MODEL] or false;
 
+    /// `bool ICustomModelsComponent::getBaseModel(uint32_t &, uint32_t &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ICustomModelsComponent`.
+    #[must_use]
+    pub fn custom_models_base_model(
+        component: ICustomModelsComponent,
+        base_model_id_or_input: &mut u32,
+        custom_model: &mut u32,
+    ) -> bool = [0, SLOT_GET_BASE_MODEL] or false;
+
     /// `bool ICustomModelsComponent::isValidCustomModel(int32_t)`.
     ///
     /// # Safety
@@ -59,10 +75,20 @@ virtual_fns! {
         component: ICustomModelsComponent,
         model_id: i32,
     ) -> bool = [0, SLOT_IS_VALID_CUSTOM_MODEL] or false;
+
+    /// `bool ICustomModelsComponent::getCustomModelPath(int32_t, StringView &, StringView &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ICustomModelsComponent`.
+    #[must_use]
+    pub fn custom_models_custom_model_path(
+        component: ICustomModelsComponent,
+        model_id: i32,
+        dff_path: &mut StringView,
+        txd_path: &mut StringView,
+    ) -> bool = [0, SLOT_GET_CUSTOM_MODEL_PATH] or false;
 }
 
 // What the generator left out, and why.
-// skipped: `bool ICustomModelsComponent::getBaseModel(uint32_t &, uint32_t &)` — takes `uint32_t &`, which the SDK does not mirror
 // skipped: `IEventDispatcher<PlayerModelsEventHandler> & ICustomModelsComponent::getEventDispatcher()` — returns `IEventDispatcher<PlayerModelsEventHandler> &`, which the SDK does not mirror
 // skipped: `StringView ICustomModelsComponent::getModelNameFromChecksum(uint32_t)` — returns a small struct and takes arguments
-// skipped: `bool ICustomModelsComponent::getCustomModelPath(int32_t, StringView &, StringView &)` — takes `StringView &`, which the SDK does not mirror

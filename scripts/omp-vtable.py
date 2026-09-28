@@ -125,6 +125,14 @@ def find_xwin(explicit: pathlib.Path | None) -> pathlib.Path | None:
 def include_flags(sdk: pathlib.Path) -> list[str]:
     lib = sdk / "lib"
     return [
+        # What the SDK's CMakeLists.txt defines for every consumer, the server
+        # included: they decide the quaternion's field order and which
+        # string_view and span the headers use.
+        "-DGLM_FORCE_QUAT_DATA_WXYZ",
+        "-DGLM_FORCE_SSE2",
+        "-DNOMINMAX",
+        "-Dnssv_CONFIG_SELECT_STRING_VIEW=nssv_STRING_VIEW_NONSTD",
+        "-Dspan_CONFIG_SELECT_SPAN=span_SPAN_NONSTD",
         f"-I{sdk / 'include'}",
         f"-I{lib / 'glm'}",
         f"-I{lib / 'robin-hood-hashing/src/include'}",

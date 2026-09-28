@@ -38,6 +38,7 @@ every generated slot with the official binaries, and a server run is the rest.
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib.util
 import json
 import pathlib
@@ -72,6 +73,8 @@ INTEGERS = {
     "unsigned long long": "u64", "uint64_t": "u64", "UID": "u64",
     "float": "f32", "bool": "bool",
     "size_t": "usize", "std::size_t": "usize",
+    # `long` is 32 bits on i686 under both ABIs.
+    "long": "i32", "unsigned long": "u32", "double": "f64",
 }
 
 # Value types the SDK mirrors, with their size (for the return rule) and the
@@ -89,9 +92,18 @@ VALUES = {
     "Seconds": (8, None),
     "Minutes": (8, None),
     "Hours": (8, None),
+    # Written by hand in the SDK.
+    "GangZonePos": (16, None),
+    "GTAQuat": (16, None),
+    "SemanticVersion": (6, None),
 }
 
-NEUTRAL = {"bool": "false", "f32": "0.0"}
+# Structs mirrored from the headers by `mirror`, name -> what `structs.rs` needs.
+MIRRORED: dict[str, dict] = {}
+# Structs `mirror` gave up on, name -> why.
+NOT_MIRRORED: dict[str, str] = {}
+
+NEUTRAL = {"bool": "false", "f32": "0.0", "f64": "0.0"}
 
 
 RUST_KEYWORDS = {
@@ -233,6 +245,11 @@ def index_ast(tree: dict):
         name = node.get("name")
         if kind == "CXXRecordDecl" and name and node.get("inner"):
             records.setdefault(name, node)
+        # A typedef of an integer reads as that integer, as an enum does.
+        if kind in ("TypedefDecl", "TypeAliasDecl") and name:
+            target = strip_type(node.get("type", {}).get("qualType", ""))
+            if target in INTEGERS and INTEGERS[target] not in ("bool", "f32", "f64"):
+                enums.setdefault(name, target)
         if kind == "EnumDecl" and name:
             underlying = node.get("fixedUnderlyingType", {}).get("qualType", "int")
             enums[name] = underlying
@@ -348,14 +365,20 @@ def strip_type(cpp: str) -> str:
 
 def param_type(cpp: str, enums: dict, handles: set) -> str:
     bare = strip_type(cpp)
+    mirror(bare.rstrip("&*").strip())
     if bare.endswith("&") or bare.endswith("*"):
         target = bare.rstrip("&*").strip()
         if target in handles:
             return f"*mut {target}"
         # `const Vector3 &` is a pointer to one the callee only reads; a Rust
-        # reference is that pointer.
-        if bare.endswith("&") and cpp.lstrip().startswith("const ") and target in VALUES:
-            return f"&{target}"
+        # reference is that pointer. Without `const` the callee writes through
+        # it: an out-parameter, `&mut`.
+        if bare.endswith("&") and "&" not in target:
+            constant = cpp.lstrip().startswith("const ")
+            if target in VALUES:
+                return f"&{target}" if constant else f"&mut {target}"
+            if target in INTEGERS and not constant:
+                return f"&mut {INTEGERS[target]}"
         raise Skip(f"takes `{cpp}`, which the SDK does not mirror")
     if bare in INTEGERS:
         return INTEGERS[bare]
@@ -369,12 +392,16 @@ def param_type(cpp: str, enums: dict, handles: set) -> str:
 def return_kind(cpp: str, enums: dict, handles: set, chain: list):
     """(rust type, how, neutral) where `how` picks the call form."""
     bare = strip_type(cpp)
+    mirror(bare.rstrip("&*").strip())
     if bare == "void":
         return None, "plain", None
     # A setter that returns the object itself, for chaining: the caller already
     # holds it, so the wrapper drops the value.
     if bare.endswith("&") and bare.rstrip("&").strip() in chain:
         return None, "plain", None
+    # A reference to a struct the server owns: the pointer, to read in place.
+    if bare.endswith("&") and bare.rstrip("&").strip() in VALUES:
+        return f"*const {bare.rstrip('&').strip()}", "plain", "std::ptr::null()"
     if bare.endswith("&") or bare.endswith("*"):
         target = bare.rstrip("&*").strip()
         if target in handles:
@@ -390,8 +417,250 @@ def return_kind(cpp: str, enums: dict, handles: set, chain: list):
         size, neutral = VALUES[bare]
         if size <= 8:
             return bare, "small", None
-        return bare, "plain", neutral
+        return bare, "plain", neutral or default_of(bare)
     raise Skip(f"returns `{cpp}`")
+
+
+# ---------------------------------------------------------------------------
+# Structs the headers pass by value, mirrored
+# ---------------------------------------------------------------------------
+
+# Set by `generate` for the header in hand: what `mirror` reads the struct from.
+CTX: dict = {}
+
+ZERO = {"bool": "false", "f32": "0.0", "f64": "0.0", "Vector2": "Vector2::default()",
+        "Vector3": "Vector3::ZERO", "Vector4": "Vector4::ZERO", "Colour": "Colour::default()",
+        "GTAQuat": "GTAQuat::IDENTITY",
+        **{d: f"{d}(0)" for d in ("Milliseconds", "Seconds", "Minutes", "Hours")}}
+
+
+def zero_of(rust: str) -> str | None:
+    if rust in INTEGERS.values():
+        return ZERO.get(rust, "0")
+    if rust in ZERO:
+        return ZERO[rust]
+    m = re.fullmatch(r"\[(.+); (\d+)\]", rust)
+    if m:
+        inner = zero_of(m.group(1))
+        return f"[{inner}; {m.group(2)}]" if inner else None
+    if rust in MIRRORED and MIRRORED[rust]["default"]:
+        return f"{rust}::default()"
+    return None
+
+
+def default_of(rust: str) -> str:
+    """An expression for a value of `rust` to stand in when there is none."""
+    if rust in MIRRORED and not MIRRORED[rust]["default"]:
+        # Every mirrored field is an integer, a float, a bool or a struct of
+        # them: all zero is a valid value.
+        return f"unsafe {{ std::mem::zeroed::<{rust}>() }}"
+    if rust == "SemanticVersion":
+        return "SemanticVersion::new(0, 0, 0)"
+    return f"{rust}::default()"
+
+
+def literal(node: dict) -> str | None:
+    """A field's in-class or constructor initializer, when it is a plain literal."""
+    kind = node.get("kind")
+    if kind in ("ImplicitCastExpr", "ParenExpr", "ConstantExpr", "CXXFunctionalCastExpr", "ExprWithCleanups"):
+        inner = node.get("inner") or []
+        return literal(inner[0]) if len(inner) == 1 else None
+    if kind in ("IntegerLiteral", "FloatingLiteral"):
+        return str(node["value"])
+    if kind == "CXXBoolLiteralExpr":
+        return "true" if node["value"] else "false"
+    if kind == "UnaryOperator" and node.get("opcode") == "-":
+        inner = literal(node["inner"][0])
+        return f"-{inner}" if inner else None
+    return None
+
+
+def field_type(qual: str, desugared: str | None) -> str | None:
+    enums = CTX["enums"]
+    for t in (strip_type(qual), strip_type(desugared or "")):
+        if not t:
+            continue
+        if t in INTEGERS:
+            return INTEGERS[t]
+        if t in enums:
+            return INTEGERS.get(strip_type(enums[t]), "i32")
+        if t in VALUES and t != "StringView" and t not in ("GangZonePos",):
+            return t
+        m = re.fullmatch(r"(?:std::)?array<(.+),\s*(\d+)>", t) or re.fullmatch(r"(.+?)\s*\[(\d+)\]", t)
+        if m:
+            inner = field_type(m.group(1), None)
+            return f"[{inner}; {m.group(2)}]" if inner else None
+        if mirror(t):
+            return t
+    return None
+
+
+def record_layout(name: str, flags: list[str], target: str) -> tuple[int, list[int]] | None:
+    """(size, field offsets) in bytes, from clang's record layout of `name`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = pathlib.Path(tmp) / "layout.cpp"
+        probe.write_text(f'#include <{CTX["header"]}>\nstatic_assert(sizeof({name}) > 0, "");\n')
+        dump = subprocess.run(
+            ["clang++", "-std=c++17", *flags, f"--target={target}", "-Xclang", "-fdump-record-layouts-simple",
+             "-fsyntax-only", "-w", str(probe)],
+            capture_output=True, text=True,
+        ).stdout
+    m = re.search(rf"Type: (?:struct|class) {name}\n\nLayout: <ASTRecordLayout\n\s+Size:(\d+)\n.*?FieldOffsets: \[([^\]]*)\]", dump, re.S)
+    if not m:
+        return None
+    offsets = [int(x) // 8 for x in m.group(2).split(",") if x.strip()]
+    return int(m.group(1)) // 8, offsets
+
+
+@functools.cache
+def hand_types() -> frozenset[str]:
+    """Types the hand-written SDK already declares — a struct, or an opaque
+    handle — which a mirror would shadow."""
+    names = set()
+    for path in OMP.glob("*.rs"):
+        text = path.read_text()
+        names |= set(re.findall(r"^pub struct (\w+)", text, re.M))
+        for block in re.findall(r"opaque! \{(.*?)\n\}", text, re.S):
+            names |= set(re.findall(r"^\s*pub (\w+);", block, re.M))
+    return frozenset(names)
+
+
+def mirror(name: str) -> bool:
+    """Mirror the struct `name` as a `#[repr(C)]` Rust struct, if every field
+    is something the SDK can state with certainty. Registers it in `VALUES`."""
+    if name in MIRRORED:
+        return True
+    if name in NOT_MIRRORED or not CTX or name in hand_types():
+        return False
+    rec = CTX["records"].get(name)
+    if not rec or rec.get("tagUsed") not in ("struct", "class"):
+        return False
+    if rec.get("definitionData", {}).get("isPolymorphic") or rec.get("definitionData", {}).get("isAbstract"):
+        return False  # an interface, held by pointer
+
+    def give_up(why: str) -> bool:
+        NOT_MIRRORED[name] = why
+        return False
+
+    NOT_MIRRORED[name] = "refers to itself"
+    if rec.get("bases"):
+        return give_up("has a base class")
+    data = rec.get("definitionData", {})
+    if not data.get("isTriviallyCopyable") or not data.get("canPassInRegisters"):
+        # Itanium passes such a class by hidden reference, not by value.
+        return give_up("is not trivially copyable")
+    access = "private" if rec["tagUsed"] == "class" else "public"
+    fields, inits, ctor_inits = [], {}, {}
+    for member in rec.get("inner", ()):
+        kind = member.get("kind")
+        if kind == "AccessSpecDecl":
+            access = member.get("access", access)
+        elif kind == "CXXMethodDecl" and member.get("virtual"):
+            return give_up("has virtual methods")
+        elif kind == "CXXConstructorDecl" and not member.get("isImplicit"):
+            params = [q for q in member.get("inner", ()) if q.get("kind") == "ParmVarDecl"]
+            if not params:
+                for init in member.get("inner", ()):
+                    if init.get("kind") == "CXXCtorInitializer" and "anyInit" in init:
+                        ctor_inits[init["anyInit"]["name"]] = literal(init["inner"][0]) if init.get("inner") else None
+                ctor_inits.setdefault("__user_default__", None)
+        elif kind == "FieldDecl":
+            if access != "public" or not member.get("name"):
+                return give_up("has a private or anonymous member")
+            t = member["type"]
+            rust = field_type(t["qualType"], t.get("desugaredQualType"))
+            if rust is None:
+                return give_up(f"has a `{t['qualType']}` member")
+            fields.append((member["name"], snake(member["name"]), rust))
+            if member.get("hasInClassInitializer"):
+                inits[member["name"]] = literal(member["inner"][0]) if member.get("inner") else None
+    if not fields:
+        return give_up("has no fields")
+
+    ita = record_layout(name, CTX["includes"], "i686-pc-linux-gnu")
+    mso = record_layout(name, CTX["msvc_includes"], "i686-pc-windows-msvc")
+    if not ita or not mso or len(ita[1]) != len(fields) or len(mso[1]) != len(fields):
+        return give_up("clang gave no layout for it")
+
+    # `Default` only where the C++ default is known: in-class or default
+    # constructor initializers that are literals, zero for the rest.
+    default = []
+    for cpp, _, rust in fields:
+        given = ctor_inits.get(cpp, inits.get(cpp, "0"))
+        if given is None:
+            default = None
+            break
+        if given == "0":
+            value = zero_of(rust)
+        elif rust in ("f32", "f64"):
+            value = given if re.search(r"[.eE]", given) else f"{given}.0"
+            value = value.rstrip("fF")
+        elif rust == "bool":
+            value = {"0": "false", "1": "true"}.get(given, given)
+        else:
+            value = given
+        if value is None:
+            default = None
+            break
+        default.append(value)
+
+    declared_in = CTX["header"]
+    for path in sorted((CTX["sdk"] / "include").rglob("*.hpp")):
+        if re.search(rf"^(?:struct|class) {name}\b", path.read_text(errors="replace"), re.M):
+            declared_in = str(path.relative_to(CTX["sdk"] / "include"))
+            break
+    MIRRORED[name] = {"header": declared_in, "fields": fields, "default": default,
+                      "itanium": ita, "msvc": mso}
+    del NOT_MIRRORED[name]
+    VALUES[name] = (mso[0], None)
+    return True
+
+
+def render_structs() -> str:
+    out = [
+        "//! Structs the open.mp headers pass by value — generated by",
+        "//! `scripts/omp-wrappers.py`. Do not edit.",
+        "//!",
+        "//! Each mirrors its C++ struct field for field. The layout is clang's for",
+        "//! both ABIs, and the assertions below each struct fail the build if the",
+        "//! Rust one differs from it.",
+        "",
+        "#![allow(unused_imports)]",
+        "",
+        "use crate::omp::types::{Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, Vector2, Vector3, Vector4};",
+        "use crate::omp::vtable::VirtualReturn;",
+        "use crate::omp::*;",
+        "",
+    ]
+    for name in sorted(MIRRORED):
+        info = MIRRORED[name]
+        derives = "Debug, Clone, Copy, PartialEq"
+        out += [f"/// `{name}` in `{info['header']}`.", "#[repr(C)]", f"#[derive({derives})]", f"pub struct {name} {{"]
+        for cpp, rust_field, rust in info["fields"]:
+            field = f"r#{rust_field}" if rust_field in RUST_KEYWORDS else rust_field
+            out.append(f"    /// `{cpp}`.")
+            out.append(f"    pub {field}: {rust},")
+        out += ["}", ""]
+        if info["default"] is not None:
+            out += [f"impl Default for {name} {{", "    /// The C++ struct's own defaults.", "    fn default() -> Self {", "        Self {"]
+            for (cpp, rust_field, _), value in zip(info["fields"], info["default"]):
+                field = f"r#{rust_field}" if rust_field in RUST_KEYWORDS else rust_field
+                out.append(f"            {field}: {value},")
+            out += ["        }", "    }", "}", ""]
+        for cfg, (size, offsets) in (('not(target_env = "msvc")', info["itanium"]), ('target_env = "msvc"', info["msvc"])):
+            out += [f'#[cfg(all(target_arch = "x86", {cfg}))]', "const _: () = {",
+                    f"    assert!(std::mem::size_of::<{name}>() == {size});"]
+            for (cpp, rust_field, _), off in zip(info["fields"], offsets):
+                field = f"r#{rust_field}" if rust_field in RUST_KEYWORDS else rust_field
+                out.append(f"    assert!(std::mem::offset_of!({name}, {field}) == {off});")
+            out += ["};", ""]
+        out += [f"impl VirtualReturn for {name} {{", "    type Raw = Self;", "    fn from_raw(raw: Self) -> Self {", "        raw", "    }", "}", ""]
+        out += [f"// msvc-size: {name} = {info['msvc'][0]}", ""]
+    if NOT_MIRRORED:
+        out += ["// What the generator did not mirror, and why."]
+        out += [f"// skipped: `{n}` — {why}" for n, why in sorted(NOT_MIRRORED.items())]
+        out.append("")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +675,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
     overloads = entry.get("overloads", {})
 
     records, enums = index_ast(ast_of(header, includes))
+    CTX.update(records=records, enums=enums, header=header, sdk=sdk, includes=includes, msvc_includes=msvc_includes)
     chain = [c for c in primary_chain(records, leaf) if c not in NOT_OURS]
     itanium, msvc = slot_tables(header, leaf, includes, msvc_includes)
 
@@ -426,7 +696,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
             try:
                 if m["variadic"]:
                     raise Skip("variadic — a C-style `...` cannot go through a typed wrapper")
-                if m["name"] in skip:
+                if m["name"] in skip and key_of(signature) not in overloads:
                     raise Skip("covered by a hand-written wrapper under another name")
                 if counts[m["name"]] > 1:
                     # Named one by one in the TOML; clang's layout places each
@@ -468,7 +738,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
             ]
             if how == "small":
                 body_ret = "Option<String>" if ret == "StringView" else f"Option<{ret}>"
-                empty = "StringView::EMPTY" if ret == "StringView" else f"{ret}::default()"
+                empty = "StringView::EMPTY" if ret == "StringView" else default_of(ret)
                 call = (f"call_vtable_small_struct!({arg}.cast::<u8>(), 0, {const}, {ret}, {empty})")
                 # The macro carries its own `unsafe` blocks; only the copy out of
                 # the server's memory needs one here.
@@ -493,7 +763,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
         "",
         "#![allow(unused_imports)]",
         "",
-        "use crate::omp::types::{Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4};",
+        "use crate::omp::types::{Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4};",
         "use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};",
         "use crate::omp::*;",
         "",
@@ -603,6 +873,16 @@ def main() -> int:
             else:
                 OUT.mkdir(exist_ok=True)
                 path.write_text(text)
+                print(f"wrote {path.relative_to(REPO)}")
+        structs = rustfmt(render_structs())
+        path = OUT / "structs.rs"
+        if not args.only:
+            modules.append("structs")
+            if args.check:
+                if not path.exists() or path.read_text() != structs:
+                    stale.append(path.name)
+            else:
+                path.write_text(structs)
                 print(f"wrote {path.relative_to(REPO)}")
     index = rustfmt("\n".join([
         "//! Wrappers generated by `scripts/omp-wrappers.py` — one module per interface",

@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -30,6 +31,8 @@ slots! {
     SLOT_ATTACH_TO_PLAYER: usize = 12, 11;
     /// `void ITextLabelBase::attachToVehicle(IVehicle &, Vector3)`
     SLOT_ATTACH_TO_VEHICLE: usize = 13, 12;
+    /// `const TextLabelAttachmentData & ITextLabelBase::getAttachmentData()`
+    SLOT_GET_ATTACHMENT_DATA: usize = 14, 13;
     /// `void ITextLabelBase::detachFromPlayer(Vector3)`
     SLOT_DETACH_FROM_PLAYER: usize = 15, 14;
     /// `void ITextLabelBase::detachFromVehicle(Vector3)`
@@ -98,6 +101,15 @@ virtual_fns! {
         vehicle: *mut IVehicle,
         offset: Vector3,
     ) = [0, SLOT_ATTACH_TO_VEHICLE];
+
+    /// `const TextLabelAttachmentData & ITextLabelBase::getAttachmentData()`.
+    ///
+    /// # Safety
+    /// `textlabel` must be a live `ITextLabel`.
+    #[must_use]
+    pub fn textlabel_attachment_data(
+        textlabel: ITextLabel,
+    ) -> *const TextLabelAttachmentData = [0, SLOT_GET_ATTACHMENT_DATA] or std::ptr::null();
 
     /// `void ITextLabelBase::detachFromPlayer(Vector3)`.
     ///
@@ -199,6 +211,3 @@ pub unsafe fn textlabel_colour(textlabel: *mut ITextLabel) -> Option<Colour> {
         Colour::default()
     )
 }
-
-// What the generator left out, and why.
-// skipped: `const TextLabelAttachmentData & ITextLabelBase::getAttachmentData()` — returns `const TextLabelAttachmentData &`, which the SDK does not mirror

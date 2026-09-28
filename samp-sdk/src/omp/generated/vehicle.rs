@@ -8,18 +8,27 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `void IVehicle::setSpawnData(const VehicleSpawnData &)`
+    SLOT_SET_SPAWN_DATA: usize = 6, 5;
+    /// `const VehicleSpawnData & IVehicle::getSpawnData()`
+    SLOT_GET_SPAWN_DATA: usize = 7, 6;
     /// `bool IVehicle::isStreamedInForPlayer(const IPlayer &)`
     SLOT_IS_STREAMED_IN_FOR_PLAYER: usize = 8, 7;
     /// `void IVehicle::streamInForPlayer(IPlayer &)`
     SLOT_STREAM_IN_FOR_PLAYER: usize = 9, 8;
     /// `void IVehicle::streamOutForPlayer(IPlayer &)`
     SLOT_STREAM_OUT_FOR_PLAYER: usize = 10, 9;
+    /// `bool IVehicle::updateFromUnoccupied(const VehicleUnoccupiedSyncPacket &, IPlayer &)`
+    SLOT_UPDATE_FROM_UNOCCUPIED: usize = 17, 16;
+    /// `bool IVehicle::updateFromTrailerSync(const VehicleTrailerSyncPacket &, IPlayer &)`
+    SLOT_UPDATE_FROM_TRAILER_SYNC: usize = 18, 17;
     /// `IPlayer * IVehicle::getDriver()`
     SLOT_GET_DRIVER: usize = 20, 19;
     /// `void IVehicle::setPlate(StringView)`
@@ -28,6 +37,8 @@ slots! {
     SLOT_GET_PLATE: usize = 23, 22;
     /// `void IVehicle::setDamageStatus(int, int, uint8_t, uint8_t, IPlayer *)`
     SLOT_SET_DAMAGE_STATUS: usize = 24, 23;
+    /// `void IVehicle::getDamageStatus(int &, int &, int &, int &)`
+    SLOT_GET_DAMAGE_STATUS: usize = 25, 24;
     /// `void IVehicle::setPaintJob(int)`
     SLOT_SET_PAINT_JOB: usize = 26, 25;
     /// `int IVehicle::getPaintJob()`
@@ -44,6 +55,12 @@ slots! {
     SLOT_SET_Z_ANGLE: usize = 32, 31;
     /// `float IVehicle::getZAngle()`
     SLOT_GET_Z_ANGLE: usize = 33, 32;
+    /// `void IVehicle::setParams(const VehicleParams &)`
+    SLOT_SET_PARAMS: usize = 34, 33;
+    /// `void IVehicle::setParamsForPlayer(IPlayer &, const VehicleParams &)`
+    SLOT_SET_PARAMS_FOR_PLAYER: usize = 35, 34;
+    /// `const VehicleParams & IVehicle::getParams()`
+    SLOT_GET_PARAMS: usize = 36, 35;
     /// `bool IVehicle::isDead()`
     SLOT_IS_DEAD: usize = 37, 36;
     /// `void IVehicle::respawn()`
@@ -101,6 +118,24 @@ slots! {
 }
 
 virtual_fns! {
+    /// `void IVehicle::setSpawnData(const VehicleSpawnData &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    pub fn vehicle_set_spawn_data(
+        vehicle: IVehicle,
+        data: &VehicleSpawnData,
+    ) = [0, SLOT_SET_SPAWN_DATA];
+
+    /// `const VehicleSpawnData & IVehicle::getSpawnData()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_spawn_data(
+        vehicle: IVehicle,
+    ) -> *const VehicleSpawnData = [0, SLOT_GET_SPAWN_DATA] or std::ptr::null();
+
     /// `bool IVehicle::isStreamedInForPlayer(const IPlayer &)`.
     ///
     /// # Safety
@@ -129,6 +164,28 @@ virtual_fns! {
         player: *mut IPlayer,
     ) = [0, SLOT_STREAM_OUT_FOR_PLAYER];
 
+    /// `bool IVehicle::updateFromUnoccupied(const VehicleUnoccupiedSyncPacket &, IPlayer &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_update_from_unoccupied(
+        vehicle: IVehicle,
+        unoccupied_sync: &VehicleUnoccupiedSyncPacket,
+        player: *mut IPlayer,
+    ) -> bool = [0, SLOT_UPDATE_FROM_UNOCCUPIED] or false;
+
+    /// `bool IVehicle::updateFromTrailerSync(const VehicleTrailerSyncPacket &, IPlayer &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_update_from_trailer_sync(
+        vehicle: IVehicle,
+        unoccupied_sync: &VehicleTrailerSyncPacket,
+        player: *mut IPlayer,
+    ) -> bool = [0, SLOT_UPDATE_FROM_TRAILER_SYNC] or false;
+
     /// `IPlayer * IVehicle::getDriver()`.
     ///
     /// # Safety
@@ -156,6 +213,18 @@ virtual_fns! {
         tyre_status: u8,
         vehicle_updater: *mut IPlayer,
     ) = [0, SLOT_SET_DAMAGE_STATUS];
+
+    /// `void IVehicle::getDamageStatus(int &, int &, int &, int &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    pub fn vehicle_damage_status(
+        vehicle: IVehicle,
+        panel_status: &mut i32,
+        door_status: &mut i32,
+        light_status: &mut i32,
+        tyre_status: &mut i32,
+    ) = [0, SLOT_GET_DAMAGE_STATUS];
 
     /// `void IVehicle::setPaintJob(int)`.
     ///
@@ -214,6 +283,31 @@ virtual_fns! {
     /// `vehicle` must be a live `IVehicle`.
     #[must_use]
     pub fn vehicle_z_angle(vehicle: IVehicle) -> f32 = [0, SLOT_GET_Z_ANGLE] or 0.0;
+
+    /// `void IVehicle::setParams(const VehicleParams &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    pub fn vehicle_set_params(vehicle: IVehicle, params: &VehicleParams) = [0, SLOT_SET_PARAMS];
+
+    /// `void IVehicle::setParamsForPlayer(IPlayer &, const VehicleParams &)`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    pub fn vehicle_set_params_for_player(
+        vehicle: IVehicle,
+        player: *mut IPlayer,
+        params: &VehicleParams,
+    ) = [0, SLOT_SET_PARAMS_FOR_PLAYER];
+
+    /// `const VehicleParams & IVehicle::getParams()`.
+    ///
+    /// # Safety
+    /// `vehicle` must be a live `IVehicle`.
+    #[must_use]
+    pub fn vehicle_params(
+        vehicle: IVehicle,
+    ) -> *const VehicleParams = [0, SLOT_GET_PARAMS] or std::ptr::null();
 
     /// `bool IVehicle::isDead()`.
     ///
@@ -450,22 +544,14 @@ pub unsafe fn vehicle_respawn_delay(vehicle: *mut IVehicle) -> Option<Seconds> {
 }
 
 // What the generator left out, and why.
-// skipped: `void IVehicle::setSpawnData(const VehicleSpawnData &)` — takes `const VehicleSpawnData &`, which the SDK does not mirror
-// skipped: `const VehicleSpawnData & IVehicle::getSpawnData()` — returns `const VehicleSpawnData &`, which the SDK does not mirror
 // skipped: `void IVehicle::setColour(int, int)` — `vehicle_set_colour` is written by hand
 // skipped: `Pair<int, int> IVehicle::getColour()` — returns `Pair<int, int>`
 // skipped: `void IVehicle::setHealth(float)` — `vehicle_set_health` is written by hand
 // skipped: `float IVehicle::getHealth()` — `vehicle_health` is written by hand
 // skipped: `bool IVehicle::updateFromDriverSync(const VehicleDriverSyncPacket &, IPlayer &)` — takes `const VehicleDriverSyncPacket &`, which the SDK does not mirror
 // skipped: `bool IVehicle::updateFromPassengerSync(const VehiclePassengerSyncPacket &, IPlayer &)` — takes `const VehiclePassengerSyncPacket &`, which the SDK does not mirror
-// skipped: `bool IVehicle::updateFromUnoccupied(const VehicleUnoccupiedSyncPacket &, IPlayer &)` — takes `const VehicleUnoccupiedSyncPacket &`, which the SDK does not mirror
-// skipped: `bool IVehicle::updateFromTrailerSync(const VehicleTrailerSyncPacket &, IPlayer &)` — takes `const VehicleTrailerSyncPacket &`, which the SDK does not mirror
 // skipped: `const FlatPtrHashSet<IPlayer> & IVehicle::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `const FlatHashSet<IPlayer *> & IVehicle::getPassengers()` — returns `const FlatHashSet<IPlayer *> &`, which the SDK does not mirror
-// skipped: `void IVehicle::getDamageStatus(int &, int &, int &, int &)` — takes `int &`, which the SDK does not mirror
-// skipped: `void IVehicle::setParams(const VehicleParams &)` — takes `const VehicleParams &`, which the SDK does not mirror
-// skipped: `void IVehicle::setParamsForPlayer(IPlayer &, const VehicleParams &)` — takes `const VehicleParams &`, which the SDK does not mirror
-// skipped: `const VehicleParams & IVehicle::getParams()` — returns `const VehicleParams &`, which the SDK does not mirror
 // skipped: `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> & IVehicle::getCarriages()` — returns `const StaticArray<IVehicle *, MAX_VEHICLE_CARRIAGES> &`, which the SDK does not mirror
 // skipped: `int IVehicle::getModel()` — `vehicle_model` is written by hand
 // skipped: `const TimePoint & IVehicle::getLastOccupiedTime()` — returns `const TimePoint &`, which the SDK does not mirror

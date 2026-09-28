@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -26,6 +27,10 @@ slots! {
     SLOT_FLASH_FOR_PLAYER: usize = 10, 9;
     /// `void IBaseGangZone::stopFlashForPlayer(IPlayer &)`
     SLOT_STOP_FLASH_FOR_PLAYER: usize = 11, 10;
+    /// `GangZonePos IBaseGangZone::getPosition()`
+    SLOT_GET_POSITION: usize = 12, 11;
+    /// `void IBaseGangZone::setPosition(const GangZonePos &)`
+    SLOT_SET_POSITION: usize = 13, 12;
     /// `bool IBaseGangZone::isPlayerInside(const IPlayer &)`
     SLOT_IS_PLAYER_INSIDE: usize = 14, 13;
     /// `void IBaseGangZone::setLegacyPlayer(IPlayer *)`
@@ -93,6 +98,24 @@ virtual_fns! {
         player: *mut IPlayer,
     ) = [0, SLOT_STOP_FLASH_FOR_PLAYER];
 
+    /// `GangZonePos IBaseGangZone::getPosition()`.
+    ///
+    /// # Safety
+    /// `gangzone` must be a live `IGangZone`.
+    #[must_use]
+    pub fn gangzone_position(
+        gangzone: IGangZone,
+    ) -> GangZonePos = [0, SLOT_GET_POSITION] or GangZonePos::default();
+
+    /// `void IBaseGangZone::setPosition(const GangZonePos &)`.
+    ///
+    /// # Safety
+    /// `gangzone` must be a live `IGangZone`.
+    pub fn gangzone_set_position(
+        gangzone: IGangZone,
+        position: &GangZonePos,
+    ) = [0, SLOT_SET_POSITION];
+
     /// `bool IBaseGangZone::isPlayerInside(const IPlayer &)`.
     ///
     /// # Safety
@@ -123,8 +146,6 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `GangZonePos IBaseGangZone::getPosition()` — returns `GangZonePos`
-// skipped: `void IBaseGangZone::setPosition(const GangZonePos &)` — takes `const GangZonePos &`, which the SDK does not mirror
 // skipped: `const FlatHashSet<IPlayer *> & IBaseGangZone::getShownFor()` — returns `const FlatHashSet<IPlayer *> &`, which the SDK does not mirror
 // skipped: `const Colour IBaseGangZone::getFlashingColourForPlayer(IPlayer &)` — returns a small struct and takes arguments
 // skipped: `const Colour IBaseGangZone::getColourForPlayer(IPlayer &)` — returns a small struct and takes arguments

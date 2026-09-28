@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -25,6 +26,8 @@ slots! {
     SLOT_GET_TYPE: usize = 11, 10;
     /// `size_t IConfig::getBansCount()`
     SLOT_GET_BANS_COUNT: usize = 12, 11;
+    /// `void IConfig::removeBan(size_t)`
+    SLOT_REMOVE_BAN_AT: usize = 15, 15;
     /// `void IConfig::writeBans()`
     SLOT_WRITE_BANS: usize = 17, 16;
     /// `void IConfig::reloadBans()`
@@ -58,6 +61,12 @@ virtual_fns! {
     #[must_use]
     pub fn config_bans_count(config: IConfig) -> usize = [0, SLOT_GET_BANS_COUNT] or 0;
 
+    /// `void IConfig::removeBan(size_t)`.
+    ///
+    /// # Safety
+    /// `config` must be a live `IConfig`.
+    pub fn config_remove_ban_at(config: IConfig, index: usize) = [0, SLOT_REMOVE_BAN_AT];
+
     /// `void IConfig::writeBans()`.
     ///
     /// # Safety
@@ -84,8 +93,7 @@ virtual_fns! {
 // skipped: `size_t IConfig::getStrings(StringView, Span<StringView>)` — takes `Span<StringView>`
 // skipped: `const BanEntry & IConfig::getBan(size_t)` — returns `const BanEntry &`, which the SDK does not mirror
 // skipped: `void IConfig::addBan(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
-// skipped: `void IConfig::removeBan(size_t)` — overloaded
-// skipped: `void IConfig::removeBan(const BanEntry &)` — overloaded
+// skipped: `void IConfig::removeBan(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
 // skipped: `bool IConfig::isBanned(const BanEntry &)` — takes `const BanEntry &`, which the SDK does not mirror
 // skipped: `Pair<bool, StringView> IConfig::getNameFromAlias(StringView)` — returns `Pair<bool, StringView>`
 // skipped: `void IConfig::enumOptions(OptionEnumeratorCallback &)` — takes `OptionEnumeratorCallback &`, which the SDK does not mirror

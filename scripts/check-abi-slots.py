@@ -408,6 +408,20 @@ RETURNED_BY_POINTER = ("Vector2", "Vector3", "Vector4", "StringView", "Colour",
                        "Milliseconds", "Seconds", "Minutes", "Hours")
 
 
+def mirrored_sizes() -> dict[str, int]:
+    """MSVC sizes of the structs `omp-wrappers.py` mirrored, from `structs.rs`."""
+    path = REPO / "samp-sdk/src/omp/generated/structs.rs"
+    if not path.exists():
+        return {}
+    return {m.group(1): int(m.group(2)) for m in re.finditer(r"^// msvc-size: (\w+) = (\d+)$", path.read_text(), re.M)}
+
+
+MIRRORED_SIZES = mirrored_sizes()
+ARG_BYTES.update({"GangZonePos": 16, "GTAQuat": 16, "SemanticVersion": 8})
+ARG_BYTES.update({name: (size + 3) // 4 * 4 for name, size in MIRRORED_SIZES.items()})
+RETURNED_BY_POINTER = (*RETURNED_BY_POINTER, "GangZonePos", "GTAQuat", "SemanticVersion", *MIRRORED_SIZES)
+
+
 def arg_bytes(signature: str) -> int:
     """What the MSVC callee pops for this signature, hidden return pointer included.
 

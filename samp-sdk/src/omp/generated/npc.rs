@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -25,6 +26,10 @@ slots! {
     SLOT_GET_POSITION: usize = 7, 6;
     /// `void INPC::setPosition(const Vector3 &, bool)`
     SLOT_SET_POSITION: usize = 8, 7;
+    /// `GTAQuat INPC::getRotation()`
+    SLOT_GET_ROTATION: usize = 9, 8;
+    /// `void INPC::setRotation(const GTAQuat &, bool)`
+    SLOT_SET_ROTATION: usize = 10, 9;
     /// `int INPC::getVirtualWorld()`
     SLOT_GET_VIRTUAL_WORLD: usize = 11, 10;
     /// `void INPC::setVirtualWorld(int)`
@@ -77,6 +82,8 @@ slots! {
     SLOT_GET_WEAPON_SKILL_LEVEL: usize = 36, 35;
     /// `void INPC::setKeys(uint16_t, uint16_t, uint16_t)`
     SLOT_SET_KEYS: usize = 37, 36;
+    /// `void INPC::getKeys(uint16_t &, uint16_t &, uint16_t &)`
+    SLOT_GET_KEYS: usize = 38, 37;
     /// `void INPC::meleeAttack(int, bool)`
     SLOT_MELEE_ATTACK: usize = 39, 38;
     /// `void INPC::stopMeleeAttack()`
@@ -193,12 +200,18 @@ slots! {
     SLOT_RESET_ANIMATION: usize = 95, 94;
     /// `void INPC::setAnimation(int, float, bool, bool, bool, bool, int)`
     SLOT_SET_ANIMATION: usize = 96, 95;
+    /// `void INPC::getAnimation(int &, float &, bool &, bool &, bool &, bool &, int &)`
+    SLOT_GET_ANIMATION: usize = 97, 96;
     /// `void INPC::clearAnimations()`
     SLOT_CLEAR_ANIMATIONS: usize = 99, 98;
     /// `void INPC::setSpecialAction(PlayerSpecialAction)`
     SLOT_SET_SPECIAL_ACTION: usize = 100, 99;
     /// `PlayerSpecialAction INPC::getSpecialAction()`
     SLOT_GET_SPECIAL_ACTION: usize = 101, 100;
+    /// `bool INPC::startPlayback(StringView, bool, const Vector3 &, const GTAQuat &)`
+    SLOT_START_PLAYBACK: usize = 102, 102;
+    /// `bool INPC::startPlayback(int, bool, const Vector3 &, const GTAQuat &)`
+    SLOT_START_PLAYBACK_ID: usize = 103, 101;
     /// `void INPC::stopPlayback()`
     SLOT_STOP_PLAYBACK: usize = 104, 103;
     /// `void INPC::pausePlayback(bool)`
@@ -227,6 +240,10 @@ slots! {
     SLOT_SET_INVULNERABLE: usize = 116, 115;
     /// `bool INPC::isInvulnerable()`
     SLOT_IS_INVULNERABLE: usize = 117, 116;
+    /// `void INPC::setSurfingData(const PlayerSurfingData &)`
+    SLOT_SET_SURFING_DATA: usize = 118, 117;
+    /// `PlayerSurfingData INPC::getSurfingData()`
+    SLOT_GET_SURFING_DATA: usize = 119, 118;
     /// `void INPC::resetSurfingData()`
     SLOT_RESET_SURFING_DATA: usize = 120, 119;
     /// `bool INPC::isMovingToPlayer(IPlayer &)`
@@ -267,6 +284,23 @@ virtual_fns! {
         position: &Vector3,
         immediate_update: bool,
     ) = [0, SLOT_SET_POSITION];
+
+    /// `GTAQuat INPC::getRotation()`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    #[must_use]
+    pub fn npc_rotation(npc: INPC) -> GTAQuat = [0, SLOT_GET_ROTATION] or GTAQuat::default();
+
+    /// `void INPC::setRotation(const GTAQuat &, bool)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_set_rotation(
+        npc: INPC,
+        rotation: &GTAQuat,
+        immediate_update: bool,
+    ) = [0, SLOT_SET_ROTATION];
 
     /// `int INPC::getVirtualWorld()`.
     ///
@@ -465,6 +499,17 @@ virtual_fns! {
         left_and_right: u16,
         keys: u16,
     ) = [0, SLOT_SET_KEYS];
+
+    /// `void INPC::getKeys(uint16_t &, uint16_t &, uint16_t &)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_keys(
+        npc: INPC,
+        up_and_down: &mut u16,
+        left_and_right: &mut u16,
+        keys: &mut u16,
+    ) = [0, SLOT_GET_KEYS];
 
     /// `void INPC::meleeAttack(int, bool)`.
     ///
@@ -942,6 +987,21 @@ virtual_fns! {
         time: i32,
     ) = [0, SLOT_SET_ANIMATION];
 
+    /// `void INPC::getAnimation(int &, float &, bool &, bool &, bool &, bool &, int &)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_animation(
+        npc: INPC,
+        animation_id: &mut i32,
+        delta: &mut f32,
+        loop_value: &mut bool,
+        lock_x: &mut bool,
+        lock_y: &mut bool,
+        freeze: &mut bool,
+        time: &mut i32,
+    ) = [0, SLOT_GET_ANIMATION];
+
     /// `void INPC::clearAnimations()`.
     ///
     /// # Safety
@@ -960,6 +1020,32 @@ virtual_fns! {
     /// `npc` must be a live `INPC`.
     #[must_use]
     pub fn npc_special_action(npc: INPC) -> i32 = [0, SLOT_GET_SPECIAL_ACTION] or 0;
+
+    /// `bool INPC::startPlayback(StringView, bool, const Vector3 &, const GTAQuat &)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    #[must_use]
+    pub fn npc_start_playback(
+        npc: INPC,
+        record_name: StringView,
+        auto_unload: bool,
+        point: &Vector3,
+        rotation: &GTAQuat,
+    ) -> bool = [0, SLOT_START_PLAYBACK] or false;
+
+    /// `bool INPC::startPlayback(int, bool, const Vector3 &, const GTAQuat &)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    #[must_use]
+    pub fn npc_start_playback_id(
+        npc: INPC,
+        record_id: i32,
+        auto_unload: bool,
+        point: &Vector3,
+        rotation: &GTAQuat,
+    ) -> bool = [0, SLOT_START_PLAYBACK_ID] or false;
 
     /// `void INPC::stopPlayback()`.
     ///
@@ -1069,6 +1155,21 @@ virtual_fns! {
     #[must_use]
     pub fn npc_is_invulnerable(npc: INPC) -> bool = [0, SLOT_IS_INVULNERABLE] or false;
 
+    /// `void INPC::setSurfingData(const PlayerSurfingData &)`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    pub fn npc_set_surfing_data(npc: INPC, data: &PlayerSurfingData) = [0, SLOT_SET_SURFING_DATA];
+
+    /// `PlayerSurfingData INPC::getSurfingData()`.
+    ///
+    /// # Safety
+    /// `npc` must be a live `INPC`.
+    #[must_use]
+    pub fn npc_surfing_data(
+        npc: INPC,
+    ) -> PlayerSurfingData = [0, SLOT_GET_SURFING_DATA] or PlayerSurfingData::default();
+
     /// `void INPC::resetSurfingData()`.
     ///
     /// # Safety
@@ -1126,13 +1227,5 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `GTAQuat INPC::getRotation()` — returns `GTAQuat`
-// skipped: `void INPC::setRotation(const GTAQuat &, bool)` — takes `const GTAQuat &`, which the SDK does not mirror
 // skipped: `const FlatPtrHashSet<IPlayer> & INPC::streamedForPlayers()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
-// skipped: `void INPC::getKeys(uint16_t &, uint16_t &, uint16_t &)` — takes `uint16_t &`, which the SDK does not mirror
-// skipped: `void INPC::getAnimation(int &, float &, bool &, bool &, bool &, bool &, int &)` — takes `int &`, which the SDK does not mirror
 // skipped: `void INPC::applyAnimation(const AnimationData &)` — takes `const AnimationData &`, which the SDK does not mirror
-// skipped: `bool INPC::startPlayback(StringView, bool, const Vector3 &, const GTAQuat &)` — overloaded
-// skipped: `bool INPC::startPlayback(int, bool, const Vector3 &, const GTAQuat &)` — overloaded
-// skipped: `void INPC::setSurfingData(const PlayerSurfingData &)` — takes `const PlayerSurfingData &`, which the SDK does not mirror
-// skipped: `PlayerSurfingData INPC::getSurfingData()` — returns `PlayerSurfingData`

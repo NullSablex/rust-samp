@@ -58,6 +58,7 @@ module = "config"
 this = "config"
 impl = "Config"
 library = "omp-server"
+overloads = { "removeBan(size_t)" = "remove_ban_at", "removeBan(constBanEntry&)" = "remove_ban" }
 
 [[interface]]
 class = "IActor"
@@ -315,6 +316,7 @@ prefix = "npc"
 module = "npc"
 impl = "NPC"
 library = "NPCs"
+overloads = { "startPlayback(StringView,bool,constVector3&,constGTAQuat&)" = "start_playback", "startPlayback(int,bool,constVector3&,constGTAQuat&)" = "start_playback_id" }
 
 [[interface]]
 class = "INPCComponent"
@@ -443,6 +445,7 @@ module = "textdraws"
 this = "component"
 impl = "TextDrawsComponent"
 library = "TextDraws"
+overloads = { "create(Vector2,int)" = "create_preview" }
 
 [[interface]]
 class = "IPlayerTextDrawData"
@@ -482,6 +485,7 @@ module = "textlabels"
 this = "component"
 impl = "TextLabelsComponent"
 library = "TextLabels"
+overloads = { "create(StringView,Colour,Vector3,float,int,bool,IPlayer&)" = "create_on_player", "create(StringView,Colour,Vector3,float,int,bool,IVehicle&)" = "create_on_vehicle" }
 
 [[interface]]
 class = "IPlayerTextLabelData"
@@ -532,6 +536,7 @@ module = "vehicles"
 this = "component"
 impl = "VehiclesComponent"
 library = "Vehicles"
+overloads = { "create(constVehicleSpawnData&)" = "create_from_spawn_data" }
 
 [[interface]]
 class = "IPlayerVehicleData"

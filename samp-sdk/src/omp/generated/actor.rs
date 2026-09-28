@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -34,6 +35,8 @@ slots! {
     SLOT_STREAM_IN_FOR_PLAYER: usize = 16, 15;
     /// `void IActor::streamOutForPlayer(IPlayer &)`
     SLOT_STREAM_OUT_FOR_PLAYER: usize = 17, 16;
+    /// `const ActorSpawnData & IActor::getSpawnData()`
+    SLOT_GET_SPAWN_DATA: usize = 18, 17;
 }
 
 virtual_fns! {
@@ -109,9 +112,17 @@ virtual_fns! {
         actor: IActor,
         player: *mut IPlayer,
     ) = [0, SLOT_STREAM_OUT_FOR_PLAYER];
+
+    /// `const ActorSpawnData & IActor::getSpawnData()`.
+    ///
+    /// # Safety
+    /// `actor` must be a live `IActor`.
+    #[must_use]
+    pub fn actor_spawn_data(
+        actor: IActor,
+    ) -> *const ActorSpawnData = [0, SLOT_GET_SPAWN_DATA] or std::ptr::null();
 }
 
 // What the generator left out, and why.
 // skipped: `void IActor::applyAnimation(const AnimationData &)` — takes `const AnimationData &`, which the SDK does not mirror
 // skipped: `const AnimationData & IActor::getAnimation()` — returns `const AnimationData &`, which the SDK does not mirror
-// skipped: `const ActorSpawnData & IActor::getSpawnData()` — returns `const ActorSpawnData &`, which the SDK does not mirror

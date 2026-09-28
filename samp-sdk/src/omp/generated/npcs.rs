@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -51,6 +52,8 @@ slots! {
     SLOT_CLEAR_PATH: usize = 17, 16;
     /// `size_t INPCComponent::getPathPointCount(int)`
     SLOT_GET_PATH_POINT_COUNT: usize = 18, 17;
+    /// `bool INPCComponent::getPathPoint(int, size_t, Vector3 &, float &)`
+    SLOT_GET_PATH_POINT: usize = 19, 18;
     /// `bool INPCComponent::hasPathPointInRange(int, const Vector3 &, float)`
     SLOT_HAS_PATH_POINT_IN_RANGE: usize = 20, 19;
     /// `bool INPCComponent::isValidPath(int)`
@@ -75,8 +78,12 @@ slots! {
     SLOT_GET_NODE_TYPE: usize = 30, 29;
     /// `bool INPCComponent::setNodePoint(int, uint16_t)`
     SLOT_SET_NODE_POINT: usize = 31, 30;
+    /// `bool INPCComponent::getNodePointPosition(int, Vector3 &)`
+    SLOT_GET_NODE_POINT_POSITION: usize = 32, 31;
     /// `int INPCComponent::getNodePointCount(int)`
     SLOT_GET_NODE_POINT_COUNT: usize = 33, 32;
+    /// `bool INPCComponent::getNodeInfo(int, uint32_t &, uint32_t &, uint32_t &)`
+    SLOT_GET_NODE_INFO: usize = 34, 33;
 }
 
 virtual_fns! {
@@ -168,6 +175,19 @@ virtual_fns! {
         component: INPCComponent,
         path_id: i32,
     ) -> usize = [0, SLOT_GET_PATH_POINT_COUNT] or 0;
+
+    /// `bool INPCComponent::getPathPoint(int, size_t, Vector3 &, float &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_path_point(
+        component: INPCComponent,
+        path_id: i32,
+        point_index: usize,
+        position: &mut Vector3,
+        stop_range: &mut f32,
+    ) -> bool = [0, SLOT_GET_PATH_POINT] or false;
 
     /// `bool INPCComponent::hasPathPointInRange(int, const Vector3 &, float)`.
     ///
@@ -281,6 +301,17 @@ virtual_fns! {
         point_id: u16,
     ) -> bool = [0, SLOT_SET_NODE_POINT] or false;
 
+    /// `bool INPCComponent::getNodePointPosition(int, Vector3 &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_node_point_position(
+        component: INPCComponent,
+        node_id: i32,
+        position: &mut Vector3,
+    ) -> bool = [0, SLOT_GET_NODE_POINT_POSITION] or false;
+
     /// `int INPCComponent::getNodePointCount(int)`.
     ///
     /// # Safety
@@ -290,10 +321,20 @@ virtual_fns! {
         component: INPCComponent,
         node_id: i32,
     ) -> i32 = [0, SLOT_GET_NODE_POINT_COUNT] or 0;
+
+    /// `bool INPCComponent::getNodeInfo(int, uint32_t &, uint32_t &, uint32_t &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_node_info(
+        component: INPCComponent,
+        node_id: i32,
+        vehicle_nodes: &mut u32,
+        ped_nodes: &mut u32,
+        navi_nodes: &mut u32,
+    ) -> bool = [0, SLOT_GET_NODE_INFO] or false;
 }
 
 // What the generator left out, and why.
 // skipped: `IEventDispatcher<NPCEventHandler> & INPCComponent::getEventDispatcher()` — returns `IEventDispatcher<NPCEventHandler> &`, which the SDK does not mirror
-// skipped: `bool INPCComponent::getPathPoint(int, size_t, Vector3 &, float &)` — takes `Vector3 &`, which the SDK does not mirror
-// skipped: `bool INPCComponent::getNodePointPosition(int, Vector3 &)` — takes `Vector3 &`, which the SDK does not mirror
-// skipped: `bool INPCComponent::getNodeInfo(int, uint32_t &, uint32_t &, uint32_t &)` — takes `uint32_t &`, which the SDK does not mirror

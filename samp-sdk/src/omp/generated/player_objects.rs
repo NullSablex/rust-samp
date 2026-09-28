@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -37,10 +38,14 @@ pub unsafe fn player_objects(player: *mut IPlayer) -> *mut IPlayerObjectData {
 slots! {
     /// `IPlayerObject * IPlayerObjectData::create(int, Vector3, Vector3, float)`
     SLOT_CREATE: usize = 3, 3;
+    /// `void IPlayerObjectData::setAttachedObject(int, const ObjectAttachmentSlotData &)`
+    SLOT_SET_ATTACHED_OBJECT: usize = 4, 4;
     /// `void IPlayerObjectData::removeAttachedObject(int)`
     SLOT_REMOVE_ATTACHED_OBJECT: usize = 5, 5;
     /// `bool IPlayerObjectData::hasAttachedObject(int)`
     SLOT_HAS_ATTACHED_OBJECT: usize = 6, 6;
+    /// `const ObjectAttachmentSlotData & IPlayerObjectData::getAttachedObject(int)`
+    SLOT_GET_ATTACHED_OBJECT: usize = 7, 7;
     /// `void IPlayerObjectData::beginSelecting()`
     SLOT_BEGIN_SELECTING: usize = 8, 8;
     /// `bool IPlayerObjectData::selectingObject()`
@@ -71,6 +76,16 @@ virtual_fns! {
         draw_dist: f32,
     ) -> *mut IPlayerObject = [0, SLOT_CREATE] or std::ptr::null_mut();
 
+    /// `void IPlayerObjectData::setAttachedObject(int, const ObjectAttachmentSlotData &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerObjectData`.
+    pub fn player_objects_set_attached_object(
+        data: IPlayerObjectData,
+        index: i32,
+        other_data: &ObjectAttachmentSlotData,
+    ) = [0, SLOT_SET_ATTACHED_OBJECT];
+
     /// `void IPlayerObjectData::removeAttachedObject(int)`.
     ///
     /// # Safety
@@ -89,6 +104,16 @@ virtual_fns! {
         data: IPlayerObjectData,
         index: i32,
     ) -> bool = [0, SLOT_HAS_ATTACHED_OBJECT] or false;
+
+    /// `const ObjectAttachmentSlotData & IPlayerObjectData::getAttachedObject(int)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerObjectData`.
+    #[must_use]
+    pub fn player_objects_attached_object(
+        data: IPlayerObjectData,
+        index: i32,
+    ) -> *const ObjectAttachmentSlotData = [0, SLOT_GET_ATTACHED_OBJECT] or std::ptr::null();
 
     /// `void IPlayerObjectData::beginSelecting()`.
     ///
@@ -147,7 +172,3 @@ virtual_fns! {
         index: i32,
     ) = [0, SLOT_EDIT_ATTACHED_OBJECT];
 }
-
-// What the generator left out, and why.
-// skipped: `void IPlayerObjectData::setAttachedObject(int, const ObjectAttachmentSlotData &)` — takes `const ObjectAttachmentSlotData &`, which the SDK does not mirror
-// skipped: `const ObjectAttachmentSlotData & IPlayerObjectData::getAttachedObject(int)` — returns `const ObjectAttachmentSlotData &`, which the SDK does not mirror

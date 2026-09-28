@@ -8,7 +8,8 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
@@ -35,18 +36,36 @@ pub unsafe fn player_classes(player: *mut IPlayer) -> *mut IPlayerClassData {
 }
 
 slots! {
+    /// `const PlayerClass & IPlayerClassData::getClass()`
+    SLOT_GET_CLASS: usize = 3, 3;
+    /// `void IPlayerClassData::setSpawnInfo(const PlayerClass &)`
+    SLOT_SET_SPAWN_INFO: usize = 4, 4;
     /// `void IPlayerClassData::spawnPlayer()`
     SLOT_SPAWN_PLAYER: usize = 5, 5;
 }
 
 virtual_fns! {
+    /// `const PlayerClass & IPlayerClassData::getClass()`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerClassData`.
+    #[must_use]
+    pub fn player_classes_class(
+        data: IPlayerClassData,
+    ) -> *const PlayerClass = [0, SLOT_GET_CLASS] or std::ptr::null();
+
+    /// `void IPlayerClassData::setSpawnInfo(const PlayerClass &)`.
+    ///
+    /// # Safety
+    /// `data` must be a live `IPlayerClassData`.
+    pub fn player_classes_set_spawn_info(
+        data: IPlayerClassData,
+        info: &PlayerClass,
+    ) = [0, SLOT_SET_SPAWN_INFO];
+
     /// `void IPlayerClassData::spawnPlayer()`.
     ///
     /// # Safety
     /// `data` must be a live `IPlayerClassData`.
     pub fn player_classes_spawn_player(data: IPlayerClassData) = [0, SLOT_SPAWN_PLAYER];
 }
-
-// What the generator left out, and why.
-// skipped: `const PlayerClass & IPlayerClassData::getClass()` — returns `const PlayerClass &`, which the SDK does not mirror
-// skipped: `void IPlayerClassData::setSpawnInfo(const PlayerClass &)` — takes `const PlayerClass &`, which the SDK does not mirror

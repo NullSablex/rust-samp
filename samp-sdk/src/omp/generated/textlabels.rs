@@ -8,12 +8,52 @@
 #![allow(unused_imports)]
 
 use crate::omp::types::{
-    Colour, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3, Vector4,
+    Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, UID, Vector2, Vector3,
+    Vector4,
 };
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
+slots! {
+    /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IPlayer &)`
+    SLOT_CREATE_ON_PLAYER: usize = 19, 17;
+    /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IVehicle &)`
+    SLOT_CREATE_ON_VEHICLE: usize = 20, 16;
+}
+
+virtual_fns! {
+    /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IPlayer &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ITextLabelsComponent`.
+    #[must_use]
+    pub fn textlabels_create_on_player(
+        component: ITextLabelsComponent,
+        text: StringView,
+        colour: Colour,
+        pos: Vector3,
+        draw_dist: f32,
+        vw: i32,
+        los: bool,
+        attach: *mut IPlayer,
+    ) -> *mut ITextLabel = [0, SLOT_CREATE_ON_PLAYER] or std::ptr::null_mut();
+
+    /// `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IVehicle &)`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ITextLabelsComponent`.
+    #[must_use]
+    pub fn textlabels_create_on_vehicle(
+        component: ITextLabelsComponent,
+        text: StringView,
+        colour: Colour,
+        pos: Vector3,
+        draw_dist: f32,
+        vw: i32,
+        los: bool,
+        attach: *mut IVehicle,
+    ) -> *mut ITextLabel = [0, SLOT_CREATE_ON_VEHICLE] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
 // skipped: `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool)` — overloaded
-// skipped: `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IPlayer &)` — overloaded
-// skipped: `ITextLabel * ITextLabelsComponent::create(StringView, Colour, Vector3, float, int, bool, IVehicle &)` — overloaded

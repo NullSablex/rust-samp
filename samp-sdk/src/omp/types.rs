@@ -228,6 +228,35 @@ impl Vector4 {
     };
 }
 
+/// A rotation, as `GTAQuat` in `gtaquat.hpp` stores it: a `glm::quat`.
+///
+/// The SDK's build defines `GLM_FORCE_QUAT_DATA_WXYZ`, so `w` comes first —
+/// the server was built that way, and so is this.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
+pub struct GTAQuat {
+    pub w: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+impl GTAQuat {
+    /// No rotation — also what `GTAQuat()` constructs.
+    pub const IDENTITY: Self = Self {
+        w: 1.0,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+}
+
+impl Default for GTAQuat {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
 /// `std::chrono` durations as the server's headers use them: `Milliseconds`,
 /// `Seconds`, `Minutes`, `Hours`.
 ///

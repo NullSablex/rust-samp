@@ -245,7 +245,7 @@ The per-crate sections come first, then the ones belonging to the repository.
 #### Added
 
 - **Wrappers for nearly every open.mp interface, generated from the SDK
-  headers.** 605 functions over 53 interfaces, in `omp::generated` and
+  headers.** 676 functions over 53 interfaces, in `omp::generated` and
   re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
   `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
   checkpoints, text labels, player objects and text draws), every component,
@@ -271,6 +271,31 @@ The per-crate sections come first, then the ones belonging to the repository.
   order; `check-abi-slots.py` checks an overload on Linux by its parameters as
   well as its name, since the name alone would pass either one. A per-player
   text draw or text label can now be created, so their round trips run too.
+- **Structs the headers pass by value, mirrored from them** — 16 in
+  `omp::generated::structs`: `VehicleSpawnData`, `VehicleParams`,
+  `PlayerClass`, `WeaponSlotData`, `ObjectMoveData`, `ObjectAttachmentData`,
+  `TextLabelAttachmentData`, `PlayerKeyData`, `PlayerAimData`,
+  `PlayerSurfingData`, `PlayerSpectateData`, `PlayerAnimationData`,
+  `ActorSpawnData` and others. A struct is mirrored only when every field is
+  something the SDK states with certainty and it travels by value under both
+  ABIs (trivially copyable); each carries its C++ defaults as `Default` where
+  they are literals, and compile-time assertions of its size and every field
+  offset per ABI, taken from clang's layout. What was not mirrored is listed
+  at the end of the file, with the reason. With them came 71 more methods:
+  `vehicle_set_params`/`vehicle_params`, `vehicle_spawn_data`,
+  `object_move`/`object_moving_data`, `class_class`, `player_key_data`,
+  `player_aim_data`, `player_give_weapon`, `npc_rotation`, ... A method
+  returning a `const T &` hands back a `*const T` into the server's copy.
+- The overloads that had no wrapper in any form: `textdraws_create_preview`,
+  `textlabels_create_on_player`/`_on_vehicle`,
+  `vehicles_create_from_spawn_data`, `npc_start_playback`/`_id` and
+  `config_remove_ban_at`.
+- `GTAQuat`, a rotation laid out as the server's `glm::quat`: `w` first, since
+  the SDK is built with `GLM_FORCE_QUAT_DATA_WXYZ`. `entity_rotation` and
+  `entity_set_rotation` read and set it for any entity, as `entity_id` does.
+- Out-parameters (`T &` without `const`) are `&mut T`; typedefs of integers
+  (`PickupType`) read as the integer; `long` is `i32` and `double` is `f64`.
+  `GangZonePos` implements `Default`.
 - `Milliseconds`, `Seconds`, `Minutes` and `Hours`, the `std::chrono`
   durations the headers take and return, laid out as the C++ classes are. The
   count of minutes and hours is an `int` under Microsoft's library and 64 bits
@@ -403,6 +428,11 @@ The per-crate sections come first, then the ones belonging to the repository.
   and yanked crates. Everything that ships with the MIT crates is permissive today; the
   policy makes a dependency under anything else fail instead of arriving with an
   update.
+- `scripts/omp-vtable.py` passes clang the definitions the SDK's
+  `CMakeLists.txt` gives every consumer (`GLM_FORCE_QUAT_DATA_WXYZ`,
+  `GLM_FORCE_SSE2`, the string_view and span selectors). Without them the
+  quaternion's field order was the opposite of the server's; no vtable slot
+  changed.
 - The generators pass their output through `rustfmt`, so it is what `cargo fmt`
   leaves: written unformatted, the next `cargo fmt` rewrote it and `--check`
   reported the files stale forever after.
@@ -439,7 +469,11 @@ The per-crate sections come first, then the ones belonging to the repository.
   return conventions most likely to differ between the ABIs, and the durations
   and const-reference setters the generator gained later, the global text
   draw's included, and the per-player text draws and text labels created
-  through the new overloads. 108 passed, 0 wrong, identically on open.mp Linux and on
+  through the new overloads, and one check per mirrored struct in the shape
+  it travels in — by value, by `const &`, as a pointer into the server's copy.
+  The quaternion's order was proven against an angle the server keeps apart:
+  a vehicle turned 90 degrees reads back with only `w` and `z` set. 121
+  passed, 0 wrong, identically on open.mp Linux and on
   Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
   UB checks) and AddressSanitizer with leak detection on the host target both
@@ -449,9 +483,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
-  1061 slots `check-abi-slots.py --generated` can derive match the official
+  1189 slots `check-abi-slots.py --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
-  145 are declared underivable (the Windows server executable keeps RTTI for
+  159 are declared underivable (the Windows server executable keeps RTTI for
   three classes only, and tail-calling methods have no `ret N` of their own).
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that
