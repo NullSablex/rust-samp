@@ -43,6 +43,8 @@ slots! {
     SLOT_RESET_ALL: usize = 21, 20;
     /// `void ICore::reloadAll()`
     SLOT_RELOAD_ALL: usize = 22, 21;
+    /// `StringView ICore::getWeaponName(PlayerWeapon)`
+    SLOT_GET_WEAPON_NAME: usize = 23, 22;
     /// `void ICore::connectBot(StringView, StringView)`
     SLOT_CONNECT_BOT: usize = 24, 23;
     /// `unsigned int ICore::tickRate()`
@@ -172,6 +174,23 @@ pub unsafe fn core_version(core: *mut ICore) -> Option<SemanticVersion> {
     )
 }
 
+/// `StringView ICore::getWeaponName(PlayerWeapon)`.
+///
+/// # Safety
+/// `core` must be a live `ICore`.
+#[must_use]
+pub unsafe fn core_weapon_name(core: *mut ICore, weapon: i32) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        core.cast::<u8>(),
+        0,
+        SLOT_GET_WEAPON_NAME,
+        StringView,
+        StringView::EMPTY,
+        (i32)(weapon)
+    )?;
+    unsafe { view.to_owned_string() }
+}
+
 /// `StringView ICore::getVersionHash()`.
 ///
 /// # Safety
@@ -189,10 +208,9 @@ pub unsafe fn core_version_hash(core: *mut ICore) -> Option<String> {
 }
 
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()` — returns `IEventDispatcher<CoreEventHandler> &`, which the SDK does not mirror
+// skipped: `IEventDispatcher<CoreEventHandler> & ICore::getEventDispatcher()` — returns the dispatcher of `CoreEventHandler`, which `onTick` takes a value the SDK does not mirror
 // skipped: `const FlatPtrHashSet<INetwork> & ICore::getNetworks()` — returns `const FlatPtrHashSet<INetwork> &`, which the SDK does not mirror
 // skipped: `void ICore::setThreadSleep(Microseconds)` — takes `Microseconds`
-// skipped: `StringView ICore::getWeaponName(PlayerWeapon)` — returns a small struct and takes arguments
 // skipped: `void ICore::requestHTTP(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)` — takes `HTTPResponseHandler *`, which the SDK does not mirror
 // skipped: `bool ICore::sha256(StringView, StringView, StaticArray<char, 64 + 1> &)` — takes `StaticArray<char, 64 + 1> &`, which the SDK does not mirror
 // skipped: `void ICore::requestHTTP4(HTTPResponseHandler *, HTTPRequestType, StringView, StringView)` — takes `HTTPResponseHandler *`, which the SDK does not mirror

@@ -14,6 +14,21 @@ use crate::omp::types::{
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
+slots! {
+    /// `IEventDispatcher<ActorEventHandler> & IActorsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+}
+
+virtual_fns! {
+    /// `IEventDispatcher<ActorEventHandler> & IActorsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IActorsComponent`.
+    #[must_use]
+    pub fn actors_event_dispatcher(
+        component: IActorsComponent,
+    ) -> *mut EventDispatcher<ActorHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<ActorEventHandler> & IActorsComponent::getEventDispatcher()` — returns `IEventDispatcher<ActorEventHandler> &`, which the SDK does not mirror
 // skipped: `IActor * IActorsComponent::create(int, Vector3, float)` — covered by a hand-written wrapper under another name

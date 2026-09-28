@@ -20,6 +20,8 @@ opaque! {
 }
 
 slots! {
+    /// `const StringView IConfig::getString(StringView)`
+    SLOT_GET_STRING: usize = 6, 5;
     /// `size_t IConfig::getStringsCount(StringView)`
     SLOT_GET_STRINGS_COUNT: usize = 10, 9;
     /// `ConfigOptionType IConfig::getType(StringView)`
@@ -86,8 +88,24 @@ virtual_fns! {
     pub fn config_clear_bans(config: IConfig) = [0, SLOT_CLEAR_BANS];
 }
 
+/// `const StringView IConfig::getString(StringView)`.
+///
+/// # Safety
+/// `config` must be a live `IConfig`.
+#[must_use]
+pub unsafe fn config_string(config: *mut IConfig, key: StringView) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        config.cast::<u8>(),
+        0,
+        SLOT_GET_STRING,
+        StringView,
+        StringView::EMPTY,
+        (StringView)(key)
+    )?;
+    unsafe { view.to_owned_string() }
+}
+
 // What the generator left out, and why.
-// skipped: `const StringView IConfig::getString(StringView)` — returns a small struct and takes arguments
 // skipped: `int * IConfig::getInt(StringView)` — returns `int *`, which the SDK does not mirror
 // skipped: `float * IConfig::getFloat(StringView)` — returns `float *`, which the SDK does not mirror
 // skipped: `size_t IConfig::getStrings(StringView, Span<StringView>)` — takes `Span<StringView>`

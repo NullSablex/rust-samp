@@ -26,5 +26,18 @@ impl ComponentInterface for IDialogsComponent {
     const UID: UID = DIALOGS_COMPONENT_UID;
 }
 
-// What the generator left out, and why.
-// skipped: `IEventDispatcher<PlayerDialogEventHandler> & IDialogsComponent::getEventDispatcher()` — returns `IEventDispatcher<PlayerDialogEventHandler> &`, which the SDK does not mirror
+slots! {
+    /// `IEventDispatcher<PlayerDialogEventHandler> & IDialogsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+}
+
+virtual_fns! {
+    /// `IEventDispatcher<PlayerDialogEventHandler> & IDialogsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IDialogsComponent`.
+    #[must_use]
+    pub fn dialogs_event_dispatcher(
+        component: IDialogsComponent,
+    ) -> *mut EventDispatcher<PlayerDialogHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+}

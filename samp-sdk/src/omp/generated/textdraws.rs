@@ -15,11 +15,22 @@ use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `IEventDispatcher<TextDrawEventHandler> & ITextDrawsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
     /// `ITextDraw * ITextDrawsComponent::create(Vector2, int)`
     SLOT_CREATE_PREVIEW: usize = 20, 17;
 }
 
 virtual_fns! {
+    /// `IEventDispatcher<TextDrawEventHandler> & ITextDrawsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ITextDrawsComponent`.
+    #[must_use]
+    pub fn textdraws_event_dispatcher(
+        component: ITextDrawsComponent,
+    ) -> *mut EventDispatcher<TextDrawHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `ITextDraw * ITextDrawsComponent::create(Vector2, int)`.
     ///
     /// # Safety
@@ -33,5 +44,4 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<TextDrawEventHandler> & ITextDrawsComponent::getEventDispatcher()` — returns `IEventDispatcher<TextDrawEventHandler> &`, which the SDK does not mirror
 // skipped: `ITextDraw * ITextDrawsComponent::create(Vector2, StringView)` — overloaded

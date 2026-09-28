@@ -14,6 +14,21 @@ use crate::omp::types::{
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
+slots! {
+    /// `IEventDispatcher<ClassEventHandler> & IClassesComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+}
+
+virtual_fns! {
+    /// `IEventDispatcher<ClassEventHandler> & IClassesComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IClassesComponent`.
+    #[must_use]
+    pub fn classes_event_dispatcher(
+        component: IClassesComponent,
+    ) -> *mut EventDispatcher<ClassHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<ClassEventHandler> & IClassesComponent::getEventDispatcher()` — returns `IEventDispatcher<ClassEventHandler> &`, which the SDK does not mirror
 // skipped: `IClass * IClassesComponent::create(int, int, Vector3, float, const WeaponSlots &)` — covered by a hand-written wrapper under another name

@@ -399,6 +399,15 @@ def return_kind(cpp: str, enums: dict, handles: set, chain: list):
     # holds it, so the wrapper drops the value.
     if bare.endswith("&") and bare.rstrip("&").strip() in chain:
         return None, "plain", None
+    # An event dispatcher: the generic handle, typed by its handler.
+    m = re.fullmatch(r"IEventDispatcher<(\w+EventHandler)>\s*&", bare)
+    if m:
+        handler = handler_of(m.group(1))
+        if handler is None:
+            raise Skip(f"returns the dispatcher of `{m.group(1)}`, which {NOT_HANDLERS[m.group(1)]}")
+        if handler in hand_types():
+            raise Skip(f"`{handler}` and its dispatcher are written by hand")
+        return f"*mut EventDispatcher<{handler}>", "plain", "std::ptr::null_mut()"
     # A reference to a struct the server owns: the pointer, to read in place.
     if bare.endswith("&") and bare.rstrip("&").strip() in VALUES:
         return f"*const {bare.rstrip('&').strip()}", "plain", "std::ptr::null()"
@@ -520,6 +529,9 @@ def hand_types() -> frozenset[str]:
     for path in OMP.glob("*.rs"):
         text = path.read_text()
         names |= set(re.findall(r"^pub struct (\w+)", text, re.M))
+        # Handlers written through `handler_vtable!`: `XVTable for X {`.
+        for vtable, handler in re.findall(r"^\s*(\w+) for (\w+) \{", text, re.M):
+            names |= {vtable, handler}
         for block in re.findall(r"opaque! \{(.*?)\n\}", text, re.S):
             names |= set(re.findall(r"^\s*pub (\w+);", block, re.M))
     return frozenset(names)
@@ -664,6 +676,148 @@ def render_structs() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Event handlers
+# ---------------------------------------------------------------------------
+
+# Handlers written into `handlers.rs`: C++ name -> what the macro needs.
+HANDLERS: dict[str, dict] = {}
+NOT_HANDLERS: dict[str, str] = {}
+
+# Narrow integers a callback receives: C++ callers need not extend them to a
+# word, and a Rust `bool` or `u8` argument assumes they did. The whole word
+# comes in, and the value is its low bits — the rule `VirtualReturn` applies to
+# return values.
+WIDENED = {"bool": "u32", "u8": "u32", "u16": "u32", "i8": "i32", "i16": "i32"}
+
+
+def callback_arg(cpp: str) -> str | None:
+    bare = strip_type(cpp)
+    constant = cpp.lstrip().startswith("const ")
+    if bare.endswith("&") or bare.endswith("*"):
+        target = bare.rstrip("&*").strip()
+        mut = "*const" if constant else "*mut"
+        if "&" in target or "*" in target or "<" in target:
+            return f"{mut} std::ffi::c_void"
+        mirror(target)
+        if target in CTX["handles"] or target in hand_types() or target in VALUES:
+            return f"*mut {target}" if target in CTX["handles"] else f"{mut} {target}"
+        if target in INTEGERS:
+            return f"{mut} {INTEGERS[target]}"
+        return f"{mut} std::ffi::c_void"
+    mirror(bare)
+    if bare in INTEGERS:
+        return WIDENED.get(INTEGERS[bare], INTEGERS[bare])
+    if bare in CTX["enums"]:
+        rust = INTEGERS.get(strip_type(CTX["enums"][bare]), "i32")
+        return WIDENED.get(rust, rust)
+    if bare in VALUES:
+        return bare
+    return None
+
+
+def body_literal(method: dict) -> str | None:
+    """What a handler method's inline body returns: `()` for an empty body,
+    the literal of a lone `return`, otherwise nothing."""
+    body = next((n for n in method.get("inner", ()) if n.get("kind") == "CompoundStmt"), None)
+    if body is None:
+        return None
+    stmts = body.get("inner", [])
+    if not stmts:
+        return "()"
+    if len(stmts) == 1 and stmts[0].get("kind") == "ReturnStmt" and stmts[0].get("inner"):
+        return literal(stmts[0]["inner"][0])
+    return None
+
+
+def handler_of(cpp: str) -> str | None:
+    """The Rust handler type for `cpp` (`ObjectEventHandler` -> `ObjectHandler`),
+    written into `handlers.rs` unless the SDK has it by hand; `None` when the
+    handler cannot be stated with certainty."""
+    rust = re.sub(r"EventHandler$", "Handler", cpp)
+    if rust in hand_types() or cpp in HANDLERS:
+        return rust
+    if cpp in NOT_HANDLERS:
+        return None
+    rec = CTX["records"].get(cpp)
+
+    def give_up(why: str):
+        NOT_HANDLERS[cpp] = why
+        return None
+
+    if not rec:
+        return give_up("not declared where its dispatcher is")
+    if rec.get("bases"):
+        return give_up("has a base class")
+    methods = [m for m in rec.get("inner", ()) if m.get("kind") == "CXXMethodDecl" and m.get("virtual")]
+    if any(m.get("kind") == "CXXDestructorDecl" and m.get("virtual") for m in rec.get("inner", ())):
+        return give_up("has a virtual destructor")
+    names = [m["name"] for m in methods]
+    if len(set(names)) != len(names):
+        return give_up("overloads a method, which MSVC reorders")
+    entries = []
+    for m in methods:
+        params = [q for q in m.get("inner", ()) if q.get("kind") == "ParmVarDecl"]
+        args = [callback_arg(q["type"]["qualType"]) for q in params]
+        if None in args:
+            return give_up(f"`{m['name']}` takes a value the SDK does not mirror")
+        ret_cpp = strip_type(m["type"]["qualType"].partition("(")[0])
+        if ret_cpp == "void":
+            ret = None
+        elif ret_cpp in INTEGERS:
+            ret = INTEGERS[ret_cpp]
+        else:
+            return give_up(f"`{m['name']}` returns `{ret_cpp}`")
+        default = body_literal(m)
+        if default is None or (ret is None) != (default == "()"):
+            return give_up(f"`{m['name']}` has a body that is not a plain literal")
+        if ret in ("f32", "f64") and not re.search(r"[.eE]", default):
+            default += ".0"
+        shown = ", ".join(q["type"]["qualType"] for q in params)
+        entries.append((f"{ret_cpp} {m['name']}({shown})", snake(m["name"]), args, ret, default))
+    if not entries:
+        return give_up("declares no methods")
+    declared_in = CTX["header"]
+    for path in sorted((CTX["sdk"] / "include").rglob("*.hpp")):
+        if re.search(rf"^struct {cpp}\b", path.read_text(errors="replace"), re.M):
+            declared_in = str(path.relative_to(CTX["sdk"] / "include"))
+            break
+    HANDLERS[cpp] = {"rust": rust, "header": declared_in, "entries": entries}
+    return rust
+
+
+def render_handlers() -> str:
+    out = [
+        "//! Event handlers of the groups the SDK does not write by hand — generated",
+        "//! by `scripts/omp-wrappers.py` from the open.mp headers. Do not edit.",
+        "//!",
+        "//! Each handler's vtable follows its C++ declaration order, which is the",
+        "//! slot order on both ABIs: none of these declares a destructor or an",
+        "//! overload. `DEFAULT` does what each C++ body does. Narrow integer",
+        "//! arguments arrive as a whole word; the value is its low bits.",
+        "",
+        "#![allow(unused_imports)]",
+        "",
+        "use crate::omp::dispatch::event_handler;",
+        "use crate::omp::types::{Colour, GTAQuat, Hours, Milliseconds, Minutes, Seconds, StringView, Vector2, Vector3, Vector4};",
+        "use crate::omp::*;",
+        "",
+    ]
+    for cpp in sorted(HANDLERS):
+        info = HANDLERS[cpp]
+        out += ["event_handler! {", f"    /// `{cpp}` in `{info['header']}`.", f"    {info['rust']}VTable for {info['rust']} {{"]
+        for signature, field, args, ret, default in info["entries"]:
+            tail = f" -> {ret}" if ret else ""
+            out.append(f"        /// `{signature}`.")
+            out.append(f"        {field}: fn({', '.join(args)}){tail} = {default},")
+        out += ["    }", "}", ""]
+    if NOT_HANDLERS:
+        out += ["// What the generator did not write, and why."]
+        out += [f"// skipped: `{n}` — {why}" for n, why in sorted(NOT_HANDLERS.items())]
+        out.append("")
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
 
@@ -675,7 +829,7 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
     overloads = entry.get("overloads", {})
 
     records, enums = index_ast(ast_of(header, includes))
-    CTX.update(records=records, enums=enums, header=header, sdk=sdk, includes=includes, msvc_includes=msvc_includes)
+    CTX.update(records=records, enums=enums, header=header, sdk=sdk, handles=handles, includes=includes, msvc_includes=msvc_includes)
     chain = [c for c in primary_chain(records, leaf) if c not in NOT_OURS]
     itanium, msvc = slot_tables(header, leaf, includes, msvc_includes)
 
@@ -722,8 +876,6 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
                     raise Skip("clang reported no slot")
                 params = [(param_name(n, arg), param_type(t, enums, handles)) for n, t in m["params"]]
                 ret, how, neutral = return_kind(m["ret"], enums, handles, chain)
-                if how == "small" and params:
-                    raise Skip("returns a small struct and takes arguments")
             except Skip as why:
                 notes.append(f"// skipped: `{signature}` — {why}")
                 continue
@@ -739,13 +891,16 @@ def generate(entry: dict, sdk, includes, msvc_includes, taken: set, handles: set
             if how == "small":
                 body_ret = "Option<String>" if ret == "StringView" else f"Option<{ret}>"
                 empty = "StringView::EMPTY" if ret == "StringView" else default_of(ret)
-                call = (f"call_vtable_small_struct!({arg}.cast::<u8>(), 0, {const}, {ret}, {empty})")
+                types = ", ".join(t for _, t in params)
+                names = ", ".join(n for n, _ in params)
+                extra = f", ({types}) ({names})" if params else ""
+                call = (f"call_vtable_small_struct!({arg}.cast::<u8>(), 0, {const}, {ret}, {empty}{extra})")
                 # The macro carries its own `unsafe` blocks; only the copy out of
                 # the server's memory needs one here.
                 body = (f"    let view = {call}?;\n    unsafe {{ view.to_owned_string() }}"
                         if ret == "StringView" else f"    {call}")
                 fns.append(("plain", "\n".join(d[4:] for d in doc)
-                            + f"\n#[must_use]\npub unsafe fn {name}({arg}: *mut {handle}) -> {body_ret} {{\n{body}\n}}"))
+                            + f"\n#[must_use]\npub unsafe fn {name}({', '.join([f'{arg}: *mut {handle}', *(f'{n}: {t}' for n, t in params)])}) -> {body_ret} {{\n{body}\n}}"))
             else:
                 tail = (f" -> {ret}" if ret else "") + f" = [0, {const}]" + (f" or {neutral}" if ret else "") + ";"
                 line = wrap_params(f"pub fn {name}", [f"{arg}: {handle}", *(f"{n}: {t}" for n, t in params)], tail)
@@ -874,6 +1029,16 @@ def main() -> int:
                 OUT.mkdir(exist_ok=True)
                 path.write_text(text)
                 print(f"wrote {path.relative_to(REPO)}")
+        handlers = rustfmt(render_handlers())
+        path = OUT / "handlers.rs"
+        if not args.only:
+            modules.append("handlers")
+            if args.check:
+                if not path.exists() or path.read_text() != handlers:
+                    stale.append(path.name)
+            else:
+                path.write_text(handlers)
+                print(f"wrote {path.relative_to(REPO)}")
         structs = rustfmt(render_structs())
         path = OUT / "structs.rs"
         if not args.only:
@@ -892,7 +1057,7 @@ def main() -> int:
         "",
         # A module whose every method was skipped still exists, for its list of
         # what was left out; there is nothing in it to re-export.
-        *(f"pub use {m}::*;" for m in modules if re.search(r"^(pub |impl |opaque!|virtual_fns!)",
+        *(f"pub use {m}::*;" for m in modules if re.search(r"^(pub |impl |opaque!|virtual_fns!|event_handler!)",
                                                           (OUT / f"{m}.rs").read_text(), re.M)),
         "",
     ]))

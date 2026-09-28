@@ -26,7 +26,22 @@ impl ComponentInterface for IConsoleComponent {
     const UID: UID = CONSOLE_COMPONENT_UID;
 }
 
+slots! {
+    /// `IEventDispatcher<ConsoleEventHandler> & IConsoleComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+}
+
+virtual_fns! {
+    /// `IEventDispatcher<ConsoleEventHandler> & IConsoleComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IConsoleComponent`.
+    #[must_use]
+    pub fn console_event_dispatcher(
+        component: IConsoleComponent,
+    ) -> *mut EventDispatcher<ConsoleHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<ConsoleEventHandler> & IConsoleComponent::getEventDispatcher()` — returns `IEventDispatcher<ConsoleEventHandler> &`, which the SDK does not mirror
 // skipped: `void IConsoleComponent::send(StringView, const ConsoleCommandSenderData &)` — takes `const ConsoleCommandSenderData &`, which the SDK does not mirror
 // skipped: `void IConsoleComponent::sendMessage(const ConsoleCommandSenderData &, StringView)` — takes `const ConsoleCommandSenderData &`, which the SDK does not mirror

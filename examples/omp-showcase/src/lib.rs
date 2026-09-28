@@ -20,11 +20,10 @@ use samp::plugin::omp_query;
 use samp::prelude::*;
 use samp::{initialize_plugin, omp};
 
+mod events;
 mod report;
-// Generated for every handle with a set/get pair. Two have no way in yet — a
-// player text label is created by an overloaded `create`, left to hand-written
-// code, and the custom-models data has no generated accessor — so their round
-// trips exist unused.
+// Generated for every handle with a set/get pair. The custom-models data has
+// no generated accessor yet, so its round trips exist unused.
 #[allow(clippy::all, clippy::pedantic, dead_code)]
 mod round_trips;
 
@@ -48,6 +47,8 @@ struct Showcase {
     npc: Option<Npc>,
     started: Option<std::time::Instant>,
     driven: bool,
+    /// When the NPC was destroyed: the server releases it on a later tick.
+    destroyed: Option<std::time::Instant>,
     finished: bool,
 }
 
@@ -61,6 +62,18 @@ impl SampPlugin for Showcase {
 
     fn on_tick(&mut self, _ctx: samp::plugin::TickContext) {
         if self.finished {
+            return;
+        }
+        if let Some(at) = self.destroyed {
+            if at.elapsed() >= std::time::Duration::from_millis(500) {
+                let count = events::NPC_DESTROYED.load(std::sync::atomic::Ordering::Acquire);
+                self.report.check(
+                    "event on_npc_destroy [2] (released on a later tick)",
+                    count == 1,
+                    count,
+                );
+                self.finish();
+            }
             return;
         }
         let elapsed = self
@@ -103,9 +116,38 @@ impl SampPlugin for Showcase {
         }
         // A connected NPC keeps the server from shutting down cleanly, and
         // destroying it is one more wrapper exercised.
+        use std::sync::atomic::Ordering::Acquire;
+        self.report.begin("npc_kill");
+        unsafe { omp::npc_kill(npc.npc, std::ptr::null_mut(), 4) };
         self.report.begin("npcs_destroy");
         unsafe { omp::npcs_destroy(npc.component, npc.npc) };
-        self.finish();
+
+        let r = &mut self.report;
+        r.check(
+            "event on_npc_create [1]",
+            events::NPC_CREATED.load(Acquire) == 1,
+            events::NPC_CREATED.load(Acquire),
+        );
+        r.check(
+            "event on_npc_spawn [3]",
+            events::NPC_SPAWNED.load(Acquire) >= 1,
+            events::NPC_SPAWNED.load(Acquire),
+        );
+        r.check(
+            "event on_npc_death [8]",
+            events::NPC_DIED.load(Acquire) == 1
+                && events::NPC_DEATH_REASON.load(Acquire) & 0xff == 4,
+            (
+                events::NPC_DIED.load(Acquire),
+                events::NPC_DEATH_REASON.load(Acquire),
+            ),
+        );
+        r.check(
+            "event on_moved [0]",
+            events::OBJECT_MOVED.load(Acquire) >= 1,
+            events::OBJECT_MOVED.load(Acquire),
+        );
+        self.destroyed = Some(std::time::Instant::now());
     }
 }
 
@@ -300,6 +342,20 @@ unsafe fn structs(npc: *mut omp::INPC, report: &mut Report) {
             };
             unsafe { omp::object_move(object, &target) };
             let moving = unsafe { omp::object_moving_data(object) };
+            // A short, fast move of a second object: it arrives within a tick
+            // or two, and `onMoved` reports it.
+            let quick = unsafe { omp::create_object(c.as_ptr(), 1337, at, Vector3::ZERO, 0.0) };
+            if !quick.is_null() {
+                let near = omp::ObjectMoveData {
+                    target_pos: Vector3 {
+                        x: at.x + 1.0,
+                        ..at
+                    },
+                    target_rot: Vector3::ZERO,
+                    speed: 50.0,
+                };
+                unsafe { omp::object_move(quick, &near) };
+            }
             report.check(
                 "object_moving_data",
                 !moving.is_null() && unsafe { (*moving).target_pos } == target.target_pos,
@@ -340,6 +396,10 @@ unsafe fn structs(npc: *mut omp::INPC, report: &mut Report) {
 }
 
 unsafe fn exercise(report: &mut Report) -> Option<Npc> {
+    let (npc_handler, object_handler) = unsafe { events::register() };
+    report.check("add_event_handler (NPC)", npc_handler, "refused");
+    report.check("add_event_handler (object)", object_handler, "refused");
+
     let at = Vector3 {
         x: 1.0,
         y: 2.0,
@@ -348,6 +408,21 @@ unsafe fn exercise(report: &mut Report) -> Option<Npc> {
 
     if let Some(core) = samp::plugin::omp_core() {
         unsafe { round_trips::round_trips_core(core, report) };
+        // A small struct returned through the hidden pointer, with an
+        // argument after it.
+        let config = unsafe { omp::core_config(core) };
+        let server = unsafe { omp::config_string(config, StringView::of("name")) };
+        report.check(
+            "config_string",
+            server.as_deref().is_some_and(|n| !n.is_empty()),
+            server,
+        );
+        let name = unsafe { omp::core_weapon_name(core, 24) };
+        report.check(
+            "core_weapon_name",
+            name.as_deref() == Some("Desert Eagle"),
+            name,
+        );
     }
 
     if let Some(c) = omp_query::<Component<omp::IObjectsComponent>>() {
@@ -753,6 +828,7 @@ initialize_plugin!(
             npc: None,
             started: None,
             driven: false,
+            destroyed: None,
             finished: false,
         }
     }

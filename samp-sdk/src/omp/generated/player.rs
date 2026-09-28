@@ -53,6 +53,8 @@ slots! {
     SLOT_REMOVE_WEAPON: usize = 30, 29;
     /// `void IPlayer::setWeaponAmmo(WeaponSlotData)`
     SLOT_SET_WEAPON_AMMO: usize = 31, 30;
+    /// `WeaponSlotData IPlayer::getWeaponSlot(int)`
+    SLOT_GET_WEAPON_SLOT: usize = 33, 32;
     /// `void IPlayer::resetWeapons()`
     SLOT_RESET_WEAPONS: usize = 34, 33;
     /// `void IPlayer::setArmedWeapon(uint32_t)`
@@ -1111,6 +1113,22 @@ pub unsafe fn player_serial(player: *mut IPlayer) -> Option<String> {
     unsafe { view.to_owned_string() }
 }
 
+/// `WeaponSlotData IPlayer::getWeaponSlot(int)`.
+///
+/// # Safety
+/// `player` must be a live `IPlayer`.
+#[must_use]
+pub unsafe fn player_weapon_slot(player: *mut IPlayer, slot: i32) -> Option<WeaponSlotData> {
+    call_vtable_small_struct!(
+        player.cast::<u8>(),
+        0,
+        SLOT_GET_WEAPON_SLOT,
+        WeaponSlotData,
+        WeaponSlotData::default(),
+        (i32)(slot)
+    )
+}
+
 /// `StringView IPlayer::getShopName()`.
 ///
 /// # Safety
@@ -1167,7 +1185,6 @@ pub unsafe fn player_animation_data(player: *mut IPlayer) -> Option<PlayerAnimat
 // skipped: `void IPlayer::broadcastSyncPacket(Span<uint8_t>, int)` — takes `Span<uint8_t>`
 // skipped: `StringView IPlayer::getName()` — `player_name` is written by hand
 // skipped: `const WeaponSlots & IPlayer::getWeapons()` — returns `const WeaponSlots &`, which the SDK does not mirror
-// skipped: `WeaponSlotData IPlayer::getWeaponSlot(int)` — returns a small struct and takes arguments
 // skipped: `void IPlayer::setDrunkLevel(int)` — `player_set_drunk_level` is written by hand
 // skipped: `void IPlayer::setControllable(bool)` — `player_set_controllable` is written by hand
 // skipped: `void IPlayer::setWantedLevel(unsigned int)` — `player_set_wanted_level` is written by hand

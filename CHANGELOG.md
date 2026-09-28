@@ -245,7 +245,7 @@ The per-crate sections come first, then the ones belonging to the repository.
 #### Added
 
 - **Wrappers for nearly every open.mp interface, generated from the SDK
-  headers.** 676 functions over 53 interfaces, in `omp::generated` and
+  headers.** 703 functions over 53 interfaces, in `omp::generated` and
   re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
   `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
   checkpoints, text labels, player objects and text draws), every component,
@@ -286,6 +286,22 @@ The per-crate sections come first, then the ones belonging to the repository.
   `object_move`/`object_moving_data`, `class_class`, `player_key_data`,
   `player_aim_data`, `player_give_weapon`, `npc_rotation`, ... A method
   returning a `const T &` hands back a `*const T` into the server's copy.
+- **Events of every component, generated.** `EventDispatcher<H>` with
+  `add_event_handler`, `remove_event_handler`, `event_handler_count` and the
+  `priority` constants, one generic wrapper for the template every component
+  uses; an accessor per component (`objects_event_dispatcher`,
+  `npcs_event_dispatcher`, `dialogs_event_dispatcher`, ...); and 12 handlers
+  generated from the headers — actors, classes, the console, gang zones,
+  menus, NPCs, objects, pickups, checkpoints, dialogs, custom models, text
+  draws — each with `DEFAULT`, a vtable doing what the C++ bodies do, to
+  override with struct update syntax. A narrow integer a handler receives
+  arrives as a whole word, the value in its low bits: the rule return values
+  already follow. The player groups and the vehicles' keep their hand-written
+  handlers.
+- A getter returning a small struct can take arguments: `config_string`,
+  `core_weapon_name`, `player_weapon_slot`, `players_default_colour`, the
+  database rows' `field_string`/`field_name`, the menu's `cell` and
+  `column_header`, the gang zones' colours for a player — 15 in all.
 - The overloads that had no wrapper in any form: `textdraws_create_preview`,
   `textlabels_create_on_player`/`_on_vehicle`,
   `vehicles_create_from_spawn_data`, `npc_start_playback`/`_id` and
@@ -472,8 +488,11 @@ The per-crate sections come first, then the ones belonging to the repository.
   through the new overloads, and one check per mirrored struct in the shape
   it travels in — by value, by `const &`, as a pointer into the server's copy.
   The quaternion's order was proven against an angle the server keeps apart:
-  a vehicle turned 90 degrees reads back with only `w` and `z` set. 121
-  passed, 0 wrong, identically on open.mp Linux and on
+  a vehicle turned 90 degrees reads back with only `w` and `z` set. Generated
+  handlers were registered and fired by the server with no client — an NPC's
+  create [1], destroy [2], spawn [3] and death [8] with its reason, an
+  object's `onMoved` [0] — and `config_string`/`core_weapon_name` read a
+  `StringView` back past an argument. 130 passed, 0 wrong, identically on open.mp Linux and on
   Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
   UB checks) and AddressSanitizer with leak detection on the host target both
@@ -483,9 +502,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
-  1189 slots `check-abi-slots.py --generated` can derive match the official
+  1238 slots `check-abi-slots.py --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
-  159 are declared underivable (the Windows server executable keeps RTTI for
+  164 are declared underivable (the Windows server executable keeps RTTI for
   three classes only, and tail-calling methods have no `ret N` of their own).
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that

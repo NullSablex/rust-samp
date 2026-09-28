@@ -34,4 +34,4 @@ virtual_fns! {
 // What the generator left out, and why.
 // skipped: `StaticArray<uint8_t, MAX_VEHICLE_MODELS> & IVehiclesComponent::models()` — returns `StaticArray<uint8_t, MAX_VEHICLE_MODELS> &`, which the SDK does not mirror
 // skipped: `IVehicle * IVehiclesComponent::create(bool, int, Vector3, float, int, int, Seconds, bool)` — overloaded
-// skipped: `IEventDispatcher<VehicleEventHandler> & IVehiclesComponent::getEventDispatcher()` — returns `IEventDispatcher<VehicleEventHandler> &`, which the SDK does not mirror
+// skipped: `IEventDispatcher<VehicleEventHandler> & IVehiclesComponent::getEventDispatcher()` — `VehicleHandler` and its dispatcher are written by hand

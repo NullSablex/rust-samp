@@ -32,6 +32,8 @@ impl ComponentInterface for INPCComponent {
 }
 
 slots! {
+    /// `IEventDispatcher<NPCEventHandler> & INPCComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 8, 7;
     /// `INPC * INPCComponent::create(StringView)`
     SLOT_CREATE: usize = 9, 8;
     /// `void INPCComponent::destroy(INPC &)`
@@ -87,6 +89,15 @@ slots! {
 }
 
 virtual_fns! {
+    /// `IEventDispatcher<NPCEventHandler> & INPCComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `INPCComponent`.
+    #[must_use]
+    pub fn npcs_event_dispatcher(
+        component: INPCComponent,
+    ) -> *mut EventDispatcher<NPCHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `INPC * INPCComponent::create(StringView)`.
     ///
     /// # Safety
@@ -335,6 +346,3 @@ virtual_fns! {
         navi_nodes: &mut u32,
     ) -> bool = [0, SLOT_GET_NODE_INFO] or false;
 }
-
-// What the generator left out, and why.
-// skipped: `IEventDispatcher<NPCEventHandler> & INPCComponent::getEventDispatcher()` — returns `IEventDispatcher<NPCEventHandler> &`, which the SDK does not mirror

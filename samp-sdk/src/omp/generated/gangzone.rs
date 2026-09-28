@@ -33,6 +33,10 @@ slots! {
     SLOT_SET_POSITION: usize = 13, 12;
     /// `bool IBaseGangZone::isPlayerInside(const IPlayer &)`
     SLOT_IS_PLAYER_INSIDE: usize = 14, 13;
+    /// `const Colour IBaseGangZone::getFlashingColourForPlayer(IPlayer &)`
+    SLOT_GET_FLASHING_COLOUR_FOR_PLAYER: usize = 16, 15;
+    /// `const Colour IBaseGangZone::getColourForPlayer(IPlayer &)`
+    SLOT_GET_COLOUR_FOR_PLAYER: usize = 17, 16;
     /// `void IBaseGangZone::setLegacyPlayer(IPlayer *)`
     SLOT_SET_LEGACY_PLAYER: usize = 18, 17;
     /// `IPlayer * IBaseGangZone::getLegacyPlayer()`
@@ -145,7 +149,29 @@ virtual_fns! {
     ) -> *mut IPlayer = [0, SLOT_GET_LEGACY_PLAYER] or std::ptr::null_mut();
 }
 
+/// `const Colour IBaseGangZone::getFlashingColourForPlayer(IPlayer &)`.
+///
+/// # Safety
+/// `gangzone` must be a live `IGangZone`.
+#[must_use]
+pub unsafe fn gangzone_flashing_colour_for_player(
+    gangzone: *mut IGangZone,
+    player: *mut IPlayer,
+) -> Option<Colour> {
+    call_vtable_small_struct!(gangzone.cast::<u8>(), 0, SLOT_GET_FLASHING_COLOUR_FOR_PLAYER, Colour, Colour::default(), (*mut IPlayer) (player))
+}
+
+/// `const Colour IBaseGangZone::getColourForPlayer(IPlayer &)`.
+///
+/// # Safety
+/// `gangzone` must be a live `IGangZone`.
+#[must_use]
+pub unsafe fn gangzone_colour_for_player(
+    gangzone: *mut IGangZone,
+    player: *mut IPlayer,
+) -> Option<Colour> {
+    call_vtable_small_struct!(gangzone.cast::<u8>(), 0, SLOT_GET_COLOUR_FOR_PLAYER, Colour, Colour::default(), (*mut IPlayer) (player))
+}
+
 // What the generator left out, and why.
 // skipped: `const FlatHashSet<IPlayer *> & IBaseGangZone::getShownFor()` — returns `const FlatHashSet<IPlayer *> &`, which the SDK does not mirror
-// skipped: `const Colour IBaseGangZone::getFlashingColourForPlayer(IPlayer &)` — returns a small struct and takes arguments
-// skipped: `const Colour IBaseGangZone::getColourForPlayer(IPlayer &)` — returns a small struct and takes arguments

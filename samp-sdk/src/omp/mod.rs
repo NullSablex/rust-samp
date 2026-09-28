@@ -17,6 +17,7 @@
 pub mod component;
 pub mod component_api;
 pub mod core;
+pub mod dispatch;
 pub mod events;
 pub mod extensions;
 pub mod generated;
@@ -34,6 +35,7 @@ pub mod world;
 pub use component::*;
 pub use component_api::*;
 pub use core::*;
+pub use dispatch::*;
 pub use events::*;
 pub use extensions::*;
 pub use generated::*;

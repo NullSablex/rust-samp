@@ -37,6 +37,8 @@ slots! {
     SLOT_ALLOW_NICK_NAME_CHARACTER: usize = 32, 31;
     /// `bool IPlayerPool::isNickNameCharacterAllowed(char)`
     SLOT_IS_NICK_NAME_CHARACTER_ALLOWED: usize = 33, 32;
+    /// `Colour IPlayerPool::getDefaultColour(int)`
+    SLOT_GET_DEFAULT_COLOUR: usize = 34, 33;
 }
 
 virtual_fns! {
@@ -152,22 +154,37 @@ virtual_fns! {
     ) -> bool = [0, SLOT_IS_NICK_NAME_CHARACTER_ALLOWED] or false;
 }
 
+/// `Colour IPlayerPool::getDefaultColour(int)`.
+///
+/// # Safety
+/// `pool` must be a live `IPlayerPool`.
+#[must_use]
+pub unsafe fn players_default_colour(pool: *mut IPlayerPool, pid: i32) -> Option<Colour> {
+    call_vtable_small_struct!(
+        pool.cast::<u8>(),
+        0,
+        SLOT_GET_DEFAULT_COLOUR,
+        Colour,
+        Colour::default(),
+        (i32)(pid)
+    )
+}
+
 // What the generator left out, and why.
 // skipped: `const FlatPtrHashSet<IPlayer> & IPlayerPool::entries()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `const FlatPtrHashSet<IPlayer> & IPlayerPool::players()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
 // skipped: `const FlatPtrHashSet<IPlayer> & IPlayerPool::bots()` — returns `const FlatPtrHashSet<IPlayer> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerSpawnEventHandler> & IPlayerPool::getPlayerSpawnDispatcher()` — returns `IEventDispatcher<PlayerSpawnEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerConnectEventHandler> & IPlayerPool::getPlayerConnectDispatcher()` — returns `IEventDispatcher<PlayerConnectEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerStreamEventHandler> & IPlayerPool::getPlayerStreamDispatcher()` — returns `IEventDispatcher<PlayerStreamEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerTextEventHandler> & IPlayerPool::getPlayerTextDispatcher()` — returns `IEventDispatcher<PlayerTextEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerShotEventHandler> & IPlayerPool::getPlayerShotDispatcher()` — returns `IEventDispatcher<PlayerShotEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerChangeEventHandler> & IPlayerPool::getPlayerChangeDispatcher()` — returns `IEventDispatcher<PlayerChangeEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerDamageEventHandler> & IPlayerPool::getPlayerDamageDispatcher()` — returns `IEventDispatcher<PlayerDamageEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerClickEventHandler> & IPlayerPool::getPlayerClickDispatcher()` — returns `IEventDispatcher<PlayerClickEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerCheckEventHandler> & IPlayerPool::getPlayerCheckDispatcher()` — returns `IEventDispatcher<PlayerCheckEventHandler> &`, which the SDK does not mirror
-// skipped: `IEventDispatcher<PlayerUpdateEventHandler> & IPlayerPool::getPlayerUpdateDispatcher()` — returns `IEventDispatcher<PlayerUpdateEventHandler> &`, which the SDK does not mirror
+// skipped: `IEventDispatcher<PlayerSpawnEventHandler> & IPlayerPool::getPlayerSpawnDispatcher()` — `PlayerSpawnHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerConnectEventHandler> & IPlayerPool::getPlayerConnectDispatcher()` — `PlayerConnectHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerStreamEventHandler> & IPlayerPool::getPlayerStreamDispatcher()` — `PlayerStreamHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerTextEventHandler> & IPlayerPool::getPlayerTextDispatcher()` — `PlayerTextHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerShotEventHandler> & IPlayerPool::getPlayerShotDispatcher()` — `PlayerShotHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerChangeEventHandler> & IPlayerPool::getPlayerChangeDispatcher()` — `PlayerChangeHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerDamageEventHandler> & IPlayerPool::getPlayerDamageDispatcher()` — `PlayerDamageHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerClickEventHandler> & IPlayerPool::getPlayerClickDispatcher()` — `PlayerClickHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerCheckEventHandler> & IPlayerPool::getPlayerCheckDispatcher()` — `PlayerCheckHandler` and its dispatcher are written by hand
+// skipped: `IEventDispatcher<PlayerUpdateEventHandler> & IPlayerPool::getPlayerUpdateDispatcher()` — `PlayerUpdateHandler` and its dispatcher are written by hand
 // skipped: `IEventDispatcher<PoolEventHandler<IPlayer>> & IPlayerPool::getPoolEventDispatcher()` — returns `IEventDispatcher<PoolEventHandler<IPlayer>> &`, which the SDK does not mirror
 // skipped: `Pair<NewConnectionResult, IPlayer *> IPlayerPool::requestPlayer(const PeerNetworkData &, const PeerRequestParams &)` — takes `const PeerNetworkData &`, which the SDK does not mirror
 // skipped: `void IPlayerPool::broadcastPacket(Span<uint8_t>, int, const IPlayer *, bool)` — takes `Span<uint8_t>`
 // skipped: `void IPlayerPool::broadcastRPC(int, Span<uint8_t>, int, const IPlayer *, bool)` — takes `Span<uint8_t>`
-// skipped: `Colour IPlayerPool::getDefaultColour(int)` — returns a small struct and takes arguments

@@ -35,6 +35,10 @@ slots! {
     SLOT_GET_COLUMN_COUNT: usize = 14, 13;
     /// `Vector2 IMenu::getColumnWidths()`
     SLOT_GET_COLUMN_WIDTHS: usize = 15, 14;
+    /// `const StringView IMenu::getColumnHeader(MenuColumn)`
+    SLOT_GET_COLUMN_HEADER: usize = 16, 15;
+    /// `const StringView IMenu::getCell(MenuColumn, MenuRow)`
+    SLOT_GET_CELL: usize = 17, 16;
     /// `void IMenu::initForPlayer(IPlayer &)`
     SLOT_INIT_FOR_PLAYER: usize = 18, 17;
     /// `void IMenu::showForPlayer(IPlayer &)`
@@ -148,6 +152,36 @@ pub unsafe fn menu_column_widths(menu: *mut IMenu) -> Option<Vector2> {
     )
 }
 
-// What the generator left out, and why.
-// skipped: `const StringView IMenu::getColumnHeader(MenuColumn)` — returns a small struct and takes arguments
-// skipped: `const StringView IMenu::getCell(MenuColumn, MenuRow)` — returns a small struct and takes arguments
+/// `const StringView IMenu::getColumnHeader(MenuColumn)`.
+///
+/// # Safety
+/// `menu` must be a live `IMenu`.
+#[must_use]
+pub unsafe fn menu_column_header(menu: *mut IMenu, column: u8) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        menu.cast::<u8>(),
+        0,
+        SLOT_GET_COLUMN_HEADER,
+        StringView,
+        StringView::EMPTY,
+        (u8)(column)
+    )?;
+    unsafe { view.to_owned_string() }
+}
+
+/// `const StringView IMenu::getCell(MenuColumn, MenuRow)`.
+///
+/// # Safety
+/// `menu` must be a live `IMenu`.
+#[must_use]
+pub unsafe fn menu_cell(menu: *mut IMenu, column: u8, row: u8) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        menu.cast::<u8>(),
+        0,
+        SLOT_GET_CELL,
+        StringView,
+        StringView::EMPTY,
+        (u8, u8)(column, row)
+    )?;
+    unsafe { view.to_owned_string() }
+}

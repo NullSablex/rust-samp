@@ -31,6 +31,10 @@ slots! {
     SLOT_ADD_CUSTOM_MODEL: usize = 18, 16;
     /// `bool ICustomModelsComponent::getBaseModel(uint32_t &, uint32_t &)`
     SLOT_GET_BASE_MODEL: usize = 19, 17;
+    /// `IEventDispatcher<PlayerModelsEventHandler> & ICustomModelsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 20, 18;
+    /// `StringView ICustomModelsComponent::getModelNameFromChecksum(uint32_t)`
+    SLOT_GET_MODEL_NAME_FROM_CHECKSUM: usize = 21, 19;
     /// `bool ICustomModelsComponent::isValidCustomModel(int32_t)`
     SLOT_IS_VALID_CUSTOM_MODEL: usize = 22, 20;
     /// `bool ICustomModelsComponent::getCustomModelPath(int32_t, StringView &, StringView &)`
@@ -66,6 +70,15 @@ virtual_fns! {
         custom_model: &mut u32,
     ) -> bool = [0, SLOT_GET_BASE_MODEL] or false;
 
+    /// `IEventDispatcher<PlayerModelsEventHandler> & ICustomModelsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ICustomModelsComponent`.
+    #[must_use]
+    pub fn custom_models_event_dispatcher(
+        component: ICustomModelsComponent,
+    ) -> *mut EventDispatcher<PlayerModelsHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `bool ICustomModelsComponent::isValidCustomModel(int32_t)`.
     ///
     /// # Safety
@@ -89,6 +102,22 @@ virtual_fns! {
     ) -> bool = [0, SLOT_GET_CUSTOM_MODEL_PATH] or false;
 }
 
-// What the generator left out, and why.
-// skipped: `IEventDispatcher<PlayerModelsEventHandler> & ICustomModelsComponent::getEventDispatcher()` — returns `IEventDispatcher<PlayerModelsEventHandler> &`, which the SDK does not mirror
-// skipped: `StringView ICustomModelsComponent::getModelNameFromChecksum(uint32_t)` — returns a small struct and takes arguments
+/// `StringView ICustomModelsComponent::getModelNameFromChecksum(uint32_t)`.
+///
+/// # Safety
+/// `component` must be a live `ICustomModelsComponent`.
+#[must_use]
+pub unsafe fn custom_models_model_name_from_checksum(
+    component: *mut ICustomModelsComponent,
+    checksum: u32,
+) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        component.cast::<u8>(),
+        0,
+        SLOT_GET_MODEL_NAME_FROM_CHECKSUM,
+        StringView,
+        StringView::EMPTY,
+        (u32)(checksum)
+    )?;
+    unsafe { view.to_owned_string() }
+}

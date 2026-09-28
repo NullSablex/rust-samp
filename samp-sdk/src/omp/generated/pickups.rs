@@ -15,6 +15,8 @@ use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `IEventDispatcher<PickupEventHandler> & IPickupsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
     /// `int IPickupsComponent::toLegacyID(int)`
     SLOT_TO_LEGACY_ID: usize = 20, 18;
     /// `int IPickupsComponent::fromLegacyID(int)`
@@ -28,6 +30,15 @@ slots! {
 }
 
 virtual_fns! {
+    /// `IEventDispatcher<PickupEventHandler> & IPickupsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IPickupsComponent`.
+    #[must_use]
+    pub fn pickups_event_dispatcher(
+        component: IPickupsComponent,
+    ) -> *mut EventDispatcher<PickupHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `int IPickupsComponent::toLegacyID(int)`.
     ///
     /// # Safety
@@ -78,5 +89,4 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<PickupEventHandler> & IPickupsComponent::getEventDispatcher()` — returns `IEventDispatcher<PickupEventHandler> &`, which the SDK does not mirror
 // skipped: `IPickup * IPickupsComponent::create(int, PickupType, Vector3, uint32_t, bool)` — covered by a hand-written wrapper under another name

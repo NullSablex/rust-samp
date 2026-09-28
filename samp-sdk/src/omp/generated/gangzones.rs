@@ -15,6 +15,8 @@ use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `IEventDispatcher<GangZoneEventHandler> & IGangZonesComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
     /// `void IGangZonesComponent::useGangZoneCheck(IGangZone &, bool)`
     SLOT_USE_GANG_ZONE_CHECK: usize = 21, 19;
     /// `int IGangZonesComponent::toLegacyID(int)`
@@ -30,6 +32,15 @@ slots! {
 }
 
 virtual_fns! {
+    /// `IEventDispatcher<GangZoneEventHandler> & IGangZonesComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IGangZonesComponent`.
+    #[must_use]
+    pub fn gangzones_event_dispatcher(
+        component: IGangZonesComponent,
+    ) -> *mut EventDispatcher<GangZoneHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `void IGangZonesComponent::useGangZoneCheck(IGangZone &, bool)`.
     ///
     /// # Safety
@@ -90,6 +101,5 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<GangZoneEventHandler> & IGangZonesComponent::getEventDispatcher()` — returns `IEventDispatcher<GangZoneEventHandler> &`, which the SDK does not mirror
 // skipped: `IGangZone * IGangZonesComponent::create(GangZonePos)` — covered by a hand-written wrapper under another name
 // skipped: `const FlatHashSet<IGangZone *> & IGangZonesComponent::getCheckingGangZones()` — returns `const FlatHashSet<IGangZone *> &`, which the SDK does not mirror

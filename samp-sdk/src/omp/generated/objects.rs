@@ -15,6 +15,8 @@ use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
 slots! {
+    /// `IEventDispatcher<ObjectEventHandler> & IObjectsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
     /// `void IObjectsComponent::setDefaultCameraCollision(bool)`
     SLOT_SET_DEFAULT_CAMERA_COLLISION: usize = 19, 17;
     /// `bool IObjectsComponent::getDefaultCameraCollision()`
@@ -22,6 +24,15 @@ slots! {
 }
 
 virtual_fns! {
+    /// `IEventDispatcher<ObjectEventHandler> & IObjectsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IObjectsComponent`.
+    #[must_use]
+    pub fn objects_event_dispatcher(
+        component: IObjectsComponent,
+    ) -> *mut EventDispatcher<ObjectHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+
     /// `void IObjectsComponent::setDefaultCameraCollision(bool)`.
     ///
     /// # Safety
@@ -42,5 +53,4 @@ virtual_fns! {
 }
 
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<ObjectEventHandler> & IObjectsComponent::getEventDispatcher()` — returns `IEventDispatcher<ObjectEventHandler> &`, which the SDK does not mirror
 // skipped: `IObject * IObjectsComponent::create(int, Vector3, Vector3, float)` — covered by a hand-written wrapper under another name

@@ -26,5 +26,18 @@ impl ComponentInterface for ICheckpointsComponent {
     const UID: UID = CHECKPOINTS_COMPONENT_UID;
 }
 
-// What the generator left out, and why.
-// skipped: `IEventDispatcher<PlayerCheckpointEventHandler> & ICheckpointsComponent::getEventDispatcher()` — returns `IEventDispatcher<PlayerCheckpointEventHandler> &`, which the SDK does not mirror
+slots! {
+    /// `IEventDispatcher<PlayerCheckpointEventHandler> & ICheckpointsComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+}
+
+virtual_fns! {
+    /// `IEventDispatcher<PlayerCheckpointEventHandler> & ICheckpointsComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `ICheckpointsComponent`.
+    #[must_use]
+    pub fn checkpoints_event_dispatcher(
+        component: ICheckpointsComponent,
+    ) -> *mut EventDispatcher<PlayerCheckpointHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+}

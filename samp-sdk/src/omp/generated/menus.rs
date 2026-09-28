@@ -14,6 +14,21 @@ use crate::omp::types::{
 use crate::omp::vtable::{call_vtable_small_struct, opaque, slots, virtual_fns};
 use crate::omp::*;
 
+slots! {
+    /// `IEventDispatcher<MenuEventHandler> & IMenusComponent::getEventDispatcher()`
+    SLOT_GET_EVENT_DISPATCHER: usize = 18, 16;
+}
+
+virtual_fns! {
+    /// `IEventDispatcher<MenuEventHandler> & IMenusComponent::getEventDispatcher()`.
+    ///
+    /// # Safety
+    /// `component` must be a live `IMenusComponent`.
+    #[must_use]
+    pub fn menus_event_dispatcher(
+        component: IMenusComponent,
+    ) -> *mut EventDispatcher<MenuHandler> = [0, SLOT_GET_EVENT_DISPATCHER] or std::ptr::null_mut();
+}
+
 // What the generator left out, and why.
-// skipped: `IEventDispatcher<MenuEventHandler> & IMenusComponent::getEventDispatcher()` — returns `IEventDispatcher<MenuEventHandler> &`, which the SDK does not mirror
 // skipped: `IMenu * IMenusComponent::create(StringView, Vector2, uint8_t, float, float)` — covered by a hand-written wrapper under another name

@@ -24,10 +24,16 @@ slots! {
     SLOT_GET_FIELD_COUNT: usize = 0, 0;
     /// `bool IDatabaseResultSetRow::isFieldNameAvailable(StringView)`
     SLOT_IS_FIELD_NAME_AVAILABLE: usize = 1, 1;
+    /// `StringView IDatabaseResultSetRow::getFieldName(std::size_t)`
+    SLOT_GET_FIELD_NAME: usize = 2, 2;
+    /// `StringView IDatabaseResultSetRow::getFieldString(std::size_t)`
+    SLOT_GET_FIELD_STRING: usize = 3, 3;
     /// `long IDatabaseResultSetRow::getFieldInt(std::size_t)`
     SLOT_GET_FIELD_INT: usize = 4, 4;
     /// `double IDatabaseResultSetRow::getFieldFloat(std::size_t)`
     SLOT_GET_FIELD_FLOAT: usize = 5, 5;
+    /// `StringView IDatabaseResultSetRow::getFieldStringByName(StringView)`
+    SLOT_GET_FIELD_STRING_BY_NAME: usize = 6, 6;
     /// `long IDatabaseResultSetRow::getFieldIntByName(StringView)`
     SLOT_GET_FIELD_INT_BY_NAME: usize = 7, 7;
     /// `double IDatabaseResultSetRow::getFieldFloatByName(StringView)`
@@ -93,7 +99,62 @@ virtual_fns! {
     ) -> f64 = [0, SLOT_GET_FIELD_FLOAT_BY_NAME] or 0.0;
 }
 
-// What the generator left out, and why.
-// skipped: `StringView IDatabaseResultSetRow::getFieldName(std::size_t)` — returns a small struct and takes arguments
-// skipped: `StringView IDatabaseResultSetRow::getFieldString(std::size_t)` — returns a small struct and takes arguments
-// skipped: `StringView IDatabaseResultSetRow::getFieldStringByName(StringView)` — returns a small struct and takes arguments
+/// `StringView IDatabaseResultSetRow::getFieldName(std::size_t)`.
+///
+/// # Safety
+/// `row` must be a live `IDatabaseResultSetRow`.
+#[must_use]
+pub unsafe fn db_row_field_name(
+    row: *mut IDatabaseResultSetRow,
+    field_index: usize,
+) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        row.cast::<u8>(),
+        0,
+        SLOT_GET_FIELD_NAME,
+        StringView,
+        StringView::EMPTY,
+        (usize)(field_index)
+    )?;
+    unsafe { view.to_owned_string() }
+}
+
+/// `StringView IDatabaseResultSetRow::getFieldString(std::size_t)`.
+///
+/// # Safety
+/// `row` must be a live `IDatabaseResultSetRow`.
+#[must_use]
+pub unsafe fn db_row_field_string(
+    row: *mut IDatabaseResultSetRow,
+    field_index: usize,
+) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        row.cast::<u8>(),
+        0,
+        SLOT_GET_FIELD_STRING,
+        StringView,
+        StringView::EMPTY,
+        (usize)(field_index)
+    )?;
+    unsafe { view.to_owned_string() }
+}
+
+/// `StringView IDatabaseResultSetRow::getFieldStringByName(StringView)`.
+///
+/// # Safety
+/// `row` must be a live `IDatabaseResultSetRow`.
+#[must_use]
+pub unsafe fn db_row_field_string_by_name(
+    row: *mut IDatabaseResultSetRow,
+    field_name: StringView,
+) -> Option<String> {
+    let view = call_vtable_small_struct!(
+        row.cast::<u8>(),
+        0,
+        SLOT_GET_FIELD_STRING_BY_NAME,
+        StringView,
+        StringView::EMPTY,
+        (StringView)(field_name)
+    )?;
+    unsafe { view.to_owned_string() }
+}

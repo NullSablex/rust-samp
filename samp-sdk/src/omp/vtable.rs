@@ -289,21 +289,25 @@ pub(crate) use call_vtable;
 /// pointer on both ABIs, which plain [`call_vtable!`] already handles by
 /// declaring the return type.
 macro_rules! call_vtable_small_struct {
-    ($ptr:expr, $offset:expr, $slot:expr, $ret:ty, $empty:expr) => {{
+    ($ptr:expr, $offset:expr, $slot:expr, $ret:ty, $empty:expr) => {
+        $crate::omp::vtable::call_vtable_small_struct!($ptr, $offset, $slot, $ret, $empty, () ())
+    };
+    // With arguments: under MSVC the hidden pointer comes first, before them.
+    ($ptr:expr, $offset:expr, $slot:expr, $ret:ty, $empty:expr, ($($arg_ty:ty),*) ($($arg:expr),*)) => {{
         #[cfg(not(target_env = "msvc"))]
-        type VirtualFn = unsafe extern "C" fn(*mut u8) -> $ret;
+        type VirtualFn = unsafe extern "C" fn(*mut u8 $(, $arg_ty)*) -> $ret;
         #[cfg(target_env = "msvc")]
-        type VirtualFn = unsafe extern "thiscall" fn(*mut u8, *mut $ret) -> *mut $ret;
+        type VirtualFn = unsafe extern "thiscall" fn(*mut u8, *mut $ret $(, $arg_ty)*) -> *mut $ret;
 
         match unsafe { $crate::omp::vtable::secondary_call_target_ptr($ptr, $offset, $slot) } {
             Some((this, f_ptr)) => {
                 let call: VirtualFn = unsafe { std::mem::transmute(f_ptr) };
                 #[cfg(not(target_env = "msvc"))]
-                let value = unsafe { call(this) };
+                let value = unsafe { call(this $(, $arg)*) };
                 #[cfg(target_env = "msvc")]
                 let value = {
                     let mut out: $ret = $empty;
-                    unsafe { call(this, &raw mut out) };
+                    unsafe { call(this, &raw mut out $(, $arg)*) };
                     out
                 };
                 Some(value)

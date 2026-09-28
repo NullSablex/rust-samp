@@ -59,6 +59,42 @@ All eleven groups are available: connect, spawn, stream, text, shot, change,
 damage, click, check, update, and the pool's own. `examples/counter` registers
 several of them.
 
+## Component events
+
+Every other component — objects, NPCs, pickups, actors, classes, dialogs,
+menus, text draws, gang zones, checkpoints, the console, custom models —
+hands out its events the same way, and those handlers are generated from the
+headers. Each vtable comes with `DEFAULT`, whose entries do what the C++
+handler's own bodies do, so a plugin writes only the events it wants:
+
+```rust
+use samp::omp::{Component, ObjectHandler, ObjectHandlerVTable, IObjectsComponent};
+
+handler!(fn on_moved(_h: *mut ObjectHandler, object: *mut samp::omp::IObject) {
+    // the object reached the end of its move
+});
+
+static VTABLE: ObjectHandlerVTable = ObjectHandlerVTable {
+    on_moved,
+    ..ObjectHandlerVTable::DEFAULT
+};
+
+fn on_omp_ready(&mut self) {
+    let Some(objects) = samp::plugin::omp_query::<Component<IObjectsComponent>>() else { return };
+    let handler = Box::leak(Box::new(ObjectHandler::new(&raw const VTABLE)));
+    unsafe {
+        let dispatcher = samp::omp::objects_event_dispatcher(objects.as_ptr());
+        samp::omp::add_event_handler(dispatcher, handler, samp::omp::priority::DEFAULT);
+    }
+}
+```
+
+`add_event_handler`, `remove_event_handler` and `event_handler_count` take any
+`EventDispatcher<H>`. A narrow integer a handler receives (`bool`, `uint8_t`,
+`int16_t`, ...) arrives as a whole word: C++ callers need not extend it, so
+the value is its low bits. The core's own `onTick` handler is not generated —
+it takes a `std::chrono::microseconds` — and `process_tick` covers that need.
+
 ## Players
 
 Given the `IPlayer*` a handler receives, or one looked up by id:
