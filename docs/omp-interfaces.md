@@ -173,8 +173,9 @@ Three things stand behind every generated function:
   built from.
 - **Every slot is checked against the official binaries** by
   `cargo xtask check-abi --generated`: by method name on Linux, whose
-  libraries keep their symbols, and by the argument bytes each method pops on
-  Windows (`ret N` under `thiscall`).
+  libraries keep their symbols, and on Windows by name too, through the `.pdb`
+  the official server ships beside each binary — plus the argument bytes each
+  method pops (`ret N` under `thiscall`).
 - **`examples/omp-showcase` round-trips every setter that has a getter** on a
   running server — set a value, read it back, restore it. It is run on open.mp
   Linux and Windows before a release.

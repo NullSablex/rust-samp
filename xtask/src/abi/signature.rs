@@ -34,8 +34,13 @@ pub fn method_name(signature: &str) -> &str {
     head.rsplit("::").next().unwrap_or(head)
 }
 
+/// A type as written, without `const` and without the `class`/`struct`/
+/// `enum`/`union` keywords MSVC's demangler writes.
 fn unqualified(text: &str) -> String {
-    text.replace("const", "").trim().to_owned()
+    text.split_whitespace()
+        .filter(|word| !matches!(*word, "const" | "class" | "struct" | "enum" | "union"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The bytes a `thiscall` callee pops, per by-value argument type, beyond
@@ -176,6 +181,18 @@ mod tests {
             16
         );
         assert_eq!(bytes.of("Pair<int, int> IVehicle::getColour()"), 4);
+    }
+
+    #[test]
+    fn msvc_names_compare_like_itanium_ones() {
+        assert!(same_params(
+            "void X::beginEditing(IObject &)",
+            "public: virtual void __thiscall PlayerObjectData::beginEditing(class IObject &)"
+        ));
+        assert!(!same_params(
+            "void X::beginEditing(IObject &)",
+            "public: virtual void __thiscall PlayerObjectData::beginEditing(class IPlayerObject &)"
+        ));
     }
 
     #[test]

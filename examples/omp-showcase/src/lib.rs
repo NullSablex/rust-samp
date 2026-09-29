@@ -174,6 +174,11 @@ impl SampPlugin for Showcase {
             ),
         );
         r.check(
+            "timer fired three times (create_counted)",
+            events::TIMER_FIRES.load(Acquire) == 3,
+            events::TIMER_FIRES.load(Acquire),
+        );
+        r.check(
             "event on_moved [0]",
             events::OBJECT_MOVED.load(Acquire) >= 1,
             events::OBJECT_MOVED.load(Acquire),
@@ -232,6 +237,45 @@ impl Showcase {
 /// # Safety
 /// Called once the server has every component ready.
 #[allow(clippy::too_many_lines)]
+/// A counted timer: the component found through its `ComponentInterface`,
+/// the four-argument `create`, and what the timer reports about itself. That
+/// it fires exactly three times is checked when the run ends.
+unsafe fn timers(report: &mut Report) {
+    let Some((timer, handler)) = (unsafe { events::counted_timer() }) else {
+        report.check("timers_create_counted", false, "no timer");
+        return;
+    };
+    unsafe {
+        report.check("timer_running", omp::timer_running(timer), "stopped");
+        report.check(
+            "timer_calls",
+            omp::timer_calls(timer) == 3,
+            omp::timer_calls(timer),
+        );
+        let interval = omp::timer_interval(timer);
+        report.check(
+            "timer_interval",
+            interval == Some(omp::Milliseconds(100)),
+            interval,
+        );
+        let remaining = omp::timer_remaining(timer);
+        report.check(
+            "timer_remaining",
+            remaining.is_some_and(|r| (0..=100).contains(&r.0)),
+            remaining,
+        );
+        report.check(
+            "timer_handler",
+            omp::timer_handler(timer) == handler,
+            "another handler",
+        );
+        let component = omp_query::<Component<omp::ITimersComponent>>().map(|c| c.as_ptr());
+        let count = component.map_or(0, |c| omp::timers_count(c));
+        // The SDK's own tick timer, and this one.
+        report.check("timers_count", count >= 2, count);
+    }
+}
+
 /// The config: raw pointers back, a `Span` filled, a callback object called,
 /// and a `BanEntry` — `HybridString`s inside — by reference.
 unsafe fn config(report: &mut Report) {
@@ -507,6 +551,7 @@ unsafe fn exercise(report: &mut Report) -> Option<Npc> {
     report.check("add_event_handler (core tick)", tick_handler, "refused");
     report.check("add_event_handler (player pool)", pool_handler, "refused");
     unsafe { config(report) };
+    unsafe { timers(report) };
     let (npc_handler, object_handler) = unsafe { events::register() };
     report.check("add_event_handler (NPC)", npc_handler, "refused");
     report.check("add_event_handler (object)", object_handler, "refused");

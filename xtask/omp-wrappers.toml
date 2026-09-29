@@ -547,3 +547,25 @@ module = "player_vehicles"
 this = "data"
 impl = "PlayerVehicleData"
 library = "Vehicles"
+
+[[interface]]
+class = "ITimersComponent"
+header = "Server/Components/Timers/timers.hpp"
+handle = "ITimersComponent"
+prefix = "timers"
+module = "timers"
+this = "component"
+impl = "TimersComponent"
+library = "Timers"
+skip = ["create"]  # the three-argument overload is hand-written as create_repeating_timer
+overloads = { "create(TimerTimeOutHandler*,Milliseconds,Milliseconds,unsignedint)" = "create_counted" }
+
+[[interface]]
+class = "ITimer"
+header = "Server/Components/Timers/timers.hpp"
+handle = "ITimer"
+prefix = "timer"
+module = "timer"
+impl = "Timer"
+library = "Timers"
+skip = ["kill"]  # hand-written as kill_timer

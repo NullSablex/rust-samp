@@ -31,6 +31,8 @@ static LAST_NOW: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::ne
 pub static POOL_CREATED: AtomicU32 = AtomicU32::new(0);
 /// Options the config enumerated through the callback object.
 pub static OPTIONS_SEEN: AtomicU32 = AtomicU32::new(0);
+/// Times the counted timer fired.
+pub static TIMER_FIRES: AtomicU32 = AtomicU32::new(0);
 
 macro_rules! callback {
     (fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? $body:block) => {
@@ -98,6 +100,42 @@ callback!(
         true
     }
 );
+
+callback!(
+    fn timer_timeout(_h: *mut omp::TimerTimeOutHandler, _timer: *mut omp::ITimer) {
+        TIMER_FIRES.fetch_add(1, Ordering::Release);
+    }
+);
+callback!(
+    fn timer_free(_h: *mut omp::TimerTimeOutHandler, _timer: *mut omp::ITimer) {}
+);
+
+static TIMER_VTABLE: omp::TimerHandlerVTable = omp::TimerHandlerVTable {
+    timeout: timer_timeout,
+    free: timer_free,
+};
+
+/// A timer that fires three times, 100 ms apart, through the four-argument
+/// `create`. Returns it with its handler, for the checks that read it back.
+///
+/// # Safety
+/// Called on the main thread once the components are ready.
+pub unsafe fn counted_timer() -> Option<(*mut omp::ITimer, *mut omp::TimerTimeOutHandler)> {
+    let component = omp_query::<Component<omp::ITimersComponent>>()?;
+    let handler = Box::leak(Box::new(omp::TimerTimeOutHandler {
+        vtable: &raw const TIMER_VTABLE,
+    }));
+    let timer = unsafe {
+        omp::timers_create_counted(
+            component.as_ptr(),
+            handler,
+            omp::Milliseconds(0),
+            omp::Milliseconds(100),
+            3,
+        )
+    };
+    (!timer.is_null()).then_some((timer, &raw mut *handler))
+}
 
 /// The config's enumerator: a pure interface the plugin implements whole.
 pub static OPTION_VTABLE: omp::OptionEnumeratorCallbackVTable =

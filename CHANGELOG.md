@@ -342,6 +342,12 @@ The per-crate sections come first, then the ones belonging to the repository.
   durations the headers take and return, laid out as the C++ classes are. The
   count of minutes and hours is an `int` under Microsoft's library and 64 bits
   under libstdc++, so it is `HoursRep`, which follows the target.
+- Wrappers for `ITimersComponent` and `ITimer`: `timers_create_counted` (a
+  first delay, an interval and a number of calls), `timers_count`, and the
+  timer's `running`, `remaining`, `calls`, `interval`, `trigger` and `handler`.
+  `ITimersComponent` implements `ComponentInterface`. The three-argument
+  `create` and `kill` stay hand-written (`create_repeating_timer`,
+  `kill_timer`).
 - `IDatabasesComponent` implements `ComponentInterface`, so
   `omp_query::<Component<IDatabasesComponent>>()` finds it;
   `TextLabelAttachmentData` implements `Default` with the header's
@@ -515,7 +521,16 @@ The per-crate sections come first, then the ones belonging to the repository.
     `CheckpointsComponent` and `CustomModelsComponent`. Two fixes carried over
     from the script's last revisions: slots declared through `slots!` are
     read, and a tail call (`jmp` through a pointer) ends the search for a
-    method's `ret` instead of reading the next function's.
+    method's `ret` instead of reading the next function's. It then went
+    further than the script: the official Windows server ships a `.pdb`
+    beside every binary, `omp-server.exe` included, and `check-abi` reads them
+    (`pdb`, `msvc-demangler`) to check every MSVC slot by the name of the
+    method it holds — the way Linux is checked — on top of `ret N`, which
+    cannot tell apart methods without arguments. The vtable is still found
+    through RTTI where the binary keeps it, whose locator records the
+    subobject offset; the PDB stands in only for the server's own classes,
+    which have none. A function MSVC folded with others (`/OPT:ICF`) is
+    matched by any of the names it carries.
   - **`cargo xtask roundtrip`** derives the showcase's set/get round trips
     from the generated code, so nobody chooses by hand what gets tested. It
     reads the wrappers with `syn`, and found one round trip the script's
@@ -557,8 +572,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   hash-table walk, `vehicles_models` as an array, and the core's `onTick`
   receiving sane `Microseconds` and a steady `TimePoint` on every tick; the
   database component found through its new `ComponentInterface` impl, and the
-  text draw's background colour, a round trip only the Rust reader finds. 145
-  passed, 0 wrong, identically on open.mp Linux and on
+  text draw's background colour, a round trip only the Rust reader finds; and a
+  counted timer that reports its interval, calls and handler and fires exactly
+  three times. 152 passed, 0 wrong, identically on open.mp Linux and on
   Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
   UB checks) and AddressSanitizer with leak detection on the host target both
@@ -567,11 +583,24 @@ The per-crate sections come first, then the ones belonging to the repository.
   `pawn_include` ran 214,617 inputs without a panic, `parse_debug` 9.7 million.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
-- The generated wrappers were proven three ways. **Against the binaries**: all
-  1344 slots `cargo xtask check-abi --generated` can derive match the official
-  servers — by method name on Linux, by the bytes each method pops on Windows;
-  176 are declared underivable (the Windows server executable keeps RTTI for
-  three classes only, and tail-calling methods have no `ret N` of their own).
+- The SDK ran on every combination it supports: SA-MP on Linux and on
+  Windows (plugin), and open.mp on Linux and on Windows as a legacy plugin and
+  as a native component — Windows under Wine. On each, the `counter` example
+  under a Pawn script gave the same answers: default and by-reference
+  arguments, an aliased native, a public called back with a string and a float
+  whose return reached the native, work finished on another thread and handed
+  back through `post_with_amx`, the tick, and the extended native table — read
+  as a component, reported unavailable everywhere else.
+- The four plugins built on the SDK compile against this tree with no error
+  or warning, each checked to resolve `rust-samp` to it rather than to a
+  locked older version.
+- The generated wrappers were proven three ways. **Against the binaries**:
+  `cargo xtask check-abi --generated` passes 2276 checks — every generated
+  slot by method name on both ABIs (776 of them on Windows through the PDBs,
+  the server's own `Player` and `PlayerPool` included, which used to be left
+  to a server run) and by the bytes each method pops. The 35 it declares
+  underivable are all `ret N` checks of methods that end in a tail call; each
+  of those slots passes its name check.
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that
   has a matching getter — including the player's, through an NPC. On open.mp

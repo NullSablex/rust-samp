@@ -15,16 +15,19 @@
 //! that way, and are reported as unverifiable rather than assumed.
 
 mod elf;
+mod pdb;
 mod pe;
 mod signature;
 mod source;
 
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use self::elf::{Elf, slot_of};
+use self::pdb::Symbols;
 use self::pe::Pe;
 use self::signature::{ArgBytes, method_name, same_params};
 use self::source::Constants;
@@ -230,13 +233,76 @@ fn check_itanium(server: &Path, omp: &Path, report: &mut Report) -> Result<()> {
     Ok(())
 }
 
-/// The hand-written slots under MSVC, by the bytes each method pops.
+/// A Windows binary, with its `.pdb` when the server ships one.
+struct Windows {
+    pe: Pe,
+    symbols: Option<Symbols>,
+    /// The file name, for messages.
+    name: String,
+}
+
+impl Windows {
+    fn open(path: &Path) -> Result<Self> {
+        let pe = Pe::open(path)?;
+        let symbols = Symbols::beside(path, pe.base())?;
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Ok(Self { pe, symbols, name })
+    }
+
+    /// The primary vtable of `class`. RTTI decides where there is RTTI: its
+    /// locator records the subobject offset, so the vtable at offset 0 is
+    /// found without assuming anything about the bases. Where the binary keeps
+    /// none — the server executable's own classes — the PDB's vftable for
+    /// `IExtensible` stands in, which holds for those classes: each one's
+    /// first base chain starts there.
+    fn vtable(&self, class: &str) -> Result<Vec<u32>, String> {
+        match self.pe.vtable(class) {
+            Ok((_, slots)) => Ok(slots),
+            Err(why) => match self.symbols.as_ref().and_then(|s| s.primary_vftable(class)) {
+                Some(address) => Ok(self.pe.vtable_at(address)),
+                None => Err(format!("{why} in {}", self.name)),
+            },
+        }
+    }
+
+    /// Whether the function at `pointer` is `method` by name, by parameters
+    /// too for an overload; `None` without a PDB.
+    fn holds(&self, pointer: u32, method: &str, signature: &str, overloaded: bool) -> Option<bool> {
+        let names = self.symbols.as_ref()?.names_at(pointer);
+        let wanted = format!("::{method}(");
+        Some(
+            names.iter().any(|name| {
+                name.contains(&wanted) && (!overloaded || same_params(signature, name))
+            }),
+        )
+    }
+}
+
+/// One hand-written slot checked on Windows by the method it holds.
+struct NameCheck {
+    /// The binary, relative to the server directory.
+    file: &'static str,
+    class: &'static str,
+    label: String,
+    slot: Option<usize>,
+    method: &'static str,
+    /// Text the demangled name must end with, to pick one overload.
+    ending: Option<&'static str>,
+}
+
+/// The hand-written slots under MSVC: by the bytes each method pops, and by
+/// name from the PDBs.
 fn check_msvc(server: &Path, omp: &Path, report: &mut Report) -> Result<()> {
     println!("\nMSVC ABI — {}", server.display());
     let timers_rs = Constants::read(&omp.join("timers.rs"))?;
+    let component_rs = Constants::read(&omp.join("component_api.rs"))?;
     let server_rs = Constants::read(&omp.join("server.rs"))?;
+    let players_rs = Constants::read(&omp.join("players.rs"))?;
 
-    let timers_dll = Pe::open(&server.join("components/Timers.dll"))?;
+    let timers_dll = Windows::open(&server.join("components/Timers.dll"))?;
     let timers = timers_dll
         .vtable("TimersComponent")
         .map_err(anyhow::Error::msg)?;
@@ -246,15 +312,15 @@ fn check_msvc(server: &Path, omp: &Path, report: &mut Report) -> Result<()> {
     let found = timers
         .iter()
         .enumerate()
-        .position(|(i, f)| i >= 15 && timers_dll.ret_bytes(*f) == Some(16));
+        .position(|(i, f)| i >= 15 && timers_dll.pe.ret_bytes(*f) == Some(16));
+    let interval = timers_rs.get("SLOT_CREATE_INTERVAL", true);
     report.check(
         "ITimersComponent::create(handler, interval, repeating)",
-        timers_rs.get("SLOT_CREATE_INTERVAL", true),
+        interval,
         found,
     );
-
     // `removeExtension(UID)` pops 8, `removeExtension(IExtension*)` 4.
-    let popped = |slot: usize| timers.get(slot).and_then(|f| timers_dll.ret_bytes(*f));
+    let popped = |slot: usize| timers.get(slot).and_then(|f| timers_dll.pe.ret_bytes(*f));
     report.check(
         "IExtensible::removeExtension(UID) at slot 2",
         Some(8),
@@ -266,28 +332,170 @@ fn check_msvc(server: &Path, omp: &Path, report: &mut Report) -> Result<()> {
         popped(3),
     );
 
-    // `getEventDispatcher` and `getAmxFunctions` take no arguments, so `ret N`
-    // cannot tell them from their neighbours. What is checkable is that the
-    // vtable is long enough for the index the SDK uses.
-    let pawn = Pe::open(&server.join("components/Pawn.dll"))?
-        .vtable("PawnComponent")
-        .map_err(anyhow::Error::msg)?;
-    let prefix = server_rs
-        .get("PAWN_COMPONENT_PREFIX_SLOTS", true)
-        .unwrap_or(0);
-    report.check(
-        &format!("IPawnComponent vtable reaches slot {}", prefix + 1),
-        Some(true),
-        Some(pawn.len() > prefix + 1),
-    );
-    println!("  note  getEventDispatcher/getAmxFunctions take no arguments — their");
-    println!("        exact index is not derivable from `ret N`; see docs/internals/omp-abi.md");
+    let checks = hand_name_checks(interval, &timers_rs, &component_rs, &server_rs, &players_rs);
+    check_names(server, &checks, report)
+}
+
+/// The hand-written slots checked by name: the ones `check_itanium` checks on
+/// Linux, with their MSVC values.
+// A table: its length is its rows, one per slot, not logic to break up.
+#[allow(clippy::too_many_lines)]
+fn hand_name_checks(
+    interval: Option<usize>,
+    timers_rs: &Constants,
+    component_rs: &Constants,
+    server_rs: &Constants,
+    players_rs: &Constants,
+) -> Vec<NameCheck> {
+    let check = |file, class, label: &str, slot, method, ending| NameCheck {
+        file,
+        class,
+        label: label.to_owned(),
+        slot,
+        method,
+        ending,
+    };
+    let mut checks = vec![
+        check(
+            "components/Timers.dll",
+            "TimersComponent",
+            "ITimersComponent::create(handler, interval, repeating)",
+            interval,
+            "create",
+            Some(", bool)"),
+        ),
+        check(
+            "components/Timers.dll",
+            "TimersComponent",
+            "IComponent::componentName",
+            component_rs.get("SLOT_COMPONENT_NAME", true),
+            "componentName",
+            None,
+        ),
+        check(
+            "components/Timers.dll",
+            "TimersComponent",
+            "IComponent::componentVersion",
+            component_rs.get("SLOT_COMPONENT_VERSION", true),
+            "componentVersion",
+            None,
+        ),
+        check(
+            "components/Timers.dll",
+            "Timer",
+            "ITimer::kill",
+            timers_rs.get("SLOT_TIMER_KILL", true),
+            "kill",
+            None,
+        ),
+        // These two take no arguments, so `ret N` cannot tell them from their
+        // neighbours; their names can.
+        check(
+            "components/Pawn.dll",
+            "PawnComponent",
+            "IPawnComponent::getEventDispatcher",
+            server_rs.get("PAWN_COMPONENT_PREFIX_SLOTS", true),
+            "getEventDispatcher",
+            None,
+        ),
+        check(
+            "components/Pawn.dll",
+            "PawnComponent",
+            "IPawnComponent::getAmxFunctions",
+            server_rs
+                .get("PAWN_COMPONENT_PREFIX_SLOTS", true)
+                .map(|p| p + 1),
+            "getAmxFunctions",
+            None,
+        ),
+        check(
+            "components/Pawn.dll",
+            "PawnScript",
+            "IPawnScript::GetAMX",
+            Some(57),
+            "GetAMX",
+            None,
+        ),
+        check(
+            "omp-server.exe",
+            "Core",
+            "ICore::getPlayers",
+            players_rs.get("SLOT_GET_PLAYERS", true),
+            "getPlayers",
+            None,
+        ),
+        check(
+            "omp-server.exe",
+            "ComponentList",
+            "IComponentList::queryComponent",
+            server_rs.get("COMPONENT_LIST_PREFIX_SLOTS", true),
+            "queryComponent",
+            None,
+        ),
+    ];
+    for (constant, method) in [
+        ("SLOT_SPAWN_DISPATCHER", "getPlayerSpawnDispatcher"),
+        ("SLOT_CONNECT_DISPATCHER", "getPlayerConnectDispatcher"),
+        ("SLOT_TEXT_DISPATCHER", "getPlayerTextDispatcher"),
+        ("SLOT_DAMAGE_DISPATCHER", "getPlayerDamageDispatcher"),
+        ("SLOT_STREAM_DISPATCHER", "getPlayerStreamDispatcher"),
+        ("SLOT_SHOT_DISPATCHER", "getPlayerShotDispatcher"),
+        ("SLOT_CHANGE_DISPATCHER", "getPlayerChangeDispatcher"),
+        ("SLOT_CLICK_DISPATCHER", "getPlayerClickDispatcher"),
+        ("SLOT_CHECK_DISPATCHER", "getPlayerCheckDispatcher"),
+        ("SLOT_UPDATE_DISPATCHER", "getPlayerUpdateDispatcher"),
+    ] {
+        checks.push(check(
+            "omp-server.exe",
+            "PlayerPool",
+            &format!("IPlayerPool::{method}"),
+            players_rs.get(constant, true),
+            method,
+            None,
+        ));
+    }
+    checks
+}
+
+/// Runs `checks`, opening each binary and each vtable once. A binary without
+/// a `.pdb` leaves its checks to `ret N` and to a server run.
+fn check_names(server: &Path, checks: &[NameCheck], report: &mut Report) -> Result<()> {
+    let mut binaries: HashMap<&str, Windows> = HashMap::new();
+    let mut vtables: HashMap<(&str, &str), Vec<u32>> = HashMap::new();
+    for check in checks {
+        if !binaries.contains_key(check.file) {
+            binaries.insert(check.file, Windows::open(&server.join(check.file))?);
+        }
+        let binary = &binaries[check.file];
+        let Some(symbols) = binary.symbols.as_ref() else {
+            println!(
+                "  note  no .pdb beside {}: {} is left to `ret N`",
+                binary.name, check.label
+            );
+            continue;
+        };
+        let key = (check.file, check.class);
+        if let std::collections::hash_map::Entry::Vacant(slot) = vtables.entry(key) {
+            slot.insert(binary.vtable(check.class).map_err(anyhow::Error::msg)?);
+        }
+        let wanted = format!("::{}(", check.method);
+        let holds = check
+            .slot
+            .and_then(|slot| vtables[&key].get(slot))
+            .map(|pointer| {
+                symbols.names_at(*pointer).iter().any(|name| {
+                    name.contains(&wanted) && check.ending.is_none_or(|end| name.ends_with(end))
+                })
+            });
+        report.check(&format!("{} (PDB)", check.label), Some(true), holds);
+    }
     Ok(())
 }
 
 /// Every slot the generator wrote, against the vtable of the class that
-/// implements it: by name under Itanium — and by parameters for an overload,
-/// whose name alone would pass either one — and by `ret N` under MSVC.
+/// implements it: by name — and by parameters for an overload, whose name
+/// alone would pass either one — on Linux, and on Windows through the PDBs;
+/// by `ret N` on Windows as well.
 fn check_generated(
     repo: &Path,
     linux: Option<&Path>,
@@ -313,6 +521,8 @@ fn check_generated(
             .iter()
             .map(|s| s.doc.trim().trim_matches('`'))
             .collect();
+        let methods: Vec<&str> = signatures.iter().map(|s| method_name(s)).collect();
+        let overloaded = |method: &str| methods.iter().filter(|m| **m == method).count() > 1;
 
         if let Some(server) = linux {
             let file = if library == "omp-server" {
@@ -327,12 +537,11 @@ fn check_generated(
                     report.skip(slots.len());
                 }
                 Ok(vtable) => {
-                    let names: Vec<&str> = signatures.iter().map(|s| method_name(s)).collect();
                     for (slot, signature) in slots.iter().zip(&signatures) {
                         let method = method_name(signature);
                         let found = vtable.get(slot.itanium).map_or("", String::as_str);
                         let mut ok = found.contains(&format!("::{method}("));
-                        if ok && names.iter().filter(|n| **n == method).count() > 1 {
+                        if ok && overloaded(method) {
                             ok = same_params(signature, found);
                         }
                         report.check(
@@ -350,29 +559,32 @@ fn check_generated(
             } else {
                 format!("components/{library}.dll")
             };
-            let dll = Pe::open(&server.join(&file))?;
-            match dll.vtable(class) {
+            let windows = Windows::open(&server.join(&file))?;
+            match windows.vtable(class) {
                 Err(why) => {
-                    // The Windows server executable keeps RTTI for three
-                    // classes only; these slots are left to a server run.
-                    let name = Path::new(&file)
-                        .file_name()
-                        .map_or(file.as_str(), |n| n.to_str().unwrap_or_default());
-                    println!(
-                        "  SKIP  MSVC: {why} in {name} — prove these with examples/omp-showcase"
-                    );
+                    println!("  SKIP  MSVC: {why} — prove these with examples/omp-showcase");
                     report.skip(slots.len());
                 }
                 Ok(vtable) => {
                     for (slot, signature) in slots.iter().zip(&signatures) {
+                        let method = method_name(signature);
+                        let pointer = vtable.get(slot.msvc).copied();
+                        let holds = pointer
+                            .and_then(|p| windows.holds(p, method, signature, overloaded(method)));
+                        if windows.symbols.is_some() {
+                            report.check(
+                                &format!("MSVC [{}] {method} (PDB)", slot.msvc),
+                                Some(true),
+                                holds,
+                            );
+                        }
                         let expected = bytes.of(signature);
-                        let found = vtable.get(slot.msvc).and_then(|f| dll.ret_bytes(*f));
-                        let label = format!(
-                            "MSVC [{}] {} pops {expected}",
-                            slot.msvc,
-                            method_name(signature)
+                        let found = pointer.and_then(|p| windows.pe.ret_bytes(p));
+                        report.check(
+                            &format!("MSVC [{}] {method} pops {expected}", slot.msvc),
+                            Some(expected),
+                            found,
                         );
-                        report.check(&label, Some(expected), found);
                     }
                 }
             }

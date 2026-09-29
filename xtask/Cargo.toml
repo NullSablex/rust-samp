@@ -21,3 +21,5 @@ object = { version = "0.40.0", default-features = false, features = ["read_core"
 iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder"] }
 cpp_demangle = "0.5.1"
 memchr = "2.8.3"
+pdb = "0.8.0"
+msvc-demangler = "0.11.0"

@@ -91,10 +91,29 @@ impl Pe {
             .map(|s| (s.raw + (rva - s.address)) as usize)
     }
 
-    /// Function pointers of the primary vtable of `class`, via RTTI: the type
-    /// descriptor names the class, a complete object locator points at the
-    /// descriptor, and the vtable follows a pointer to the locator.
-    pub fn vtable(&self, class: &str) -> Result<Vec<u32>, String> {
+    pub fn base(&self) -> u32 {
+        self.base
+    }
+
+    /// The function pointers of the vtable at `address`: every entry up to
+    /// the first that does not point into `.text`.
+    pub fn vtable_at(&self, address: u32) -> Vec<u32> {
+        let Some(start) = self.virtual_to_file(address) else {
+            return Vec::new();
+        };
+        (start..)
+            .step_by(4)
+            .map_while(|at| u32_at(&self.data, at))
+            .take_while(|&pointer| pointer != 0 && self.section_of(pointer) == Some(".text"))
+            .take(512)
+            .collect()
+    }
+
+    /// The address and function pointers of the primary vtable of `class`,
+    /// via RTTI: the type descriptor names the class, a complete object
+    /// locator points at the descriptor, and the vtable follows a pointer to
+    /// the locator.
+    pub fn vtable(&self, class: &str) -> Result<(u32, Vec<u32>), String> {
         let marker = format!(".?AV{class}@@");
         let index = memchr::memmem::find(&self.data, marker.as_bytes())
             .ok_or_else(|| format!("no RTTI for {class}"))?;
@@ -103,7 +122,7 @@ impl Pe {
             .and_then(|at| self.file_to_virtual(at))
             .ok_or("RTTI outside every section")?;
 
-        let mut best: Vec<u32> = Vec::new();
+        let mut best: (u32, Vec<u32>) = (0, Vec::new());
         for found in memchr::memmem::find_iter(&self.data, &descriptor.to_le_bytes()) {
             let Some(locator) = found.checked_sub(12) else {
                 continue;
@@ -117,20 +136,16 @@ impl Pe {
                 continue;
             };
             for reference in memchr::memmem::find_iter(&self.data, &locator_address.to_le_bytes()) {
-                let slots: Vec<u32> = (reference + 4..)
-                    .step_by(4)
-                    .map_while(|at| u32_at(&self.data, at))
-                    .take_while(|&pointer| {
-                        pointer != 0 && self.section_of(pointer) == Some(".text")
-                    })
-                    .take(512)
-                    .collect();
-                if slots.len() > best.len() {
-                    best = slots;
+                let Some(address) = self.file_to_virtual(reference + 4) else {
+                    continue;
+                };
+                let slots = self.vtable_at(address);
+                if slots.len() > best.1.len() {
+                    best = (address, slots);
                 }
             }
         }
-        if best.is_empty() {
+        if best.1.is_empty() {
             return Err(format!("vtable for {class} not located"));
         }
         Ok(best)

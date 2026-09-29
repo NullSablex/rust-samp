@@ -135,8 +135,9 @@ OPENMP_LINUX_SERVER=DIR cargo xtask check-abi  # or by environment
 
 It re-derives every index from the official `Timers.so`, `Pawn.so`, `Timers.dll`
 and `omp-server`, and fails when the source disagrees: by name on Linux, whose
-libraries keep their symbols, and by the argument bytes each method pops on
-Windows (`ret N` under `thiscall`). Run it after touching anything under
+libraries keep their symbols; by name on Windows as well, through the `.pdb`
+the official server ships beside each binary, and by the argument bytes each
+method pops (`ret N` under `thiscall`). Run it after touching anything under
 `samp-sdk/src/omp/`, and before a release. Not part of CI: it needs the official
 servers, which cannot be redistributed.
 

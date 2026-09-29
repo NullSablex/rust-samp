@@ -244,6 +244,8 @@ pub unsafe fn flat_set_entries<T>(set: *const FlatSet<T>) -> Vec<*mut T> {
 mod tests {
     use super::*;
 
+    // The layouts clang gives are i686 ones: pointers are four bytes there.
+    #[cfg(target_arch = "x86")]
     #[test]
     fn layouts_match_clang() {
         use std::mem::{offset_of, size_of};
@@ -310,6 +312,8 @@ mod tests {
         raw
     }
 
+    // The field offsets are the i686 table's.
+    #[cfg(target_arch = "x86")]
     #[test]
     fn walks_the_occupied_buckets() {
         let (mut a, mut b, mut c) = (1, 2, 3);
