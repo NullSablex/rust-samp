@@ -161,7 +161,7 @@ let now = unsafe { *samp::omp::vehicle_params(vehicle) };
 ## Generated wrappers
 
 Those functions are generated from the open.mp SDK headers by
-`scripts/omp-wrappers.py`, one module per interface under
+`cargo xtask gen-omp`, one module per interface under
 `samp_sdk::omp::generated`. Each file lists at its end what was left out and
 why — a type the SDK does not mirror (`std::` containers, references to
 unmirrored structs), a C-style `...`, an overload no one has named. A gap is written
@@ -172,7 +172,7 @@ Three things stand behind every generated function:
 - **The layout is clang's**, for both ABIs, from the same headers the server is
   built from.
 - **Every slot is checked against the official binaries** by
-  `scripts/check-abi-slots.py --generated`: by method name on Linux, whose
+  `cargo xtask check-abi --generated`: by method name on Linux, whose
   libraries keep their symbols, and by the argument bytes each method pops on
   Windows (`ret N` under `thiscall`).
 - **`examples/omp-showcase` round-trips every setter that has a getter** on a
@@ -240,23 +240,25 @@ covered by tests, not by convention.
 
 What no test on this side can catch is a pointer that is wrong but not null.
 Against that there are the slot constants pinned per ABI,
-`scripts/check-abi-slots.py` re-deriving them from the shipped binaries, and the
+`cargo xtask check-abi` re-deriving them from the shipped binaries, and the
 runs against real servers on both platforms.
 
 ## Adding an interface
 
-List it in `scripts/omp-wrappers.toml` — the interface, its header, the handle
+List it in `xtask/omp-wrappers.toml` — the interface, its header, the handle
 the wrappers take, their prefix, and the class implementing it in the server's
 binaries; an overloaded method is wrapped once each overload gets a name under
 `overloads` (`"create(Vector2,int)" = "create_preview"`) — then:
 
 ```sh
-scripts/omp-wrappers.py                    # regenerate samp-sdk/src/omp/generated/
-scripts/check-abi-slots.py --generated     # every slot against the binaries
-scripts/omp-roundtrip.py                   # refresh the showcase's round trips
+cargo xtask gen-omp                        # regenerate samp-sdk/src/omp/generated/
+cargo xtask check-abi --generated          # every slot against the binaries
+cargo xtask roundtrip                      # refresh the showcase's round trips
 ```
 
-and run `omp-showcase` on both servers. What the generator skips can still be
+and run `omp-showcase` on both servers. The generator needs clang and an open.mp
+SDK checkout with its submodules (`--sdk`, or `$OPENMP_SDK`), and the Windows
+headers `cargo xwin` downloads. What the generator skips can still be
 written by hand; the slot indices differ per ABI and are not guessable — see
-[the ABI notes](internals/omp-abi.md), and `scripts/omp-vtable.py` for the
+[the ABI notes](internals/omp-abi.md), and `cargo xtask vtable` for the
 layout of one class.

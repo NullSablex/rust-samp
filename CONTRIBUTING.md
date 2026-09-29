@@ -77,14 +77,23 @@ feature flags, conventions).
 
 ## Mapping a new open.mp interface
 
-Before writing a wrapper for an interface, ask the compiler where its methods
-land. `scripts/omp-vtable.py` generates a stub deriving from the interface,
-compiles it for both ABIs with `-fdump-vtable-layouts`, and prints the slot each
-method occupies:
+The repository's tooling lives in `xtask/`, run as `cargo xtask <command>`. It
+needs clang (libclang is loaded at run time), an open.mp SDK checkout with its
+submodules, and the Windows headers `cargo xwin` downloads on its first build:
 
 ```sh
-scripts/omp-vtable.py IPlayerPool
-scripts/omp-vtable.py IPlayer --header player.hpp
+git clone --recursive https://github.com/openmultiplayer/open.mp-sdk
+export OPENMP_SDK=$PWD/open.mp-sdk      # or pass --sdk; $XWIN_CACHE for the Windows headers
+```
+
+Most interfaces are wrapped by the generator: list one in
+`xtask/omp-wrappers.toml` and run `cargo xtask gen-omp` (see
+[Talking to the Open Multiplayer Server Directly](docs/omp-interfaces.md)).
+For writing a slot by hand, ask the compiler where a method lands:
+
+```sh
+cargo xtask vtable IPlayerPool
+cargo xtask vtable IPlayer --header player.hpp
 ```
 
 ```text
@@ -95,31 +104,17 @@ IPlayerPool  (Itanium / MSVC)
 
 This is what made the MSVC side tractable: the Windows server carries RTTI for
 three classes and nothing else, so those indices used to be derived by hand from
-the ABI rules. Now the compiler answers both.
+the ABI rules. Now the compiler answers both — including where MSVC keeps an
+override of a secondary base's method in that base's own vtable.
 
-It needs clang and an open.mp SDK checkout. The script looks for one in the
-usual places; point it elsewhere with `--sdk` or `$OPENMP_SDK`:
-
-```sh
-git clone --recursive https://github.com/openmultiplayer/open.mp-sdk
-OPENMP_SDK=$PWD/open.mp-sdk scripts/omp-vtable.py IPlayer
-```
-
-The submodules matter — without them the headers include libraries that are not
-there, and the script says so instead of failing further along. The MSVC column
-additionally needs the Windows headers `cargo xwin` downloads on its first
-build (`$XWIN_CACHE` to point elsewhere); without them the Itanium column still
-prints.
-
-**`--rust` emits the constants themselves, so adding an interface is mostly
-mechanical:
+`--rust` prints `slots!` entries ready to paste, and `--filter` narrows them:
 
 ```sh
-scripts/omp-vtable.py IPickupsComponent \
+cargo xtask vtable IPickupsComponent \
     --header Server/Components/Pickups/pickups.hpp --rust --filter "create(int"
 ```
 
-**It is the map, not the proof.**** The server may have been built from a
+**It is the map, not the proof.** The server may have been built from a
 different revision of the headers, and a layout that compiles is not a layout
 the running server agrees with. Still validate against a server — see the
 testing notes in `CLAUDE.md`.
@@ -132,15 +127,18 @@ from the wrong virtual function, and on Windows the stack is corrupted on top of
 that. Four such defects shipped in v3.5.0.
 
 ```sh
-scripts/check-abi-slots.py                          # servers in the usual spots
-scripts/check-abi-slots.py --linux DIR --win DIR    # elsewhere
-OPENMP_LINUX_SERVER=DIR scripts/check-abi-slots.py  # or by environment
+cargo xtask check-abi                          # servers in the usual spots
+cargo xtask check-abi --linux DIR --win DIR    # elsewhere
+cargo xtask check-abi --generated              # the generated wrappers too
+OPENMP_LINUX_SERVER=DIR cargo xtask check-abi  # or by environment
 ```
 
 It re-derives every index from the official `Timers.so`, `Pawn.so`, `Timers.dll`
-and `omp-server`, and fails when the source disagrees. Run it after touching
-anything under `samp-sdk/src/omp/`, and before a release. Not part of CI: it
-needs the official servers, which cannot be redistributed.
+and `omp-server`, and fails when the source disagrees: by name on Linux, whose
+libraries keep their symbols, and by the argument bytes each method pops on
+Windows (`ret N` under `thiscall`). Run it after touching anything under
+`samp-sdk/src/omp/`, and before a release. Not part of CI: it needs the official
+servers, which cannot be redistributed.
 
 ## Fuzzing
 

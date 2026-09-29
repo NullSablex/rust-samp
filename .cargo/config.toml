@@ -1,0 +1,3 @@
+# `cargo xtask <command>`: the repository's own tooling, in `xtask/`.
+[alias]
+xtask = "run --quiet --release --manifest-path xtask/Cargo.toml --"

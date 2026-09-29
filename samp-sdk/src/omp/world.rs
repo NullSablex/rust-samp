@@ -10,7 +10,7 @@
 //! | `IObjectsComponent::create(int, Vector3, Vector3, float)` | 21 | 19 |
 //! | `IPickupsComponent::create(int, PickupType, Vector3, uint32, bool)` | 19 | 17 |
 //!
-//! Slots from `scripts/omp-vtable.py`; both components declare overloads (a
+//! Slots from `cargo xtask vtable`; both components declare overloads (a
 //! player-scoped `create` among them), so the MSVC column is not simply one
 //! less.
 

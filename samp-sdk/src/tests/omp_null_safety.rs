@@ -7,7 +7,7 @@
 //! checked.
 //!
 //! What it does *not* check is a wrong-but-non-null pointer: nothing can, from
-//! this side. That is what the slot constants, `scripts/check-abi-slots.py` and
+//! this side. That is what the slot constants, `cargo xtask check-abi` and
 //! the runs against real servers are for.
 
 use crate::omp::players::*;

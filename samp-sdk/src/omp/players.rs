@@ -20,7 +20,7 @@
 //! Itanium values come from the vtable dumps of the official `omp-server`
 //! (`PlayerPool` and `Core` keep their symbols). MSVC shifts by one because it
 //! emits a single destructor slot where Itanium emits two — the same rule as
-//! everywhere else in this module, and `scripts/check-abi-slots.py` re-derives
+//! everywhere else in this module, and `cargo xtask check-abi` re-derives
 //! it from the binaries.
 //!
 //! ## `PlayerConnectEventHandler`
@@ -115,7 +115,7 @@ slots! {
     SLOT_PLAYER_SET_SKIN: usize = 97, 96;
     /// Slots of the plain `int` accessors, all reached through
     /// [`player_set_i32`] / [`player_get_i32`]. Every pair is one apart between
-    /// ABIs, the usual destructor shift, and comes from `scripts/omp-vtable.py`.
+    /// ABIs, the usual destructor shift, and comes from `cargo xtask vtable`.
     SLOT_PLAYER_SET_DRUNK: usize = 40, 39;
     SLOT_PLAYER_SET_WANTED: usize = 49, 48;
     SLOT_PLAYER_GET_WANTED: usize = 50, 49;
@@ -974,7 +974,7 @@ mod tests {
         // `IEntity` override (secondary base) sits before any of these, so the
         // shift is exactly one. Unlike the component classes, the Windows
         // server carries no RTTI for `Player`, so these cannot be re-derived
-        // from the binary — `scripts/omp-vtable.py` derives them from the
+        // from the binary — `cargo xtask vtable` derives them from the
         // headers with clang, and a running server proves them.
         #[cfg(not(target_env = "msvc"))]
         let expected = [6, 8, 27, 77, 78, 79, 80, 100];

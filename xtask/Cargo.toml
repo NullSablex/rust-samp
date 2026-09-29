@@ -1,0 +1,23 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+description = "Repository tooling: generates the open.mp wrappers from the SDK headers"
+
+# A host tool, kept out of the root workspace: that one builds for i686.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+clang = { version = "2.1", features = ["runtime", "clang_10_0"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"
+toml = "0.9"
+object = { version = "0.40.0", default-features = false, features = ["read_core", "elf", "pe", "std"] }
+iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder"] }
+cpp_demangle = "0.5.1"
+memchr = "2.8.3"

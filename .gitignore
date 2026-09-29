@@ -1,4 +1,7 @@
-.cargo
+# Per-machine cargo settings stay local; the repository's only one is the
+# `cargo xtask` alias.
+.cargo/*
+!.cargo/config.toml
 target
 **/*.rs.bk
 .idea
@@ -18,10 +21,6 @@ bench-history.json
 bench_report.md
 bench_results.txt
 bench_comparison.txt
-
-# Python bytecode (only generated if you run python locally — CI never reads these)
-__pycache__/
-*.pyc
 
 # Release workflow temp file (written by .github/workflows/release.yml)
 release_body.md

@@ -262,13 +262,13 @@ The per-crate sections come first, then the ones belonging to the repository.
   taken by const reference) becomes a Rust reference, which is that pointer; a
   setter returning the object itself for chaining (`ITextDrawBase &`) drops the
   value, since the caller already holds the object; and `size_t` is `usize`.
-- Overloads, named one by one in `scripts/omp-wrappers.toml` (`overloads`):
+- Overloads, named one by one in `xtask/omp-wrappers.toml` (`overloads`):
   `player_textdraws_create` and `_create_preview`, `player_textlabels_create`
   and `_create_on_player`/`_create_on_vehicle`,
   `player_objects_begin_editing` and `_begin_editing_player_object`,
   `player_attach_camera_to_object` and `_attach_camera_to_player_object`. The
   slot of each comes from clang's layout, which already places MSVC's reversed
-  order; `check-abi-slots.py` checks an overload on Linux by its parameters as
+  order; `cargo xtask check-abi` checks an overload on Linux by its parameters as
   well as its name, since the name alone would pass either one. A per-player
   text draw or text label can now be created, so their round trips run too.
 - **Structs the headers pass by value, mirrored from them** — 16 in
@@ -342,6 +342,10 @@ The per-crate sections come first, then the ones belonging to the repository.
   durations the headers take and return, laid out as the C++ classes are. The
   count of minutes and hours is an `int` under Microsoft's library and 64 bits
   under libstdc++, so it is `HoursRep`, which follows the target.
+- `IDatabasesComponent` implements `ComponentInterface`, so
+  `omp_query::<Component<IDatabasesComponent>>()` finds it;
+  `TextLabelAttachmentData` implements `Default` with the header's
+  `INVALID_PLAYER_ID`/`INVALID_VEHICLE_ID`.
 - `ComponentInterface::COMPONENT_OFFSET`, for a component whose `IComponent` is
   not its first base. `INPCComponent` puts its pool first, so the `IComponent*`
   the server hands out sits 4 bytes in (8 on MSVC); `Component::as_ptr` moves
@@ -429,6 +433,8 @@ The per-crate sections come first, then the ones belonging to the repository.
   the `hello` example with `samp-only`. No build turned that feature on before,
   which is how its breakage reached a release.
 - `cargo deny check` against `deny.toml`: licenses, sources, yanked crates.
+- An `xtask` job: formatting, clippy and the generator's own tests, with no
+  clang installed. It is part of the `ci-status` gate.
 - The cross-only `aarch64` check caught a log import in `samp/src/events.rs`
   left unconditional during the panic audit: only the `amx_Exec` hook uses it,
   and the hook exists only on x86, so `-D warnings` failed everywhere else. The
@@ -470,32 +476,58 @@ The per-crate sections come first, then the ones belonging to the repository.
   and yanked crates. Everything that ships with the MIT crates is permissive today; the
   policy makes a dependency under anything else fail instead of arriving with an
   update.
-- `scripts/omp-vtable.py` passes clang the definitions the SDK's
-  `CMakeLists.txt` gives every consumer (`GLM_FORCE_QUAT_DATA_WXYZ`,
-  `GLM_FORCE_SSE2`, the string_view and span selectors). Without them the
-  quaternion's field order was the opposite of the server's; no vtable slot
-  changed.
 - The generators pass their output through `rustfmt`, so it is what `cargo fmt`
   leaves: written unformatted, the next `cargo fmt` rewrote it and `--check`
   reported the files stale forever after.
 - `fuzz/` gained a `pawn_include` target: the include parser and the template
   renderer read files from outside the plugin, inside the server, at load.
-- `scripts/omp-wrappers.py` generates `samp-sdk/src/omp/generated/` from
-  `scripts/omp-wrappers.toml` and the open.mp SDK headers: clang lays out each
-  vtable for both ABIs, its AST gives every type, and a whitelist decides what
-  can be wrapped with certainty. `--check` reports stale files.
-- `scripts/omp-roundtrip.py` derives the showcase's set/get round trips from the
-  generated code, so nobody chooses by hand what gets tested.
-- `scripts/check-abi-slots.py --generated` checks every generated slot against
-  the official binaries. Two fixes came with it: slots declared through
-  `slots!` were no longer read at all after the refactor, so every check
-  reported nothing to compare; and a tail call (`jmp *...`) made the MSVC check
-  read the `ret` of the next function, reporting false mismatches for methods
-  that forward to another.
-- `scripts/omp-vtable.py` builds its stub from the parameters as the header
-  spells them, for the i686 target: on the x86-64 host `va_list` decays to
-  `__va_list_tag *`, which no i686 compiler knows, and variadic methods lost
-  their `...`. `ICore` could not be laid out for MSVC before.
+- **The repository's tooling is Rust: `cargo xtask`.** It lives in `xtask/`, a
+  host crate with its own workspace, and no Python is left in the repository.
+  libclang is loaded at run time, so building, linting and testing the crate
+  need no clang; only running the generator does. Each command was proven
+  against the Python script it replaces before that script was removed.
+  - **`cargo xtask gen-omp`** generates `samp-sdk/src/omp/generated/` from
+    `xtask/omp-wrappers.toml` and the open.mp SDK headers; `--check` reports
+    stale files. The Python generator this release first wrote asked clang for
+    a full JSON AST once per interface — about 30 minutes and up to 4 GB of
+    memory. This one reads every header in one libclang parse per ABI, takes
+    sizes, offsets and constants from it, and runs `clang++` once per ABI for
+    the vtables and once for the subobject offsets, beside the parse: about
+    15 seconds and 280 MB. Types are read from libclang's structure — typedef
+    names, template arguments, the canonical record — instead of their
+    spelling, and what the SDK writes by hand is read with `syn`. Its output
+    matched the Python generator's line for line except where it knew better:
+    the `IDatabasesComponent` UID and `ComponentInterface` impl, which the
+    script's pattern missed; the header of a nested struct (`network.hpp` for
+    `NetworkID`); and a `Default` for `TextLabelAttachmentData`, whose C++
+    defaults are named constants rather than literals. clang is given the
+    definitions the SDK's `CMakeLists.txt` gives every consumer
+    (`GLM_FORCE_QUAT_DATA_WXYZ` and the rest): without them the quaternion's
+    field order was the opposite of the server's.
+  - **`cargo xtask check-abi`** replaces `scripts/check-abi-slots.py`: every
+    slot against the official binaries, by name on Linux and by the bytes each
+    method pops on Windows, with `--generated` for the generated wrappers too.
+    ELF and PE are read with `object`, names demangled with `cpp_demangle`, and
+    `ret N` found with `iced-x86` — no `nm`, `readelf`, `c++filt` or `objdump`.
+    It runs in under a second, and gives the script's verdict on every slot
+    plus seven more: the script passed an address's bytes to `re.finditer` as
+    a pattern, and the `\` in one (`0x5C`) made it find no vtable for
+    `CheckpointsComponent` and `CustomModelsComponent`. Two fixes carried over
+    from the script's last revisions: slots declared through `slots!` are
+    read, and a tail call (`jmp` through a pointer) ends the search for a
+    method's `ret` instead of reading the next function's.
+  - **`cargo xtask roundtrip`** derives the showcase's set/get round trips
+    from the generated code, so nobody chooses by hand what gets tested. It
+    reads the wrappers with `syn`, and found one round trip the script's
+    pattern could not: a getter whose signature `rustfmt` wraps over lines.
+  - **`cargo xtask vtable <Class>`** replaces `scripts/omp-vtable.py`: a
+    class's slots for both ABIs, `--rust` printing `slots!` entries. Its stub
+    only defines a constructor, which makes clang lay the vtable out without
+    overriding anything — no list of pure methods to build, and no host
+    `va_list` leaking into the i686 layout. It says where MSVC keeps an
+    override in a secondary base's vtable (`getUID` at offset 56), which the
+    script reported as a meaningless slot, and marks overloads that need a
+    name each.
 
 ### Validation
 
@@ -523,7 +555,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   callback object, a `BanEntry` added, found and removed, `vehicle_colour`
   and `player_time` as `Pair`s, the NPC found in `players_bots` through the
   hash-table walk, `vehicles_models` as an array, and the core's `onTick`
-  receiving sane `Microseconds` and a steady `TimePoint` on every tick. 143
+  receiving sane `Microseconds` and a steady `TimePoint` on every tick; the
+  database component found through its new `ComponentInterface` impl, and the
+  text draw's background colour, a round trip only the Rust reader finds. 145
   passed, 0 wrong, identically on open.mp Linux and on
   Windows under Wine (WineHQ 11).
 - New tools in the loop: `cargo-careful` (the standard library's own debug and
@@ -534,9 +568,9 @@ The per-crate sections come first, then the ones belonging to the repository.
   The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
   `env-samp`, the last two written for 3.0) compile against it unchanged.
 - The generated wrappers were proven three ways. **Against the binaries**: all
-  1337 slots `check-abi-slots.py --generated` can derive match the official
+  1344 slots `cargo xtask check-abi --generated` can derive match the official
   servers — by method name on Linux, by the bytes each method pops on Windows;
-  183 are declared underivable (the Windows server executable keeps RTTI for
+  176 are declared underivable (the Windows server executable keeps RTTI for
   three classes only, and tail-calling methods have no `ret N` of their own).
   **Against a running server**: the new `examples/omp-showcase` creates one of
   every entity, reads back what it created, and round-trips every setter that

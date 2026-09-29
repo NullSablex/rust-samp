@@ -19,7 +19,7 @@
 //! `create` is overloaded — the other one takes a `VehicleSpawnData` — so MSVC
 //! emits the pair in reverse: the eight-argument overload the SDK calls lands
 //! at [18] there, with [17] holding the other one. That is the same trap the
-//! timer component sprang in v3.5.0, and `scripts/omp-vtable.py` reports it
+//! timer component sprang in v3.5.0, and `cargo xtask vtable` reports it
 //! without anyone having to remember the rule.
 
 use super::component_api::ComponentInterface;
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn slots_match_what_clang_reports() {
-        // `scripts/omp-vtable.py IVehiclesComponent` / `IVehicle`. The `create`
+        // `cargo xtask vtable IVehiclesComponent` / `IVehicle`. The `create`
         // pair is overloaded, so MSVC emits it reversed: [18] is the
         // eight-argument overload there, [17] the `VehicleSpawnData` one.
         #[cfg(not(target_env = "msvc"))]

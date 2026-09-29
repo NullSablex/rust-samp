@@ -1,5 +1,5 @@
 //! Structs the open.mp headers pass by value or by reference — generated
-//! by `scripts/omp-wrappers.py`. Do not edit.
+//! by `cargo xtask gen-omp`. Do not edit.
 //!
 //! Each mirrors its C++ struct field for field. The layout is clang's for
 //! both ABIs, and the assertions below each struct fail the build if the
@@ -153,8 +153,6 @@ impl VirtualReturn for ActorSpawnData {
     }
 }
 
-// msvc-size: ActorSpawnData = 20
-
 /// `AnimationData` in `anim.hpp`.
 ///
 /// The C++ side copies it with a constructor, so it travels by
@@ -205,8 +203,6 @@ const _: () = {
     assert!(std::mem::offset_of!(AnimationData, name) == 32);
 };
 
-// msvc-size: AnimationData = 60
-
 /// `BanEntry` in `network.hpp`.
 ///
 /// The C++ side copies it with a constructor, so it travels by
@@ -241,8 +237,6 @@ const _: () = {
     assert!(std::mem::offset_of!(BanEntry, reason) == 96);
 };
 
-// msvc-size: BanEntry = 136
-
 /// `ConsoleCommandSenderData` in `Server/Components/Console/console.hpp`.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -273,8 +267,6 @@ impl VirtualReturn for ConsoleCommandSenderData {
         raw
     }
 }
-
-// msvc-size: ConsoleCommandSenderData = 8
 
 /// `LegacyDBResult` in `Server/Components/Databases/databases.hpp`.
 #[repr(C)]
@@ -311,9 +303,7 @@ impl VirtualReturn for LegacyDBResult {
     }
 }
 
-// msvc-size: LegacyDBResult = 12
-
-/// `NetworkID` in `player.hpp`.
+/// `NetworkID` in `network.hpp`.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct NetworkID {
@@ -343,8 +333,6 @@ impl VirtualReturn for NetworkID {
         raw
     }
 }
-
-// msvc-size: NetworkID = 24
 
 /// `ObjectAttachmentData` in `Server/Components/Objects/objects.hpp`.
 #[repr(C)]
@@ -401,8 +389,6 @@ impl VirtualReturn for ObjectAttachmentData {
         raw
     }
 }
-
-// msvc-size: ObjectAttachmentData = 32
 
 /// `ObjectAttachmentSlotData` in `Server/Components/Objects/objects.hpp`.
 #[repr(C)]
@@ -470,8 +456,6 @@ impl VirtualReturn for ObjectAttachmentSlotData {
     }
 }
 
-// msvc-size: ObjectAttachmentSlotData = 52
-
 /// `ObjectMaterialData` in `Server/Components/Objects/objects.hpp`.
 ///
 /// The C++ side copies it with a constructor, so it travels by
@@ -517,8 +501,6 @@ const _: () = {
     assert!(std::mem::offset_of!(ObjectMaterialData, r#type) == 84);
     assert!(std::mem::offset_of!(ObjectMaterialData, used) == 85);
 };
-
-// msvc-size: ObjectMaterialData = 88
 
 /// `ObjectMoveData` in `Server/Components/Objects/objects.hpp`.
 #[repr(C)]
@@ -566,8 +548,6 @@ impl VirtualReturn for ObjectMoveData {
     }
 }
 
-// msvc-size: ObjectMoveData = 28
-
 /// `PeerAddress` in `network.hpp`.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -599,8 +579,6 @@ impl VirtualReturn for PeerAddress {
     }
 }
 
-// msvc-size: PeerAddress = 20
-
 /// `PeerNetworkData` in `network.hpp`.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -631,8 +609,6 @@ impl VirtualReturn for PeerNetworkData {
         raw
     }
 }
-
-// msvc-size: PeerNetworkData = 28
 
 /// `PeerRequestParams` in `network.hpp`.
 #[repr(C)]
@@ -680,8 +656,6 @@ impl VirtualReturn for PeerRequestParams {
         raw
     }
 }
-
-// msvc-size: PeerRequestParams = 36
 
 /// `PlayerAimData` in `player.hpp`.
 #[repr(C)]
@@ -749,8 +723,6 @@ impl VirtualReturn for PlayerAimData {
     }
 }
 
-// msvc-size: PlayerAimData = 40
-
 /// `PlayerAnimationData` in `player.hpp`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -788,8 +760,6 @@ impl VirtualReturn for PlayerAnimationData {
         raw
     }
 }
-
-// msvc-size: PlayerAnimationData = 4
 
 /// `PlayerClass` in `Server/Components/Classes/classes.hpp`.
 #[repr(C)]
@@ -847,8 +817,6 @@ impl VirtualReturn for PlayerClass {
     }
 }
 
-// msvc-size: PlayerClass = 128
-
 /// `PlayerKeyData` in `player.hpp`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -894,8 +862,6 @@ impl VirtualReturn for PlayerKeyData {
         raw
     }
 }
-
-// msvc-size: PlayerKeyData = 8
 
 /// `PlayerSpectateData` in `player.hpp`.
 #[repr(C)]
@@ -943,8 +909,6 @@ impl VirtualReturn for PlayerSpectateData {
     }
 }
 
-// msvc-size: PlayerSpectateData = 12
-
 /// `PlayerSurfingData` in `player.hpp`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -991,8 +955,6 @@ impl VirtualReturn for PlayerSurfingData {
     }
 }
 
-// msvc-size: PlayerSurfingData = 20
-
 /// `TextLabelAttachmentData` in `Server/Components/TextLabels/textlabels.hpp`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1001,6 +963,16 @@ pub struct TextLabelAttachmentData {
     pub player_id: i32,
     /// `vehicleID`.
     pub vehicle_id: i32,
+}
+
+impl Default for TextLabelAttachmentData {
+    /// The C++ struct's own defaults.
+    fn default() -> Self {
+        Self {
+            player_id: 65535,
+            vehicle_id: 65535,
+        }
+    }
 }
 
 #[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
@@ -1023,8 +995,6 @@ impl VirtualReturn for TextLabelAttachmentData {
         raw
     }
 }
-
-// msvc-size: TextLabelAttachmentData = 8
 
 /// `VehicleDriverSyncPacket` in `Server/Components/Vehicles/vehicles.hpp`.
 #[repr(C)]
@@ -1112,8 +1082,6 @@ impl VirtualReturn for VehicleDriverSyncPacket {
         raw
     }
 }
-
-// msvc-size: VehicleDriverSyncPacket = 76
 
 /// `VehicleParams` in `Server/Components/Vehicles/vehicles.hpp`.
 #[repr(C)]
@@ -1226,8 +1194,6 @@ impl VirtualReturn for VehicleParams {
     }
 }
 
-// msvc-size: VehicleParams = 16
-
 /// `VehiclePassengerSyncPacket` in `Server/Components/Vehicles/vehicles.hpp`.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -1282,8 +1248,6 @@ impl VirtualReturn for VehiclePassengerSyncPacket {
         raw
     }
 }
-
-// msvc-size: VehiclePassengerSyncPacket = 36
 
 /// `VehicleSpawnData` in `Server/Components/Vehicles/vehicles.hpp`.
 #[repr(C)]
@@ -1356,8 +1320,6 @@ impl VirtualReturn for VehicleSpawnData {
     }
 }
 
-// msvc-size: VehicleSpawnData = 48
-
 /// `VehicleTrailerSyncPacket` in `Server/Components/Vehicles/vehicles.hpp`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1418,8 +1380,6 @@ impl VirtualReturn for VehicleTrailerSyncPacket {
         raw
     }
 }
-
-// msvc-size: VehicleTrailerSyncPacket = 60
 
 /// `VehicleUnoccupiedSyncPacket` in `Server/Components/Vehicles/vehicles.hpp`.
 #[repr(C)]
@@ -1497,8 +1457,6 @@ impl VirtualReturn for VehicleUnoccupiedSyncPacket {
     }
 }
 
-// msvc-size: VehicleUnoccupiedSyncPacket = 76
-
 /// `WeaponSlotData` in `player.hpp`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1536,5 +1494,3 @@ impl VirtualReturn for WeaponSlotData {
         raw
     }
 }
-
-// msvc-size: WeaponSlotData = 8

@@ -1,4 +1,4 @@
-# Interfaces `scripts/omp-wrappers.py` wraps, one module each under
+# Interfaces `cargo xtask gen-omp` wraps, one module each under
 # `samp-sdk/src/omp/generated/`.
 #
 #   class   the interface whose methods are wrapped, with its primary bases
@@ -14,8 +14,8 @@
 #           by its parameter list as well as its name
 #   impl    the class implementing it in the official server binaries, and
 #   library the binary holding it (`Objects` for components/Objects.so|.dll,
-#           `omp-server` for the server itself); `check-abi-slots.py
-#           --generated` reads the real vtable there
+#           `omp-server` for the server itself); `cargo xtask
+#           check-abi --generated` reads the real vtable there
 
 
 [[interface]]

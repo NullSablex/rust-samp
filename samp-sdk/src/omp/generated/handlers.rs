@@ -1,5 +1,5 @@
 //! Event handlers of the groups the SDK does not write by hand — generated
-//! by `scripts/omp-wrappers.py` from the open.mp headers. Do not edit.
+//! by `cargo xtask gen-omp` from the open.mp headers. Do not edit.
 //!
 //! Each handler's vtable follows its C++ declaration order, which is the
 //! slot order on both ABIs: none of these declares a destructor or an

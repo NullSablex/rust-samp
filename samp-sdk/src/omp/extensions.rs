@@ -12,7 +12,7 @@
 //! ## What makes this different from the rest of the SDK
 //!
 //! Every other layout here is fixed by an ABI or by a public header, and
-//! `scripts/check-abi-slots.py` re-derives it from the shipped binaries. This
+//! `cargo xtask check-abi` re-derives it from the shipped binaries. This
 //! one depends on the internals of a vendored hash map, which is not a stable
 //! contract — it changes when open.mp updates its copy.
 //!
