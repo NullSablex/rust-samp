@@ -17,12 +17,44 @@ use super::{AmxCell, Buffer, UnsizedBuffer};
 use crate::amx::Amx;
 #[cfg(feature = "encoding")]
 use crate::encoding;
-use crate::error::AmxResult;
+use crate::error::{AmxError, AmxResult};
 
 /// Upper bound for the first cell of an unpacked string.
 ///
-/// Values above this indicate a packed string (4 chars/cell).
-const MAX_UNPACKED: i32 = 0x00FF_FFFF;
+/// Values above this indicate a packed string (4 chars/cell). The comparison
+/// is unsigned, as in the server (`(ucell)*cstr > UNPACKEDMAX`): a packed
+/// string whose first byte is 0x80 or above has a negative first cell.
+const MAX_UNPACKED: u32 = 0x00FF_FFFF;
+
+/// Longest string read from a script, in cells.
+const MAX_STRING_CELLS: usize = 1024 * 1024;
+
+fn is_packed(first: i32) -> bool {
+    first.cast_unsigned() > MAX_UNPACKED
+}
+
+/// Length of the string in `cells` (bytes when packed, cells when not), or
+/// `None` when no terminator comes before the end of `cells`.
+///
+/// Replaces the server's `amx_StrLen`, which has no bound: given an address
+/// near the top of the stack it walks past the end of the AMX memory.
+fn bounded_strlen(cells: &[i32]) -> Option<usize> {
+    let first = *cells.first()?;
+    if is_packed(first) {
+        let mut len = 0;
+        for &cell in cells {
+            for byte in cell.to_be_bytes() {
+                if byte == 0 {
+                    return Some(len);
+                }
+                len += 1;
+            }
+        }
+        None
+    } else {
+        cells.iter().position(|&cell| cell == 0)
+    }
+}
 
 /// Native Pawn string — packed or unpacked.
 ///
@@ -104,7 +136,7 @@ impl<'amx> AmxString<'amx> {
         let mut vec = Vec::with_capacity(len);
 
         // packed string
-        if self.inner[0] > MAX_UNPACKED {
+        if is_packed(self.inner[0]) {
             let cells = self.inner.as_slice();
             let max_cells = cells.len();
             let mut cell_idx = 0usize;
@@ -165,7 +197,12 @@ impl<'amx> AmxString<'amx> {
 /// Windows-1251 etc. via the `encoding` feature).
 fn decode_bytes(bytes: &[u8]) -> String {
     #[cfg(feature = "encoding")]
-    return encoding::get().decode(bytes).0.into_owned();
+    // Without BOM sniffing: the bytes are a Pawn string, often typed by a
+    // player, and one starting with FF FE must not switch to UTF-16.
+    return encoding::get()
+        .decode_without_bom_handling(bytes)
+        .0
+        .into_owned();
 
     #[cfg(not(feature = "encoding"))]
     return String::from_utf8_lossy(bytes).into_owned();
@@ -174,8 +211,17 @@ fn decode_bytes(bytes: &[u8]) -> String {
 impl<'amx> AmxCell<'amx> for AmxString<'amx> {
     fn from_raw(amx: &'amx Amx, cell: i32) -> AmxResult<AmxString<'amx>> {
         let buffer = UnsizedBuffer::from_raw(amx, cell)?;
-        let ptr = buffer.as_ptr();
-        let str_len = amx.strlen(ptr)?;
+        let str_len = match buffer.max_cells() {
+            // Null VM (no `stp` to bound by): only the server can tell.
+            usize::MAX => amx.strlen(buffer.as_ptr())?,
+            max_cells => {
+                // SAFETY: `[cell, stp)` is AMX memory, alive for `'amx`.
+                let cells = unsafe {
+                    std::slice::from_raw_parts(buffer.as_ptr(), max_cells.min(MAX_STRING_CELLS))
+                };
+                bounded_strlen(cells).ok_or(AmxError::MemoryAccess)?
+            }
+        };
         let buf_len = str_len + 1;
 
         Ok(AmxString {
@@ -276,6 +322,46 @@ mod tests {
         let len = data.len();
         let r = unsafe { Ref::new(0, data.as_mut_ptr()) };
         Buffer::new(r, len)
+    }
+
+    // --- Length without the server's `amx_StrLen` ---
+
+    #[test]
+    fn bounded_strlen_stops_at_the_terminator() {
+        assert_eq!(bounded_strlen(&[0x41, 0x42, 0, 0x43]), Some(2));
+        assert_eq!(bounded_strlen(&[0x4142_4300]), Some(3));
+        assert_eq!(bounded_strlen(&[0x4142_4344, 0x4500_0000]), Some(5));
+        assert_eq!(bounded_strlen(&[0]), Some(0));
+    }
+
+    #[test]
+    fn bounded_strlen_without_terminator_is_none() {
+        // A string running to the end of the AMX memory: the server's
+        // `amx_StrLen` would keep reading past it.
+        assert_eq!(bounded_strlen(&[0x41, 0x42]), None);
+        assert_eq!(bounded_strlen(&[0x4142_4344]), None);
+        assert_eq!(bounded_strlen(&[]), None);
+    }
+
+    #[cfg(feature = "encoding")]
+    #[test]
+    fn a_leading_bom_does_not_change_the_encoding() {
+        let _g = crate::encoding::tests_lock();
+        // "\u{ff}\u{fe}ab" in Windows-1252 (the default), which also starts
+        // like a UTF-16LE BOM.
+        let mut data = vec![0xFF, 0xFE, 0x61, 0x62, 0];
+        let s = AmxString::from_buffer_parts(make_buffer(&mut data), 4);
+        assert_eq!(&*s, "\u{ff}\u{fe}ab");
+    }
+
+    #[test]
+    fn packed_with_a_high_first_byte_is_packed() {
+        // `!"\233xyz"`: 0xE9 makes the first cell negative. The server
+        // compares unsigned, so this is packed, not one cell per byte.
+        let mut data = vec![0xE978_797Au32.cast_signed(), 0];
+        assert_eq!(bounded_strlen(&data), Some(4));
+        let s = AmxString::from_buffer_parts(make_buffer(&mut data), 4);
+        assert_eq!(s.to_bytes(), [0xE9, b'x', b'y', b'z']);
     }
 
     // --- Unpacked strings (one byte per cell) ---

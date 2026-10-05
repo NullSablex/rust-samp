@@ -156,25 +156,30 @@ pub fn current() -> &'static Encoding {
     get()
 }
 
+/// The encoding is process-wide, so tests that change it take turns and each
+/// one puts the default back.
+#[cfg(test)]
+pub(crate) fn tests_lock() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, PoisonError};
-
-    /// The encoding is process-wide, so the tests take turns and each one puts
-    /// the default back.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_encoding_is_windows_1252() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         let enc = get();
         assert_eq!(enc.name(), WINDOWS_1252.name());
     }
 
     #[test]
     fn set_and_get_encoding() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         set_default_encoding(WINDOWS_1251);
         let enc = get();
         assert_eq!(enc.name(), WINDOWS_1251.name());
@@ -187,7 +192,7 @@ mod tests {
 
     #[test]
     fn label_resolves_and_sets() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         let chosen = set_default_encoding_by_label("windows-1254");
         assert_eq!(chosen.map(Encoding::name), Some("windows-1254"));
         assert_eq!(get().name(), "windows-1254");
@@ -196,7 +201,7 @@ mod tests {
 
     #[test]
     fn label_matching_follows_the_whatwg_aliases() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         // Same encoding under three spellings a config file might carry.
         // Note `cyrillic` is *not* one of them — WHATWG maps that label to
         // ISO-8859-5, a different encoding.
@@ -213,7 +218,7 @@ mod tests {
 
     #[test]
     fn an_unknown_label_changes_nothing() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         set_default_encoding(WINDOWS_1251);
         assert!(set_default_encoding_by_label("not-an-encoding").is_none());
         assert_eq!(get().name(), WINDOWS_1251.name(), "the encoding must stay");
@@ -222,7 +227,7 @@ mod tests {
 
     #[test]
     fn encode_checked_flags_what_the_encoding_cannot_represent() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         set_default_encoding(WINDOWS_1252);
 
         let (bytes, lost) = encode_checked("cafe");
@@ -242,7 +247,7 @@ mod tests {
 
     #[test]
     fn unmappable_chars_names_them_once_and_in_order() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = tests_lock();
         set_default_encoding(WINDOWS_1252);
 
         assert_eq!(unmappable_chars("ok, tudo cabe: áéç"), Vec::<char>::new());

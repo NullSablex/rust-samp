@@ -111,10 +111,21 @@ impl<'tu> Generator<'tu> {
 
         // Overloads anywhere in the chain need a name each, given in the spec.
         let mut counts: HashMap<String, usize> = HashMap::new();
+        let mut keys = std::collections::HashSet::new();
         for record in &chain {
+            let class = record.get_name().unwrap_or_default();
             for method in ast::pure_methods(*record) {
+                keys.insert(key_of(&signature(&class, &method)));
                 *counts.entry(method.name).or_default() += 1;
             }
+        }
+        // A name the spec gives that matches nothing is a typo, and a typo
+        // here silently drops the wrappers it was meant to name.
+        if let Some(key) = entry.overloads.keys().find(|key| !keys.contains(*key)) {
+            anyhow::bail!("{leaf}: overload `{key}` in the spec matches no method");
+        }
+        if let Some(name) = entry.skip.iter().find(|name| !counts.contains_key(*name)) {
+            anyhow::bail!("{leaf}: `skip` names `{name}`, which is not a method");
         }
 
         let mut slots = Vec::new();

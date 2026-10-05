@@ -4,6 +4,100 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.7.0-rc.3] — 2026/10/05
+
+Fixes from feeding the SDK hostile input on real servers — scripts declaring
+the natives with signatures they do not have, files that cannot be written,
+threads logging in bulk, shutdowns in every order — and from fuzzing.
+
+**Fixes to note first:** an open.mp server could crash on shutdown, and
+`rust-samp-sdk` did not compile for `i686-pc-windows-gnu`.
+
+### `rust-samp` (lib `samp`) — 3.6.0-rc.3
+
+#### Fixed
+
+- **open.mp shutdown no longer calls into freed components.** The server frees
+  components in its own order, and `Timers` and `Pawn` often go before the
+  plugin; the plugin's cleanup then killed its tick timer through a freed
+  `ITimer`. In testing, about one shutdown in twenty crashed. The SDK now
+  forgets what it holds from a component when the server announces it is
+  freeing it (`onFree`), as the official components do.
+- **Logging from another thread no longer calls the server from that thread.**
+  Neither server's log is thread-safe — open.mp interleaved lines written by two
+  threads at once. A line logged off the main thread now reaches the server log
+  on the main thread, at the next tick or with the next line logged there; the
+  plugin's own log file is still written at once. The backlog is capped at
+  10 000 lines, and lines dropped past it are counted in the server log. Applies
+  to `enable_logger!` and to the default logger alike.
+- Lines logged while the plugin is built — the startup banner, a failure to
+  open the log file — reach the server log. They used to go to stderr only,
+  because the plugin is built before the server hands its log over.
+- When the log file cannot be opened, the SDK says so in the server log
+  instead of only returning the error, which plugins commonly discard; a later
+  `install` can then try again.
+- A panic payload whose `Drop` panics no longer escapes the boundary that
+  caught the panic. Every entry point the server calls goes through one guard,
+  `samp::panic_guard::catch`.
+- `mainthread::post` warns about a backlog after releasing the queue's lock.
+
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.6.0-rc.3
+
+#### Fixed
+
+- **Strings are measured inside the AMX memory.** A string argument was
+  measured with the server's `amx_StrLen`, which has no bound: given an address
+  at the top of the stack, it read past the end of the script's memory. The SDK
+  now measures the string itself, up to the end of the data region, and
+  refuses one with no terminator before it.
+- **A packed string starting with a byte of 0x80 or above decodes.** The
+  packed/unpacked test compared signed, where the server compares unsigned, so
+  `!"\233xyz"` read as garbage.
+- **Text starting like a byte order mark keeps the configured encoding.**
+  Decoding sniffed BOMs: on a Windows-1252 server, a string from a player
+  beginning with `ÿþ` was decoded as UTF-16.
+- A misaligned address from a script is refused (`MemoryAccess`) instead of
+  backing a reference. In a debug build it used to fail an assertion outside
+  the native's panic guard and abort the server.
+- `UnsizedBuffer::into_sized_buffer` no longer asserts on a size above
+  1 MiB in debug builds: the size is often a script argument, and the clamp is
+  the defence.
+- **`i686-pc-windows-gnu` compiles again.** The layout checks for Linux were
+  gated on "not MSVC", which includes windows-gnu, where 64-bit fields align
+  differently.
+
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.6.0-rc.3
+
+#### Fixed
+
+- The generated `#[native]` and `#[event]` wrappers and the component entry
+  points catch panics through `samp::panic_guard::catch`.
+- The component's `onFree` passes on the component being freed.
+
+### Tests
+
+- A fuzz target for AMX strings (`amx_string`): arbitrary cells and claimed
+  lengths, writes into buffers of any size, read-back in three encodings.
+- Stress test of the main-thread queue from eight threads while draining; it,
+  and the rest of `samp` and `samp-sdk`, run clean under ThreadSanitizer.
+
+### Tooling
+
+- `cargo xtask gen-omp` refuses a spec that names a class or a module twice,
+  a module or prefix that is not an identifier, an overload or a `skip` entry
+  that matches no method. Each passed silently before.
+- `cargo xtask check-abi` names the `.pdb` it failed to read.
+
+### CI
+
+- `i686-pc-windows-gnu` joins the build matrix, checked with clippy.
+
+### Docs
+
+- Logging: lines logged before `on_load` now wait for the server instead of
+  being lost, and how lines from other threads reach the server log.
+- Threads: `log::*` is safe from any thread.
+
 ## [v3.7.0-rc.2] — 2026/10/05
 
 A candidate for the release workflow alone: the crates carry no code change

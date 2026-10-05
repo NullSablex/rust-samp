@@ -215,7 +215,7 @@ pub fn disable_debug_hook(amx: &Amx) {
 /// Crosses the FFI boundary, so it must never unwind: the dispatch is wrapped in
 /// `catch_unwind` and always returns `AMX_ERR_NONE` (0).
 extern "C" fn debug_hook_trampoline(amx: *mut samp_sdk::raw::types::AMX) -> i32 {
-    let _ = std::panic::catch_unwind(|| {
+    let _ = crate::panic_guard::catch(|| {
         let Some(rt) = Runtime::try_get() else { return };
         let wrapped = Amx::new(amx, rt.amx_exports());
         Runtime::plugin().on_debug_break(&wrapped);
@@ -246,22 +246,10 @@ pub fn logger() -> fern::Dispatch {
     let rt = Runtime::get();
     rt.disable_default_logger();
 
+    // Through the logger's queue: a line logged on another thread reaches the
+    // server on the main thread, since neither server's log is thread-safe.
     fern::Dispatch::new().chain(fern::Output::call(|record| {
-        let rt = Runtime::get();
-        // In Open Multiplayer mode, maps log::Level → LogLevel and routes via ICore::logLn.
-        // In SA-MP mode, log_level falls back to the standard log() (logprintf has no level).
-        #[cfg(not(feature = "samp-only"))]
-        {
-            let level = match record.level() {
-                log::Level::Error => samp_sdk::omp::LogLevel::Error,
-                log::Level::Warn => samp_sdk::omp::LogLevel::Warning,
-                log::Level::Info => samp_sdk::omp::LogLevel::Message,
-                log::Level::Debug | log::Level::Trace => samp_sdk::omp::LogLevel::Debug,
-            };
-            rt.log_level(level, record.args());
-        }
-        #[cfg(feature = "samp-only")]
-        rt.log(record.args());
+        crate::logger::to_server(record.level(), record.args().to_string());
     }))
 }
 

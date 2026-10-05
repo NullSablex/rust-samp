@@ -23,14 +23,15 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::ptr;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use log::{LevelFilter, Log, Metadata, Record};
 use time::OffsetDateTime;
 use time::format_description::BorrowedFormatItem;
 use time::macros::format_description;
 
+use crate::macros::SDK_LOG_PREFIX;
 use crate::runtime::Runtime;
 
 /// File timestamp format — `YYYY-MM-DD HH:MM:SS`.
@@ -663,9 +664,22 @@ pub fn install(config: LoggerConfig) -> Result<(), InstallError> {
         return Err(InstallError::AlreadyInstalled);
     }
 
-    fs::create_dir_all(&config.directory)?;
     let path = config.log_path();
-    let file = OpenOptions::new().create(true).append(true).open(&path)?;
+    let opened = fs::create_dir_all(&config.directory)
+        .and_then(|()| OpenOptions::new().create(true).append(true).open(&path));
+    let file = match opened {
+        Ok(file) => file,
+        Err(e) => {
+            INSTALLED.store(false, Ordering::Release);
+            // Said here as well as returned: plugins commonly discard the
+            // result, and the server admin is the one who can fix the path.
+            report_to_server(format!(
+                "{SDK_LOG_PREFIX} cannot open {}: {e}; this plugin's log file is disabled",
+                path.display()
+            ));
+            return Err(e.into());
+        }
+    };
     let initial_size = file.metadata().map(|m| m.len()).unwrap_or(0);
 
     let prefix = config.resolved_prefix();
@@ -752,6 +766,93 @@ struct LoggerState {
     next_archive_index: u32,
 }
 
+/// Lines for the server's log written on other threads, waiting for the main
+/// thread. Neither server's log is thread-safe: open.mp interleaves lines
+/// written from two threads at once.
+static SERVER_BACKLOG: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new());
+
+/// Lines kept for the main thread; past this the newest are dropped and
+/// counted, so a plugin without a tick cannot grow it forever. The plugin's
+/// own file still gets every line.
+const SERVER_BACKLOG_LIMIT: usize = 10_000;
+static SERVER_BACKLOG_DROPPED: AtomicUsize = AtomicUsize::new(0);
+
+/// Sends a line to the server's log now when on the main thread, otherwise
+/// queues it for the next [`flush_server_backlog`].
+pub(crate) fn to_server(level: log::Level, line: String) {
+    queue_for_server(level, line, false);
+}
+
+/// [`to_server`] for the logger's own failure reports: rare (one per kind of
+/// failure) and the one line that must not be dropped for a full backlog.
+fn report_to_server(line: String) {
+    queue_for_server(log::Level::Error, line, true);
+}
+
+fn queue_for_server(level: log::Level, line: String, always: bool) {
+    // Lines logged before the server hands over its log (the plugin is built,
+    // and its logger installed, before SA-MP's `Load` or open.mp's `onLoad`)
+    // wait in the backlog too, instead of reaching only the console.
+    if crate::runtime::on_main_thread() && server_log_ready() {
+        flush_server_backlog();
+        send_to_server(level, line);
+        return;
+    }
+    let mut backlog = SERVER_BACKLOG
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if always || backlog.len() < SERVER_BACKLOG_LIMIT {
+        backlog.push((level, line));
+    } else {
+        SERVER_BACKLOG_DROPPED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn server_log_ready() -> bool {
+    Runtime::try_get().is_some_and(Runtime::has_server_log)
+}
+
+/// Writes the lines queued for the server's log, once it has one. Main thread
+/// only: called when the server hands its log over, on every tick, and before
+/// any line the main thread logs.
+pub(crate) fn flush_server_backlog() {
+    if !server_log_ready() {
+        return;
+    }
+    let lines = std::mem::take(
+        &mut *SERVER_BACKLOG
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+    );
+    for (level, line) in lines {
+        send_to_server(level, line);
+    }
+    let dropped = SERVER_BACKLOG_DROPPED.swap(0, Ordering::Relaxed);
+    if dropped > 0 {
+        send_to_server(
+            log::Level::Warn,
+            format!(
+                "{SDK_LOG_PREFIX} {dropped} log lines from other threads were not copied to the server log \
+                 (they came faster than the main thread drained them)"
+            ),
+        );
+    }
+}
+
+/// Only once [`server_log_ready`].
+fn send_to_server(level: log::Level, line: String) {
+    let Some(rt) = Runtime::try_get() else {
+        return;
+    };
+    #[cfg(not(feature = "samp-only"))]
+    rt.log_level(server_log_level(level), line);
+    #[cfg(feature = "samp-only")]
+    {
+        let _ = level;
+        rt.log(line);
+    }
+}
+
 /// Maps a `log` level onto the server's own classification.
 #[cfg(not(feature = "samp-only"))]
 fn server_log_level(level: log::Level) -> samp_sdk::omp::LogLevel {
@@ -795,11 +896,7 @@ impl Log for LoggerImpl {
                 level,
                 &message,
             );
-
-            #[cfg(not(feature = "samp-only"))]
-            Runtime::get().log_level(server_log_level(record.level()), server_line);
-            #[cfg(feature = "samp-only")]
-            Runtime::get().log(server_line);
+            to_server(record.level(), server_line);
         }
 
         // Write to the plugin's dedicated file honouring `file_format`.
@@ -823,7 +920,7 @@ impl Log for LoggerImpl {
                 Err(e) => {
                     if !state.file_write_reported {
                         state.file_write_reported = true;
-                        Runtime::get().log(format!(
+                        report_to_server(format!(
                             "{} failed to write {}: {}. Further file-write errors will be suppressed.",
                             self.prefix,
                             self.path.display(),
@@ -983,7 +1080,7 @@ impl LoggerImpl {
     fn report_file_error(&self, state: &mut LoggerState, action: &str, e: &std::io::Error) {
         if !state.file_write_reported {
             state.file_write_reported = true;
-            Runtime::get().log(format!(
+            report_to_server(format!(
                 "{} failed to {} {}: {}. Further file-write errors will be suppressed.",
                 self.prefix,
                 action,
@@ -1287,6 +1384,57 @@ pub fn print_banner() {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// The test runtime has no server log, so nothing ever drains the
+    /// backlog: tests empty it by hand. Other tests may log meanwhile, hence
+    /// the checks for "contains" and "at least".
+    fn clear_backlog() {
+        SERVER_BACKLOG.lock().unwrap().clear();
+        SERVER_BACKLOG_DROPPED.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn server_lines_wait_until_the_server_has_a_log() {
+        let _g = crate::test_support::exclusive();
+        clear_backlog();
+
+        to_server(log::Level::Info, "before the server log".into());
+        // A thread spawned here is never the one that created the runtime.
+        std::thread::spawn(|| to_server(log::Level::Info, "from a worker".into()))
+            .join()
+            .unwrap();
+
+        flush_server_backlog();
+        let backlog = SERVER_BACKLOG.lock().unwrap();
+        assert!(backlog.contains(&(log::Level::Info, "before the server log".to_owned())));
+        assert!(backlog.contains(&(log::Level::Info, "from a worker".to_owned())));
+        drop(backlog);
+        clear_backlog();
+    }
+
+    #[test]
+    fn the_server_backlog_is_bounded_but_failure_reports_are_kept() {
+        let _g = crate::test_support::exclusive();
+        clear_backlog();
+
+        std::thread::spawn(|| {
+            for _ in 0..SERVER_BACKLOG_LIMIT + 5 {
+                to_server(log::Level::Info, String::new());
+            }
+            report_to_server("the log file failed".into());
+        })
+        .join()
+        .unwrap();
+        let backlog = SERVER_BACKLOG.lock().unwrap();
+        assert!(backlog.len() <= SERVER_BACKLOG_LIMIT + 1);
+        assert_eq!(
+            backlog.last(),
+            Some(&(log::Level::Error, "the log file failed".to_owned()))
+        );
+        drop(backlog);
+        assert!(SERVER_BACKLOG_DROPPED.load(Ordering::Relaxed) >= 5);
+        clear_backlog();
+    }
 
     #[test]
     fn config_resolves_defaults() {

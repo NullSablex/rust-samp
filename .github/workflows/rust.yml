@@ -41,6 +41,11 @@ jobs:
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             check_only: true
+          # SA-MP only (no open.mp ABI), but a supported target: `u64` aligns to
+          # 8 here as on MSVC, so layout checks written for Linux break it.
+          - os: ubuntu-latest
+            target: i686-pc-windows-gnu
+            check_only: true
 
     runs-on: ${{ matrix.os }}
     permissions:

@@ -472,15 +472,26 @@ Runtime::log(...)
 
 ## Common pitfalls
 
-### Logs before `on_load` are dropped
+### Logs before `on_load` wait for the server
 
 The server's log sink only becomes available when `Load()` runs on
 SA-MP, or when `ICore*` is delivered in `onLoad(ICore*)` on native Open
-Multiplayer. Any `log::*` call made earlier — for example inside the
-constructor block — falls back to `eprintln!`.
+Multiplayer. A `log::*` call made earlier — inside the constructor block,
+the startup banner, a failure to open the log file — waits in a queue and
+reaches the server log when the sink arrives, right before `on_load`.
 
-Put initialization logs inside `on_load`, never in the constructor
-block.
+### Logs from other threads reach the server on the main thread
+
+Neither server's log is thread-safe: two threads writing to the open.mp
+log at once interleave their lines. So a line logged off the main thread
+is written to the plugin's file at once, but queued for the server log,
+which gets it on the main thread — at the next tick, or with the next line
+logged there. A plugin that logs from a worker thread wants
+`samp::plugin::enable_tick()`, or its worker lines wait until the main
+thread logs something.
+
+The queue holds 10 000 lines. Past that, lines are left out of the server
+log (never out of the file) and the count is reported there.
 
 ### `also_to_server(false)` does not drop the prefix from the file
 

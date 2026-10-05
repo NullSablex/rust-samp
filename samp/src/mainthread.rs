@@ -78,16 +78,20 @@ where
     // A poisoned lock means some earlier holder panicked. The queue itself is
     // still consistent — a `Vec` of jobs — so recovering beats refusing every
     // later post for the lifetime of the process.
-    let mut guard = queue().lock().unwrap_or_else(PoisonError::into_inner);
-    guard.push(Box::new(job));
+    let backlog = {
+        let mut guard = queue().lock().unwrap_or_else(PoisonError::into_inner);
+        guard.push(Box::new(job));
+        guard.len()
+    };
 
-    if guard.len() >= BACKLOG_WARNING {
+    // Outside the lock: the warning goes through the logger, which may post.
+    if backlog >= BACKLOG_WARNING {
         static WARNED: AtomicBool = AtomicBool::new(false);
         if !WARNED.swap(true, Ordering::Relaxed) {
             sdk_warn!(
                 "{} jobs queued for the main thread and nothing is draining them \
                  — is `samp::plugin::enable_tick()` missing from `initialize_plugin!`?",
-                guard.len()
+                backlog
             );
         }
     }
@@ -206,7 +210,7 @@ pub fn run_pending() -> usize {
 
     let count = jobs.len();
     for job in jobs {
-        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+        if crate::panic_guard::catch(job).is_err() {
             sdk_warn!("a job posted to the main thread panicked; it was dropped");
         }
     }
@@ -353,6 +357,43 @@ mod tests {
             before,
             "the plugin is not disturbed when there is nothing to report to"
         );
+    }
+
+    #[test]
+    fn posting_from_many_threads_while_draining_loses_nothing() {
+        let _g = exclusive();
+        drain_quietly();
+
+        const THREADS: usize = 8;
+        const JOBS: usize = 5_000;
+        let ran = Arc::new(AtomicUsize::new(0));
+        let workers: Vec<_> = (0..THREADS)
+            .map(|t| {
+                let ran = Arc::clone(&ran);
+                std::thread::spawn(move || {
+                    for i in 0..JOBS {
+                        let ran = Arc::clone(&ran);
+                        if i % 997 == t {
+                            post(|| panic!("a job blew up"));
+                        }
+                        post(move || {
+                            ran.fetch_add(1, Ordering::Relaxed);
+                        });
+                    }
+                })
+            })
+            .collect();
+
+        // The main thread drains while the workers are still posting.
+        while workers.iter().any(|w| !w.is_finished()) {
+            run_pending();
+        }
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        run_pending();
+        assert_eq!(ran.load(Ordering::Relaxed), THREADS * JOBS);
+        assert_eq!(pending(), 0);
     }
 
     #[test]

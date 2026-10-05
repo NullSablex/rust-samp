@@ -130,7 +130,7 @@ impl Default for ActorSpawnData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<ActorSpawnData>() == 20);
     assert!(std::mem::offset_of!(ActorSpawnData, position) == 0);
@@ -177,7 +177,7 @@ pub struct AnimationData {
     pub name: HybridString<24>,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<AnimationData>() == 60);
     assert!(std::mem::offset_of!(AnimationData, delta) == 0);
@@ -219,7 +219,7 @@ pub struct BanEntry {
     pub reason: HybridString<32>,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<BanEntry>() == 128);
     assert!(std::mem::offset_of!(BanEntry, address) == 0);
@@ -247,7 +247,7 @@ pub struct ConsoleCommandSenderData {
     pub u1: ConsoleCommandSenderData1,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<ConsoleCommandSenderData>() == 8);
     assert!(std::mem::offset_of!(ConsoleCommandSenderData, sender) == 0);
@@ -280,7 +280,7 @@ pub struct LegacyDBResult {
     pub results: *mut *mut i8,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<LegacyDBResult>() == 12);
     assert!(std::mem::offset_of!(LegacyDBResult, rows) == 0);
@@ -313,7 +313,7 @@ pub struct NetworkID {
     pub port: u16,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<NetworkID>() == 24);
     assert!(std::mem::offset_of!(NetworkID, address) == 0);
@@ -363,7 +363,7 @@ impl Default for ObjectAttachmentData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<ObjectAttachmentData>() == 32);
     assert!(std::mem::offset_of!(ObjectAttachmentData, r#type) == 0);
@@ -425,7 +425,7 @@ impl Default for ObjectAttachmentSlotData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<ObjectAttachmentSlotData>() == 52);
     assert!(std::mem::offset_of!(ObjectAttachmentSlotData, model) == 0);
@@ -478,7 +478,7 @@ pub struct ObjectMaterialData {
     pub used: bool,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<ObjectMaterialData>() == 88);
     assert!(std::mem::offset_of!(ObjectMaterialData, u0) == 0);
@@ -525,7 +525,7 @@ impl Default for ObjectMoveData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<ObjectMoveData>() == 28);
     assert!(std::mem::offset_of!(ObjectMoveData, target_pos) == 0);
@@ -558,7 +558,7 @@ pub struct PeerAddress {
     pub u1: PeerAddress1,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PeerAddress>() == 20);
     assert!(std::mem::offset_of!(PeerAddress, ipv6) == 0);
@@ -589,7 +589,7 @@ pub struct PeerNetworkData {
     pub network_id: NetworkID,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PeerNetworkData>() == 28);
     assert!(std::mem::offset_of!(PeerNetworkData, network) == 0);
@@ -628,7 +628,7 @@ pub struct PeerRequestParams {
     pub bits_is_using_official_client: u8,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PeerRequestParams>() == 36);
     assert!(std::mem::offset_of!(PeerRequestParams, version) == 0);
@@ -692,7 +692,7 @@ impl Default for PlayerAimData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PlayerAimData>() == 40);
     assert!(std::mem::offset_of!(PlayerAimData, cam_front_vector) == 0);
@@ -740,7 +740,7 @@ impl Default for PlayerAnimationData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PlayerAnimationData>() == 4);
     assert!(std::mem::offset_of!(PlayerAnimationData, id) == 0);
@@ -790,7 +790,7 @@ impl Default for PlayerClass {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PlayerClass>() == 128);
     assert!(std::mem::offset_of!(PlayerClass, team) == 0);
@@ -840,7 +840,7 @@ impl Default for PlayerKeyData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PlayerKeyData>() == 8);
     assert!(std::mem::offset_of!(PlayerKeyData, keys) == 0);
@@ -886,7 +886,7 @@ impl Default for PlayerSpectateData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PlayerSpectateData>() == 12);
     assert!(std::mem::offset_of!(PlayerSpectateData, spectating) == 0);
@@ -932,7 +932,7 @@ impl Default for PlayerSurfingData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<PlayerSurfingData>() == 20);
     assert!(std::mem::offset_of!(PlayerSurfingData, r#type) == 0);
@@ -975,7 +975,7 @@ impl Default for TextLabelAttachmentData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<TextLabelAttachmentData>() == 8);
     assert!(std::mem::offset_of!(TextLabelAttachmentData, player_id) == 0);
@@ -1034,7 +1034,7 @@ pub struct VehicleDriverSyncPacket {
     pub u15: VehicleDriverSyncPacket15,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<VehicleDriverSyncPacket>() == 76);
     assert!(std::mem::offset_of!(VehicleDriverSyncPacket, player_id) == 0);
@@ -1145,7 +1145,7 @@ impl Default for VehicleParams {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<VehicleParams>() == 16);
     assert!(std::mem::offset_of!(VehicleParams, engine) == 0);
@@ -1216,7 +1216,7 @@ pub struct VehiclePassengerSyncPacket {
     pub position: Vector3,
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<VehiclePassengerSyncPacket>() == 36);
     assert!(std::mem::offset_of!(VehiclePassengerSyncPacket, player_id) == 0);
@@ -1287,7 +1287,7 @@ impl Default for VehicleSpawnData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<VehicleSpawnData>() == 44);
     assert!(std::mem::offset_of!(VehicleSpawnData, respawn_delay) == 0);
@@ -1352,7 +1352,7 @@ impl Default for VehicleTrailerSyncPacket {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<VehicleTrailerSyncPacket>() == 60);
     assert!(std::mem::offset_of!(VehicleTrailerSyncPacket, vehicle_id) == 0);
@@ -1422,7 +1422,7 @@ impl Default for VehicleUnoccupiedSyncPacket {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<VehicleUnoccupiedSyncPacket>() == 76);
     assert!(std::mem::offset_of!(VehicleUnoccupiedSyncPacket, vehicle_id) == 0);
@@ -1474,7 +1474,7 @@ impl Default for WeaponSlotData {
     }
 }
 
-#[cfg(all(target_arch = "x86", not(target_env = "msvc")))]
+#[cfg(all(target_arch = "x86", target_os = "linux"))]
 const _: () = {
     assert!(std::mem::size_of::<WeaponSlotData>() == 8);
     assert!(std::mem::offset_of!(WeaponSlotData, id) == 0);

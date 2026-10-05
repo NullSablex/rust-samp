@@ -49,14 +49,15 @@ impl Symbols {
             std::fs::File::open(&path).with_context(|| format!("opening {}", path.display()))?;
         let mut pdb =
             pdb::PDB::open(file).with_context(|| format!("reading {}", path.display()))?;
-        let map = pdb.address_map()?;
-        let globals = pdb.global_symbols()?;
+        let reading = || format!("reading {}", path.display());
+        let map = pdb.address_map().with_context(reading)?;
+        let globals = pdb.global_symbols().with_context(reading)?;
         let mut symbols = Self {
             functions: HashMap::new(),
             vftables: HashMap::new(),
         };
         let mut iter = globals.iter();
-        while let Some(symbol) = iter.next()? {
+        while let Some(symbol) = iter.next().with_context(reading)? {
             let Ok(pdb::SymbolData::Public(public)) = symbol.parse() else {
                 continue;
             };

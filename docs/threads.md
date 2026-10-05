@@ -130,7 +130,9 @@ diagnostics native.
   run. An unwind reaching the server's C++ frames would abort the process.
 - The queue is process-wide and works in every mode: SA-MP `ProcessTick` and the
   Open Multiplayer timer both drain it.
-
+- **`log::*` is safe from any thread.** The line reaches the server's log on the
+  main thread, the way a job does — see
+  [Logging](logging.md#logs-from-other-threads-reach-the-server-on-the-main-thread).
 ## What this is not
 
 It is not an async runtime. There is no executor, no `await`, no timer wheel —

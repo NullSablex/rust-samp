@@ -110,7 +110,7 @@ impl Generator<'_> {
             ]);
         }
         for (cfg, layout) in [
-            ("not(target_env = \"msvc\")", &info.itanium),
+            ("target_os = \"linux\"", &info.itanium),
             ("target_env = \"msvc\"", &info.msvc),
         ] {
             out.extend([

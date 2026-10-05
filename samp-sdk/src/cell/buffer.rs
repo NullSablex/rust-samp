@@ -186,10 +186,8 @@ impl<'amx> UnsizedBuffer<'amx> {
     #[must_use]
     pub fn into_sized_buffer(self, len: usize) -> Buffer<'amx> {
         const MAX_BUFFER_CELLS: usize = 1024 * 1024;
-        debug_assert!(
-            len <= MAX_BUFFER_CELLS,
-            "into_sized_buffer() received len={len} above the {MAX_BUFFER_CELLS} limit"
-        );
+        // No assertion on `len`: it is often a script argument, and the clamp
+        // below is the defence.
         let len = len.min(self.max_cells).min(MAX_BUFFER_CELLS);
         Buffer::new(self.inner, len)
     }
@@ -205,6 +203,12 @@ impl<'amx> UnsizedBuffer<'amx> {
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut i32 {
         self.inner.as_mut_ptr()
+    }
+
+    /// Cells from the first one to the end of the AMX data region;
+    /// `usize::MAX` when unknown.
+    pub(crate) fn max_cells(&self) -> usize {
+        self.max_cells
     }
 
     /// Constructor for tests/benchmarks — not part of the stable API.
@@ -362,18 +366,13 @@ mod tests {
         assert_eq!(buf[2], 3);
     }
 
-    /// In debug, `debug_assert!` fires for values above the limit.
-    /// In release, the value is silently clamped.
+    /// The size is often a script argument: clamped in every build, never a
+    /// panic.
     #[test]
-    #[cfg_attr(
-        debug_assertions,
-        should_panic(expected = "into_sized_buffer() received len=")
-    )]
-    fn unsized_into_sized_clamps_to_max_in_release() {
+    fn unsized_into_sized_clamps_to_max() {
         let mut data = vec![0i32; 8];
         let ub = make_unsized(&mut data);
         let buf = ub.into_sized_buffer(1024 * 1024 + 1);
-        // Only reaches here in release — verifies the clamp
         assert_eq!(buf.len(), 1024 * 1024);
     }
 

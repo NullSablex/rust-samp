@@ -524,7 +524,12 @@ impl Amx {
 
         amx_try!(get_addr(self.ptr, address, &raw mut dest_addr));
 
-        if dest_addr.is_null() {
+        // The address comes from the script: amx_GetAddr bounds it but does
+        // not check alignment, and a misaligned cell cannot back a `Ref`.
+        if dest_addr.is_null()
+            || !address.cast_unsigned().is_multiple_of(4)
+            || !dest_addr.is_aligned()
+        {
             return Err(AmxError::MemoryAccess);
         }
 

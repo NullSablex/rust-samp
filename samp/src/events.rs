@@ -218,9 +218,7 @@ fn install_exec_hook(_fn_table: usize) {}
 unsafe extern "C" fn exec_detour(amx: *mut AMX, retval: *mut i32, index: i32) -> i32 {
     // A panic must never cross back into the VM's C code. On panic, fall through
     // to the original public (no suppression).
-    let suppressed =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dispatch(amx, index)))
-            .unwrap_or(None);
+    let suppressed = crate::panic_guard::catch(|| dispatch(amx, index)).unwrap_or(None);
 
     if let Some(value) = suppressed {
         // A handler cancelled the callback: skip the original public, hand

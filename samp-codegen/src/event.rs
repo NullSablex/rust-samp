@@ -267,15 +267,9 @@ fn gen_invocation(
     };
 
     quote! {
-        let user_return = match ::std::panic::catch_unwind(
-            ::std::panic::AssertUnwindSafe(|| #call_origin)
-        ) {
+        let user_return = match samp::panic_guard::catch(|| #call_origin) {
             Ok(v) => v,
-            Err(panic) => {
-                let msg = panic.downcast_ref::<&str>()
-                    .copied()
-                    .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
-                    .unwrap_or("(non-string payload)");
+            Err(msg) => {
                 samp::log::error!("[{}] panic in event handler: {}", #callback_name, msg);
                 return samp::events::EventReturn::Continue;
             }

@@ -35,6 +35,17 @@ use crate::plugin::{SampPlugin, TickConfig};
 
 static RUNTIME: AtomicPtr<Runtime> = AtomicPtr::new(std::ptr::null_mut());
 
+/// The thread that created the runtime: the server's main thread, the only
+/// one allowed to call into the server.
+static MAIN_THREAD: std::sync::OnceLock<std::thread::ThreadId> = std::sync::OnceLock::new();
+
+/// `true` on the server's main thread, and before the runtime exists.
+pub(crate) fn on_main_thread() -> bool {
+    MAIN_THREAD
+        .get()
+        .is_none_or(|id| *id == std::thread::current().id())
+}
+
 struct RuntimeInner {
     plugin: Option<NonNull<dyn SampPlugin + 'static>>,
     /// Concrete type of `plugin`, so a caller naming `T` can be told it named
@@ -123,6 +134,7 @@ impl Runtime {
     }
 
     pub fn initialize() -> &'static Runtime {
+        let _ = MAIN_THREAD.set(std::thread::current().id());
         let inner = RuntimeInner {
             plugin: None,
             plugin_type: None,
@@ -207,6 +219,16 @@ impl Runtime {
     /// the right one for the running mode.
     #[inline]
     #[must_use]
+    /// `true` once the server has handed over its log: `logprintf` in SA-MP's
+    /// `Load`, `ICore` in open.mp's `onLoad`.
+    pub fn has_server_log(&self) -> bool {
+        #[cfg(not(feature = "samp-only"))]
+        if self.omp_core().is_some() {
+            return true;
+        }
+        self.try_logger().is_some()
+    }
+
     pub fn try_logger(&self) -> Option<Logprintf> {
         let inner = self.inner();
         if inner.server_exports.is_null() {

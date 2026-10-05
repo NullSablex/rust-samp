@@ -16,7 +16,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies.rust-samp-sdk]
 path = "../samp-sdk"
-features = ["debug"]
+features = ["debug", "encoding"]
 
 [dependencies.rust-samp]
 path = "../samp"
@@ -29,6 +29,13 @@ ignored = ["rust-samp-sdk", "rust-samp"]
 [[bin]]
 name = "parse_debug"
 path = "fuzz_targets/parse_debug.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "amx_string"
+path = "fuzz_targets/amx_string.rs"
 test = false
 doc = false
 bench = false

@@ -680,46 +680,46 @@ fn gen_omp_entry_point(
                     }
 
                     pub unsafe extern $abi fn comp_on_load(_this: *mut OmpComponent, core: *mut ICore) {
-                        let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                        let _ = samp::panic_guard::catch(|| {
                             samp::interlayer::omp_load(core);
-                        }));
+                        });
                     }
 
                     pub unsafe extern $abi fn comp_on_init(
                         _this: *mut OmpComponent,
                         components: *mut IComponentList,
                     ) {
-                        let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                        let _ = samp::panic_guard::catch(|| {
                             let component_list_ptr = components as *mut samp::omp::server::ServerComponentList;
                             unsafe { samp::interlayer::omp_on_init(component_list_ptr) };
-                        }));
+                        });
                     }
 
                     // Itanium ABI: comp_on_ready, comp_free, comp_reset with explicit _this.
                     #[cfg(not(target_env = "msvc"))]
                     pub unsafe extern "C" fn comp_on_ready(_this: *mut OmpComponent) {
-                        let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                        let _ = samp::panic_guard::catch(|| {
                             samp::interlayer::omp_on_ready();
-                        }));
+                        });
                     }
 
                     pub unsafe extern $abi fn comp_on_free(
                         _this: *mut OmpComponent,
-                        _component: *mut OmpComponent,
+                        component: *mut OmpComponent,
                     ) {
-                        let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
-                            samp::interlayer::omp_on_free();
-                        }));
+                        let _ = samp::panic_guard::catch(|| {
+                            samp::interlayer::omp_on_free(component.cast());
+                        });
                     }
 
                     // Itanium ABI: comp_free and comp_reset with explicit _this.
                     #[cfg(not(target_env = "msvc"))]
                     pub unsafe extern "C" fn comp_free(_this: *mut OmpComponent) {
-                        let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                        let _ = samp::panic_guard::catch(|| {
                             samp::interlayer::omp_cleanup();
                             samp::interlayer::unload();
                             let _ = unsafe { Box::from_raw(_this) };
-                        }));
+                        });
                     }
 
                     #[cfg(not(target_env = "msvc"))]
@@ -737,17 +737,17 @@ fn gen_omp_entry_point(
             // without explicit parameters — Rust emits `ret` (no N), correct for this ABI.
             #[cfg(target_env = "msvc")]
             pub unsafe extern "thiscall" fn comp_on_ready() {
-                let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                let _ = samp::panic_guard::catch(|| {
                     samp::interlayer::omp_on_ready();
-                }));
+                });
             }
 
             #[cfg(target_env = "msvc")]
             pub unsafe extern "thiscall" fn comp_free() {
-                let _ = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+                let _ = samp::panic_guard::catch(|| {
                     samp::interlayer::omp_cleanup();
                     samp::interlayer::unload();
-                }));
+                });
             }
 
             #[cfg(target_env = "msvc")]

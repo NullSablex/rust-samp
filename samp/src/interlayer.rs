@@ -27,8 +27,8 @@ use samp_sdk::omp::server::{
 };
 #[cfg(not(feature = "samp-only"))]
 use samp_sdk::omp::timers::{
-    ITimer, TimerHandlerVTable, TimerTimeOutHandler, create_repeating_timer, kill_timer,
-    query_timers_component,
+    ITimer, TIMERS_COMPONENT_UID, TimerHandlerVTable, TimerTimeOutHandler, create_repeating_timer,
+    kill_timer, query_timers_component,
 };
 
 /// Static vtable of our `PawnEventHandler`.
@@ -52,9 +52,9 @@ static TICK_HANDLER_VTABLE: TimerHandlerVTable = TimerHandlerVTable {
 #[cfg(not(feature = "samp-only"))]
 #[inline]
 fn inner_tick_timeout() {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let _ = crate::panic_guard::catch(|| {
         tick(crate::plugin::TickSource::OmpTimer);
-    }));
+    });
 }
 
 /// Timer callback — called by the server on every timeout (~5ms).
@@ -125,7 +125,7 @@ fn inner_amx_unload(script: *mut IPawnScript) {
 /// `script` must be a valid pointer to the Open Multiplayer server's `IPawnScript`.
 #[cfg(all(not(feature = "samp-only"), not(target_env = "msvc")))]
 unsafe extern "C" fn pawn_on_amx_load(_this: *mut PawnEventHandler, script: *mut IPawnScript) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inner_amx_load(script)));
+    let _ = crate::panic_guard::catch(|| inner_amx_load(script));
 }
 
 /// Callback: Pawn script loaded (native Open Multiplayer mode) — MSVC ABI.
@@ -137,7 +137,7 @@ unsafe extern "thiscall" fn pawn_on_amx_load(
     _this: *mut PawnEventHandler,
     script: *mut IPawnScript,
 ) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inner_amx_load(script)));
+    let _ = crate::panic_guard::catch(|| inner_amx_load(script));
 }
 
 /// Callback: Pawn script unloaded (native Open Multiplayer mode) — Itanium ABI.
@@ -146,7 +146,7 @@ unsafe extern "thiscall" fn pawn_on_amx_load(
 /// `script` must be a valid pointer to the Open Multiplayer server's `IPawnScript`.
 #[cfg(all(not(feature = "samp-only"), not(target_env = "msvc")))]
 unsafe extern "C" fn pawn_on_amx_unload(_this: *mut PawnEventHandler, script: *mut IPawnScript) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inner_amx_unload(script)));
+    let _ = crate::panic_guard::catch(|| inner_amx_unload(script));
 }
 
 /// Callback: Pawn script unloaded (native Open Multiplayer mode) — MSVC ABI.
@@ -158,7 +158,7 @@ unsafe extern "thiscall" fn pawn_on_amx_unload(
     _this: *mut PawnEventHandler,
     script: *mut IPawnScript,
 ) {
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inner_amx_unload(script)));
+    let _ = crate::panic_guard::catch(|| inner_amx_unload(script));
 }
 
 #[must_use]
@@ -174,6 +174,8 @@ pub fn load(server_exports: *const usize) {
     let plugin = Runtime::plugin();
 
     rt.set_server_exports(server_exports);
+    // What the plugin logged while being built: banner, early errors.
+    crate::logger::flush_server_backlog();
     plugin.on_load();
     // After `on_load`, because that is where a plugin installs its logger and
     // the check has nothing but log output to show.
@@ -183,6 +185,7 @@ pub fn load(server_exports: *const usize) {
 pub fn unload() {
     let plugin = Runtime::plugin();
     plugin.on_unload();
+    crate::logger::flush_server_backlog();
 }
 
 /// Stores the plugin's `#[event]` handlers. Called once at init from the
@@ -232,6 +235,7 @@ pub fn tick(source: crate::plugin::TickSource) {
     // Work handed back by other threads runs first, so `on_tick` observes the
     // results of whatever finished since the previous tick.
     crate::mainthread::run_pending();
+    crate::logger::flush_server_backlog();
 
     let rt = Runtime::get();
     let elapsed = rt.record_tick();
@@ -343,6 +347,7 @@ pub fn omp_load(core: *mut ICore) {
         sdk_warn!("null ICore* in on_load — samp::plugin::omp_core() will return None");
     }
     Runtime::get().set_omp_core(core);
+    crate::logger::flush_server_backlog();
     Runtime::plugin().on_load();
     crate::pawn_include::check_if_requested();
 }
@@ -460,10 +465,27 @@ pub fn omp_on_ready() {
     Runtime::plugin().on_omp_ready();
 }
 
-/// Called by the vtable's `on_free` handler — notifies the plugin that a
-/// server component is being unloaded.
+/// Called by the vtable's `on_free` handler: the server is about to free
+/// `component` (any component, this one included), then notifies the plugin.
+///
+/// The server frees components in its own order, so `Timers` may go before
+/// this one; the tick timer is then forgotten here, so [`omp_cleanup`] does not
+/// kill it through freed memory. `Pawn` needs nothing: once freed it is gone
+/// from the list, and [`omp_cleanup`] then only drops the handler.
 #[cfg(not(feature = "samp-only"))]
-pub fn omp_on_free() {
+pub fn omp_on_free(component: *mut std::ffi::c_void) {
+    let rt = Runtime::get();
+    // `component` is still in the list: it is removed after it is freed.
+    let is = |uid| {
+        rt.omp_query_component(uid)
+            .is_some_and(|found| found.cast::<std::ffi::c_void>() == component)
+    };
+    if is(TIMERS_COMPONENT_UID) {
+        // The timer dies with its component, and its destructor hands the
+        // handler back through `tick_handler_free`, which drops it.
+        let _ = rt.take_omp_tick_timer();
+        let _ = rt.take_omp_tick_handler();
+    }
     Runtime::plugin().on_component_free();
 }
 
