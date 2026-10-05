@@ -1,130 +1,94 @@
-//! Benchmarks for Buffer/CellConvert operations.
+//! Typed access to AMX arrays: `get_as`, `set_as` and `iter_as`.
 //!
-//! Compares performance of `get_as`, `set_as` and `iter_as` for typed types
-//! (`f32`, `bool`, `i32`) across buffers of varying sizes.
+//! The conversions themselves are free — `i32` is the cell, `f32` its bits,
+//! `bool` a comparison — so what is measured is the access pattern. Results go
+//! through `black_box`, and float results are folded as their bits: summing
+//! `f32` cannot be vectorized (float addition is not associative), which would
+//! time the sum rather than the conversion.
 //!
 //! Run with:
+//!
 //! ```sh
-//! cargo bench -p samp-sdk --target i686-unknown-linux-gnu
+//! cargo bench -p rust-samp-sdk --bench buffer_bench --target i686-unknown-linux-gnu
 //! ```
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use samp_sdk::cell::repr::CellConvert;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use samp_sdk::cell::{Buffer, Ref};
 
-// ---------------------------------------------------------------------------
-// Construction helper (no real AMX)
-// ---------------------------------------------------------------------------
+const SIZES: [usize; 4] = [8, 64, 256, 1024];
 
-fn make_buffer(data: &mut Vec<i32>) -> Buffer<'_> {
-    let len = data.len();
-    let r = unsafe { Ref::new(0, data.as_mut_ptr()) };
-    Buffer::new(r, len)
+fn buffer(cells: &mut [i32]) -> Buffer<'_> {
+    let len = cells.len();
+    // SAFETY: the pointer covers `len` live cells for the borrow of `cells`.
+    Buffer::new(unsafe { Ref::new(0, cells.as_mut_ptr()) }, len)
 }
 
-// ---------------------------------------------------------------------------
-// bench: get_as::<f32> — typed cell read
-// ---------------------------------------------------------------------------
+fn cells(size: usize) -> Vec<i32> {
+    (0..size)
+        .map(|i| (i as f32 * 0.5).to_bits().cast_signed())
+        .collect()
+}
 
-fn bench_get_as_f32(c: &mut Criterion) {
-    let mut group = c.benchmark_group("buffer/get_as_f32");
-
-    for size in [8usize, 64, 256, 1024] {
-        // `size` is a small literal (max 1024) — `as f32` is exact.
-        #[allow(clippy::cast_precision_loss)]
-        let values: Vec<f32> = (0..size).map(|i| i as f32 * 0.5).collect();
-        let mut data: Vec<i32> = values.iter().map(|&v| v.into_cell()).collect();
-
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, &size| {
+fn read(c: &mut Criterion) {
+    let mut group = c.benchmark_group("read");
+    for size in SIZES {
+        let mut data = cells(size);
+        let buf = buffer(&mut data);
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_function(BenchmarkId::new("iter_as_i32", size), |b| {
             b.iter(|| {
-                let buf = make_buffer(&mut data);
-                let mut sum = 0.0f32;
+                black_box(&buf)
+                    .iter_as::<i32>()
+                    .fold(0i32, i32::wrapping_add)
+            });
+        });
+        group.bench_function(BenchmarkId::new("iter_as_f32", size), |b| {
+            b.iter(|| {
+                black_box(&buf)
+                    .iter_as::<f32>()
+                    .fold(0u32, |acc, v| acc.wrapping_add(v.to_bits()))
+            });
+        });
+        group.bench_function(BenchmarkId::new("get_as_f32", size), |b| {
+            b.iter(|| {
+                let buf = black_box(&buf);
+                (0..size).fold(0u32, |acc, i| {
+                    acc.wrapping_add(buf.get_as::<f32>(i).map_or(0, f32::to_bits))
+                })
+            });
+        });
+    }
+    group.finish();
+}
+
+fn write(c: &mut Criterion) {
+    let mut group = c.benchmark_group("write");
+    for size in SIZES {
+        let mut data = vec![0i32; size];
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_function(BenchmarkId::new("set_as_bool", size), |b| {
+            b.iter(|| {
+                let mut buf = buffer(&mut data);
                 for i in 0..size {
-                    if let Some(v) = buf.get_as::<f32>(i) {
-                        sum += v;
-                    }
+                    buf.set_as(i, black_box(i % 2 == 0));
                 }
-                black_box(sum);
+                black_box(buf.as_slice()[size - 1])
             });
         });
-    }
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
-// bench: set_as::<bool> — typed cell write
-// ---------------------------------------------------------------------------
-
-fn bench_set_as_bool(c: &mut Criterion) {
-    let mut group = c.benchmark_group("buffer/set_as_bool");
-
-    for size in [8usize, 64, 256, 1024] {
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, &size| {
+        group.bench_function(BenchmarkId::new("set_as_f32", size), |b| {
             b.iter(|| {
-                let mut data = vec![0i32; size];
-                let mut buf = make_buffer(&mut data);
+                let mut buf = buffer(&mut data);
                 for i in 0..size {
-                    buf.set_as(i, i % 2 == 0);
+                    buf.set_as(i, black_box(i as f32));
                 }
+                black_box(buf.as_slice()[size - 1])
             });
         });
     }
     group.finish();
 }
 
-// ---------------------------------------------------------------------------
-// bench: iter_as::<i32> — typed iteration over the whole buffer
-// ---------------------------------------------------------------------------
-
-fn bench_iter_as_i32(c: &mut Criterion) {
-    let mut group = c.benchmark_group("buffer/iter_as_i32");
-
-    for size in [8usize, 64, 256, 1024] {
-        let size_i32 = i32::try_from(size).expect("size literal fits in i32");
-        let mut data: Vec<i32> = (0..size_i32).collect();
-
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, _| {
-            b.iter(|| {
-                let buf = make_buffer(&mut data);
-                let sum: i32 = buf.iter_as::<i32>().sum();
-                black_box(sum);
-            });
-        });
-    }
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
-// bench: iter_as::<f32> — typed iteration with bit conversion
-// ---------------------------------------------------------------------------
-
-fn bench_iter_as_f32(c: &mut Criterion) {
-    let mut group = c.benchmark_group("buffer/iter_as_f32");
-
-    for size in [8usize, 64, 256, 1024] {
-        // `size` is a small literal (max 1024) — `as f32` is exact.
-        #[allow(clippy::cast_precision_loss)]
-        let values: Vec<f32> = (0..size).map(|i| i as f32).collect();
-        let mut data: Vec<i32> = values.iter().map(|&v| v.into_cell()).collect();
-
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, _| {
-            b.iter(|| {
-                let buf = make_buffer(&mut data);
-                let sum: f32 = buf.iter_as::<f32>().sum();
-                black_box(sum);
-            });
-        });
-    }
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    bench_get_as_f32,
-    bench_set_as_bool,
-    bench_iter_as_i32,
-    bench_iter_as_f32,
-);
+criterion_group!(benches, read, write);
 criterion_main!(benches);

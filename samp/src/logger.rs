@@ -717,6 +717,7 @@ pub fn install(config: LoggerConfig) -> Result<(), InstallError> {
             file_write_reported: false,
             next_archive_index,
         }),
+        clock: Clock::new(),
     });
 
     set_level(level);
@@ -751,6 +752,63 @@ struct LoggerImpl {
     compress_archives: bool,
     sinks: Vec<Box<dyn Sink>>,
     state: Mutex<LoggerState>,
+    clock: Clock,
+}
+
+/// The timestamp of each line, rebuilt once per second.
+///
+/// Asking for the local time costs more than the rest of a line: with more
+/// than one thread alive — always, in a server — `OffsetDateTime::now_local`
+/// takes the slow path on every call, and formatting follows. The text only
+/// changes once a second, and the UTC offset only with daylight saving time,
+/// so the text is kept for its second and the offset is checked once a minute.
+struct Clock {
+    cache: Mutex<ClockCache>,
+}
+
+struct ClockCache {
+    /// Unix second `text` is for; `i64::MIN` before the first line.
+    second: i64,
+    /// Unix minute `offset` was last read in.
+    offset_minute: i64,
+    offset: time::UtcOffset,
+    text: String,
+}
+
+impl Clock {
+    fn new() -> Self {
+        Clock {
+            cache: Mutex::new(ClockCache {
+                second: i64::MIN,
+                offset_minute: i64::MIN,
+                offset: time::UtcOffset::UTC,
+                text: String::new(),
+            }),
+        }
+    }
+
+    fn timestamp(&self) -> String {
+        let now = OffsetDateTime::now_utc();
+        let second = now.unix_timestamp();
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        if cache.second != second {
+            let minute = second.div_euclid(60);
+            if cache.offset_minute != minute {
+                // Where the local offset cannot be read, the last one known
+                // stands — UTC until there is one.
+                if let Ok(offset) = time::UtcOffset::current_local_offset() {
+                    cache.offset = offset;
+                }
+                cache.offset_minute = minute;
+            }
+            cache.text = now
+                .to_offset(cache.offset)
+                .format(TIMESTAMP_FORMAT)
+                .unwrap_or_else(|_| String::from("0000-00-00 00:00:00"));
+            cache.second = second;
+        }
+        cache.text.clone()
+    }
 }
 
 struct LoggerState {
@@ -776,6 +834,9 @@ static SERVER_BACKLOG: Mutex<Vec<(log::Level, String)>> = Mutex::new(Vec::new())
 /// own file still gets every line.
 const SERVER_BACKLOG_LIMIT: usize = 10_000;
 static SERVER_BACKLOG_DROPPED: AtomicUsize = AtomicUsize::new(0);
+/// Set (under the backlog's lock) when a line is queued or dropped, so the
+/// flush on every tick costs a load when, as usual, nothing is waiting.
+static SERVER_BACKLOG_WAITING: AtomicBool = AtomicBool::new(false);
 
 /// Sends a line to the server's log now when on the main thread, otherwise
 /// queues it for the next [`flush_server_backlog`].
@@ -806,6 +867,7 @@ fn queue_for_server(level: log::Level, line: String, always: bool) {
     } else {
         SERVER_BACKLOG_DROPPED.fetch_add(1, Ordering::Relaxed);
     }
+    SERVER_BACKLOG_WAITING.store(true, Ordering::Release);
 }
 
 fn server_log_ready() -> bool {
@@ -816,14 +878,16 @@ fn server_log_ready() -> bool {
 /// only: called when the server hands its log over, on every tick, and before
 /// any line the main thread logs.
 pub(crate) fn flush_server_backlog() {
-    if !server_log_ready() {
+    if !SERVER_BACKLOG_WAITING.load(Ordering::Acquire) || !server_log_ready() {
         return;
     }
-    let lines = std::mem::take(
-        &mut *SERVER_BACKLOG
+    let lines = {
+        let mut backlog = SERVER_BACKLOG
             .lock()
-            .unwrap_or_else(PoisonError::into_inner),
-    );
+            .unwrap_or_else(PoisonError::into_inner);
+        SERVER_BACKLOG_WAITING.store(false, Ordering::Release);
+        std::mem::take(&mut *backlog)
+    };
     for (level, line) in lines {
         send_to_server(level, line);
     }
@@ -877,10 +941,7 @@ impl Log for LoggerImpl {
         let message = format!("{}", record.args());
         let level = record.level().as_str();
 
-        let timestamp = OffsetDateTime::now_local()
-            .unwrap_or_else(|_| OffsetDateTime::now_utc())
-            .format(TIMESTAMP_FORMAT)
-            .unwrap_or_else(|_| String::from("0000-00-00 00:00:00"));
+        let timestamp = self.clock.timestamp();
 
         // Forward to the server's own log honouring `server_format`.
         //
@@ -1434,6 +1495,24 @@ mod tests {
         drop(backlog);
         assert!(SERVER_BACKLOG_DROPPED.load(Ordering::Relaxed) >= 5);
         clear_backlog();
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "reads the real-time clock, which Miri isolates")]
+    fn the_clock_formats_local_time_and_keeps_it_for_the_second() {
+        let clock = Clock::new();
+        let first = clock.timestamp();
+        // `YYYY-MM-DD HH:MM:SS`
+        assert_eq!(first.len(), 19, "{first}");
+        assert!(first.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 => b == b'-',
+            10 => b == b' ',
+            13 | 16 => b == b':',
+            _ => b.is_ascii_digit(),
+        }));
+        let cache = clock.cache.lock().unwrap();
+        assert_eq!(cache.text, first);
+        assert_ne!(cache.second, i64::MIN);
     }
 
     #[test]

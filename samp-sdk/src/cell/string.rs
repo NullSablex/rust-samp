@@ -39,21 +39,35 @@ fn is_packed(first: i32) -> bool {
 /// Replaces the server's `amx_StrLen`, which has no bound: given an address
 /// near the top of the stack it walks past the end of the AMX memory.
 fn bounded_strlen(cells: &[i32]) -> Option<usize> {
-    let first = *cells.first()?;
-    if is_packed(first) {
-        let mut len = 0;
-        for &cell in cells {
-            for byte in cell.to_be_bytes() {
-                if byte == 0 {
-                    return Some(len);
-                }
-                len += 1;
-            }
-        }
-        None
+    if is_packed(*cells.first()?) {
+        let at = find_cell(cells, has_zero_byte)?;
+        let lead = cells[at].to_be_bytes().iter().position(|&byte| byte == 0)?;
+        Some(at * 4 + lead)
     } else {
-        cells.iter().position(|&cell| cell == 0)
+        find_cell(cells, |cell| cell == 0)
     }
+}
+
+/// Index of the first cell for which `ends` holds.
+///
+/// Whole blocks are tested without an early exit, which the compiler turns
+/// into vector code; only the block holding the match is searched cell by
+/// cell. A cell-by-cell search from the start cannot be vectorized and costs
+/// several times more on a long string.
+fn find_cell(cells: &[i32], ends: impl Fn(i32) -> bool + Copy) -> Option<usize> {
+    const BLOCK: usize = 16;
+    let block = cells
+        .chunks(BLOCK)
+        .position(|block| block.iter().fold(false, |found, &cell| found | ends(cell)))?;
+    let start = block * BLOCK;
+    Some(start + cells[start..].iter().position(|&cell| ends(cell))?)
+}
+
+/// Whether any of the four bytes of `cell` is zero, without looking at them
+/// one by one.
+fn has_zero_byte(cell: i32) -> bool {
+    let bits = cell.cast_unsigned();
+    bits.wrapping_sub(0x0101_0101) & !bits & 0x8080_8080 != 0
 }
 
 /// Native Pawn string — packed or unpacked.
@@ -133,40 +147,32 @@ impl<'amx> AmxString<'amx> {
             return Vec::new();
         }
         let len = self.len.min(MAX_STRING_LEN);
-        let mut vec = Vec::with_capacity(len);
+        let cells = self.inner.as_slice();
 
-        // packed string
-        if is_packed(self.inner[0]) {
-            let cells = self.inner.as_slice();
-            let max_cells = cells.len();
-            let mut cell_idx = 0usize;
-            let mut mark = 3usize;
-            for _ in 0..len {
-                if cell_idx >= max_cells {
-                    break;
+        if is_packed(cells[0]) {
+            // Four bytes per cell, the first in the high byte. A cell with no
+            // zero byte goes in whole; the one holding the terminator, or
+            // reaching `len`, byte by byte.
+            let mut vec = Vec::with_capacity(len);
+            for &cell in cells {
+                let bytes = cell.to_be_bytes();
+                if !has_zero_byte(cell) && vec.len() + 4 <= len {
+                    vec.extend_from_slice(&bytes);
+                    continue;
                 }
-                // Byte extraction from a packed i32 cell — truncation is intentional.
-                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                let ch = (cells[cell_idx] >> (mark * 8)) as u8;
-                if ch == b'\0' {
-                    break;
-                }
-                vec.push(ch);
-                mark = (mark + 3) % 4;
-                if mark == 3 {
-                    cell_idx += 1;
-                }
+                let room = len - vec.len();
+                vec.extend(bytes.into_iter().take(room).take_while(|&byte| byte != 0));
+                break;
             }
+            vec
         } else {
-            for item in self.inner.iter().take(len) {
-                // An unpacked cell holds a single byte; truncation is intentional.
-                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                let byte = *item as u8;
-                vec.push(byte);
-            }
+            // One byte per cell. A single pass the compiler vectorizes.
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            cells[..len.min(cells.len())]
+                .iter()
+                .map(|&cell| cell as u8)
+                .collect()
         }
-
-        vec
     }
 
     /// String length in characters (excluding the `0` terminator).
@@ -195,17 +201,20 @@ impl<'amx> AmxString<'amx> {
 
 /// Decodes the raw bytes using the configured encoding (UTF-8 by default;
 /// Windows-1251 etc. via the `encoding` feature).
-fn decode_bytes(bytes: &[u8]) -> String {
-    #[cfg(feature = "encoding")]
+///
+/// Takes the bytes by value: when they are already the UTF-8 the result needs
+/// — ASCII, or valid UTF-8 — the `String` reuses their allocation instead of
+/// copying them.
+fn decode_bytes(bytes: Vec<u8>) -> String {
     // Without BOM sniffing: the bytes are a Pawn string, often typed by a
     // player, and one starting with FF FE must not switch to UTF-16.
-    return encoding::get()
-        .decode_without_bom_handling(bytes)
-        .0
-        .into_owned();
-
-    #[cfg(not(feature = "encoding"))]
-    return String::from_utf8_lossy(bytes).into_owned();
+    #[cfg(feature = "encoding")]
+    if let std::borrow::Cow::Owned(text) = encoding::get().decode_without_bom_handling(&bytes).0 {
+        return text;
+    }
+    // Valid UTF-8 as it stands (always so when the encoding borrowed it).
+    String::from_utf8(bytes)
+        .unwrap_or_else(|invalid| String::from_utf8_lossy(invalid.as_bytes()).into_owned())
 }
 
 impl<'amx> AmxCell<'amx> for AmxString<'amx> {
@@ -242,7 +251,7 @@ impl Deref for AmxString<'_> {
     /// Decodes on the first call and caches in [`OnceCell`] — subsequent
     /// accesses return the same `&str` without allocation.
     fn deref(&self) -> &str {
-        self.decoded.get_or_init(|| decode_bytes(&self.to_bytes()))
+        self.decoded.get_or_init(|| decode_bytes(self.to_bytes()))
     }
 }
 
@@ -332,6 +341,79 @@ mod tests {
         assert_eq!(bounded_strlen(&[0x4142_4300]), Some(3));
         assert_eq!(bounded_strlen(&[0x4142_4344, 0x4500_0000]), Some(5));
         assert_eq!(bounded_strlen(&[0]), Some(0));
+        // Past the first block of cells, and a terminator on a block edge.
+        let mut long = vec![0x41; 40];
+        long[37] = 0;
+        assert_eq!(bounded_strlen(&long), Some(37));
+        long[16] = 0;
+        assert_eq!(bounded_strlen(&long), Some(16));
+        let mut packed = vec![0x4142_4344; 40];
+        packed[20] = 0x4142_0044;
+        assert_eq!(bounded_strlen(&packed), Some(20 * 4 + 2));
+    }
+
+    #[test]
+    fn bounded_strlen_agrees_with_a_byte_by_byte_search() {
+        fn naive(cells: &[i32]) -> Option<usize> {
+            let first = *cells.first()?;
+            if first.cast_unsigned() > 0x00FF_FFFF {
+                let bytes = cells.iter().flat_map(|cell| cell.to_be_bytes());
+                bytes
+                    .enumerate()
+                    .find(|&(_, byte)| byte == 0)
+                    .map(|(at, _)| at)
+            } else {
+                cells.iter().position(|&cell| cell == 0)
+            }
+        }
+        // A small linear congruential generator: deterministic, no dependency.
+        let mut state = 0x2545_f491_u32;
+        let mut next = move || {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            state
+        };
+        for _ in 0..5000 {
+            let len = (next() % 70) as usize;
+            let packed = next() % 2 == 0;
+            let mut cells: Vec<i32> = (0..len)
+                .map(|_| {
+                    let value = next() | 0x0101_0101;
+                    if packed {
+                        value.cast_signed()
+                    } else {
+                        (value & 0xFF).cast_signed()
+                    }
+                })
+                .collect();
+            if len > 0 && next() % 4 != 0 {
+                let at = (next() as usize) % len;
+                if packed {
+                    let byte = (next() % 4) as usize;
+                    let mut bytes = cells[at].to_be_bytes();
+                    bytes[byte] = 0;
+                    cells[at] = i32::from_be_bytes(bytes);
+                } else {
+                    cells[at] = 0;
+                }
+            }
+            assert_eq!(bounded_strlen(&cells), naive(&cells), "{cells:x?}");
+        }
+    }
+
+    #[test]
+    fn zero_bytes_are_found_in_any_position() {
+        for cell in [
+            0x0041_4243,
+            0x4100_4243,
+            0x4142_0043,
+            0x4142_4300,
+            0x0000_0000,
+        ] {
+            assert!(has_zero_byte(cell), "{cell:#x}");
+        }
+        for cell in [0x4142_4344, 0x0101_0101, 0x8080_8080_u32.cast_signed(), -1] {
+            assert!(!has_zero_byte(cell), "{cell:#x}");
+        }
     }
 
     #[test]

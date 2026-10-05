@@ -48,8 +48,9 @@
 //! [`samp::amx::get`]: crate::amx::get
 //! [`SampPlugin::on_tick`]: crate::plugin::SampPlugin::on_tick
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use crate::macros::sdk_warn;
 
@@ -60,9 +61,56 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 /// between ticks is normal; five figures means nothing is draining them.
 const BACKLOG_WARNING: usize = 10_000;
 
-fn queue() -> &'static Mutex<Vec<Job>> {
-    static QUEUE: OnceLock<Mutex<Vec<Job>>> = OnceLock::new();
-    QUEUE.get_or_init(|| Mutex::new(Vec::new()))
+/// The jobs, and their count mirrored outside the lock: the main thread asks
+/// on every tick, and almost always the answer is "none", which then costs a
+/// load instead of locking and unlocking the mutex.
+struct Queue {
+    jobs: Mutex<Vec<Job>>,
+    /// `jobs.len()`, written only while `jobs` is locked.
+    len: AtomicUsize,
+}
+
+impl Queue {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Job>> {
+        // A poisoned lock means some earlier holder panicked. The queue itself
+        // is still consistent — a `Vec` of jobs — so recovering beats refusing
+        // every later post for the lifetime of the process.
+        self.jobs.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Appends `job`; returns the new length.
+    fn push(&self, job: Job) -> usize {
+        let mut jobs = self.lock();
+        jobs.push(job);
+        self.len.store(jobs.len(), Ordering::Release);
+        jobs.len()
+    }
+
+    /// Takes every queued job, without locking when there is none.
+    fn take(&self) -> Vec<Job> {
+        if self.len.load(Ordering::Acquire) == 0 {
+            return Vec::new();
+        }
+        let mut jobs = self.lock();
+        self.len.store(0, Ordering::Release);
+        std::mem::take(&mut *jobs)
+    }
+
+    /// Puts `left` back ahead of whatever was posted since it was taken.
+    fn put_back(&self, left: Vec<Job>) {
+        let mut jobs = self.lock();
+        let newer = std::mem::replace(&mut *jobs, left);
+        jobs.extend(newer);
+        self.len.store(jobs.len(), Ordering::Release);
+    }
+}
+
+fn queue() -> &'static Queue {
+    static QUEUE: Queue = Queue {
+        jobs: Mutex::new(Vec::new()),
+        len: AtomicUsize::new(0),
+    };
+    &QUEUE
 }
 
 /// Queues `job` to run on the main thread at the next tick.
@@ -75,14 +123,7 @@ pub fn post<F>(job: F)
 where
     F: FnOnce() + Send + 'static,
 {
-    // A poisoned lock means some earlier holder panicked. The queue itself is
-    // still consistent — a `Vec` of jobs — so recovering beats refusing every
-    // later post for the lifetime of the process.
-    let backlog = {
-        let mut guard = queue().lock().unwrap_or_else(PoisonError::into_inner);
-        guard.push(Box::new(job));
-        guard.len()
-    };
+    let backlog = queue().push(Box::new(job));
 
     // Outside the lock: the warning goes through the logger, which may post.
     if backlog >= BACKLOG_WARNING {
@@ -190,10 +231,43 @@ pub fn post_with_amx<T, R>(
 /// Number of jobs waiting to run.
 #[must_use]
 pub fn pending() -> usize {
-    queue().lock().unwrap_or_else(PoisonError::into_inner).len()
+    queue().len.load(Ordering::Acquire)
 }
 
-/// Runs every queued job and returns how many ran.
+/// Time one drain may spend running jobs, in nanoseconds; `0` for no limit.
+static BUDGET_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Limits how long one drain spends running jobs; `None` (the default) runs
+/// every queued job.
+///
+/// The server is frozen while jobs run, so a burst of ten thousand replies
+/// arriving at once becomes one long stall. With a budget, a drain stops at the
+/// first job that ends past it and leaves the rest, in order, for the next
+/// tick — the stall is spread over several ticks instead. A job is never cut
+/// short, and at least one runs per drain, so the queue always advances.
+///
+/// ```rust,no_run
+/// // At most ~2 ms of a 5 ms SA-MP tick goes to background replies.
+/// samp::mainthread::set_budget(Some(std::time::Duration::from_millis(2)));
+/// ```
+pub fn set_budget(budget: Option<Duration>) {
+    let nanos = budget.map_or(0, |budget| {
+        u64::try_from(budget.as_nanos()).unwrap_or(u64::MAX).max(1)
+    });
+    BUDGET_NANOS.store(nanos, Ordering::Release);
+}
+
+/// The limit [`set_budget`] set, if any.
+#[must_use]
+pub fn budget() -> Option<Duration> {
+    match BUDGET_NANOS.load(Ordering::Acquire) {
+        0 => None,
+        nanos => Some(Duration::from_nanos(nanos)),
+    }
+}
+
+/// Runs the queued jobs and returns how many ran: all of them, or as many as
+/// fit in the [`budget`] when one is set.
 ///
 /// Called by the SDK on each tick. A plugin only needs it when it drives the
 /// queue itself — with the tick disabled, for instance.
@@ -203,18 +277,31 @@ pub fn run_pending() -> usize {
     // Take the jobs out under the lock and run them with it released: a job is
     // allowed to post more work (which lands on the next drain), and running
     // while holding the lock would deadlock on that.
-    let jobs: Vec<Job> = {
-        let mut guard = queue().lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *guard)
-    };
+    let jobs = queue().take();
+    if jobs.is_empty() {
+        return 0;
+    }
 
-    let count = jobs.len();
-    for job in jobs {
+    let deadline = budget().map(|budget| Instant::now() + budget);
+    let mut jobs = jobs.into_iter();
+    let mut ran = 0;
+    for job in jobs.by_ref() {
         if crate::panic_guard::catch(job).is_err() {
             sdk_warn!("a job posted to the main thread panicked; it was dropped");
         }
+        ran += 1;
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            break;
+        }
     }
-    count
+
+    // Over budget: what is left goes back ahead of anything posted meanwhile,
+    // keeping the order jobs were posted in.
+    let left: Vec<Job> = jobs.collect();
+    if !left.is_empty() {
+        queue().put_back(left);
+    }
+    ran
 }
 
 #[cfg(test)]
@@ -394,6 +481,30 @@ mod tests {
         run_pending();
         assert_eq!(ran.load(Ordering::Relaxed), THREADS * JOBS);
         assert_eq!(pending(), 0);
+    }
+
+    #[test]
+    fn a_budget_leaves_the_rest_for_the_next_drain_in_order() {
+        let _g = exclusive();
+        drain_quietly();
+
+        let seen = Arc::new(StdMutex::new(Vec::new()));
+        for i in 0..4 {
+            let seen = Arc::clone(&seen);
+            post(move || {
+                std::thread::sleep(Duration::from_millis(2));
+                seen.lock().unwrap().push(i);
+            });
+        }
+        set_budget(Some(Duration::from_millis(1)));
+        // One job runs past the budget: the drain stops after it.
+        assert_eq!(run_pending(), 1);
+        let late = Arc::clone(&seen);
+        post(move || late.lock().unwrap().push(99));
+        set_budget(None);
+        assert_eq!(run_pending(), 4);
+        assert_eq!(*seen.lock().unwrap(), vec![0, 1, 2, 3, 99]);
+        assert_eq!(budget(), None);
     }
 
     #[test]

@@ -1,209 +1,122 @@
-//! Benchmarks for AMX string parsing.
+//! AMX strings: decoding, the cached `&str`, and writing back.
 //!
-//! Compares performance of the unpacked (1 byte/cell) and packed (4 bytes/cell) paths,
-//! the cost of `Buffer::write_str` / `UnsizedBuffer::write_str`, and a baseline without AMX.
+//! Cells come from a `Vec`, not a VM, so this is the SDK's own cost. Every
+//! measurement consumes its result through `black_box`, and setup that a real
+//! call would not repeat (allocating the cells) is kept out of the timing with
+//! `iter_batched`.
 //!
 //! Run with:
+//!
 //! ```sh
-//! cargo bench --target i686-unknown-linux-gnu
+//! cargo bench -p rust-samp-sdk --bench string_bench --target i686-unknown-linux-gnu
 //! ```
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use samp_sdk::cell::{AmxString, Buffer, Ref};
 
-// ---------------------------------------------------------------------------
-// Construction helpers (no real AMX)
-// ---------------------------------------------------------------------------
+const SIZES: [usize; 4] = [8, 64, 256, 1024];
 
-fn make_buffer(data: &mut Vec<i32>) -> Buffer<'_> {
-    let len = data.len();
-    let r = unsafe { Ref::new(0, data.as_mut_ptr()) };
-    Buffer::new(r, len)
+fn buffer(cells: &mut [i32]) -> Buffer<'_> {
+    let len = cells.len();
+    // SAFETY: the pointer covers `len` live cells for the borrow of `cells`.
+    Buffer::new(unsafe { Ref::new(0, cells.as_mut_ptr()) }, len)
 }
 
-/// Builds a packed buffer from bytes.
-/// Format: 4 chars per cell, big-endian. First cell > `0x00FF_FFFF`.
-fn build_packed_cells(bytes: &[u8]) -> Vec<i32> {
-    let n_cells = bytes.len().div_ceil(4) + 1;
-    let mut cells = vec![0i32; n_cells];
-    for (i, &b) in bytes.iter().enumerate() {
-        let cell = i / 4;
-        let shift = (3 - (i % 4)) * 8;
-        cells[cell] |= i32::from(b) << shift;
+fn text(size: usize) -> String {
+    (b'A'..=b'Z').cycle().take(size).map(char::from).collect()
+}
+
+/// Unpacked: one character per cell, then the terminator.
+fn unpacked(text: &str) -> Vec<i32> {
+    text.bytes().map(i32::from).chain([0]).collect()
+}
+
+/// Packed: four characters per cell, the first in the high byte.
+fn packed(text: &str) -> Vec<i32> {
+    let mut cells = vec![0i32; text.len() / 4 + 1];
+    for (i, byte) in text.bytes().enumerate() {
+        cells[i / 4] |= i32::from(byte) << ((3 - i % 4) * 8);
     }
     cells
 }
 
-// ---------------------------------------------------------------------------
-// bench: Buffer::write_str — string write into an AMX buffer (direct API)
-// ---------------------------------------------------------------------------
-
-fn bench_buffer_write_str(c: &mut Criterion) {
-    let mut group = c.benchmark_group("buffer_write_str");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input = "A".repeat(size);
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, &size| {
-            b.iter(|| {
-                let mut data = vec![0i32; size + 2];
-                let mut buf = make_buffer(&mut data);
-                buf.write_str(&input).unwrap();
+fn to_bytes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("to_bytes");
+    for size in SIZES {
+        let text = text(size);
+        group.throughput(Throughput::Bytes(size as u64));
+        for (layout, mut cells) in [("unpacked", unpacked(&text)), ("packed", packed(&text))] {
+            let string = AmxString::from_buffer_parts(buffer(&mut cells), size);
+            group.bench_function(BenchmarkId::new(layout, size), |b| {
+                b.iter(|| black_box(string.to_bytes()));
             });
+        }
+    }
+    group.finish();
+}
+
+/// `&*string` the first time: decodes the cells and caches the `&str`.
+fn deref_first(c: &mut Criterion) {
+    let mut group = c.benchmark_group("deref_first");
+    for size in SIZES {
+        let cells = unpacked(&text(size));
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_function(BenchmarkId::from_parameter(size), |b| {
+            b.iter_batched_ref(
+                || cells.clone(),
+                |cells| {
+                    let string = AmxString::from_buffer_parts(buffer(cells), size);
+                    black_box(string.as_str().len())
+                },
+                BatchSize::SmallInput,
+            );
         });
     }
     group.finish();
 }
 
-// ---------------------------------------------------------------------------
-// bench: write_str (UnsizedBuffer) — new ergonomic API
-// ---------------------------------------------------------------------------
+/// `&*string` again: served from the cache.
+fn deref_cached(c: &mut Criterion) {
+    let mut group = c.benchmark_group("deref_cached");
+    for size in SIZES {
+        let mut cells = unpacked(&text(size));
+        let string = AmxString::from_buffer_parts(buffer(&mut cells), size);
+        let _ = string.as_str();
+        group.bench_function(BenchmarkId::from_parameter(size), |b| {
+            b.iter(|| black_box(black_box(&string).as_str().len()));
+        });
+    }
+    group.finish();
+}
 
-fn bench_write_str(c: &mut Criterion) {
+/// `Buffer::write_str` into a buffer that fits the text and its terminator.
+fn write_str(c: &mut Criterion) {
     let mut group = c.benchmark_group("write_str");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input = "A".repeat(size);
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, &size| {
+    for size in SIZES {
+        let text = text(size);
+        let mut cells = vec![0i32; size + 1];
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_function(BenchmarkId::from_parameter(size), |b| {
             b.iter(|| {
-                let mut data = vec![0i32; size + 2];
-                let len = data.len();
-                let r = unsafe { Ref::new(0, data.as_mut_ptr()) };
-                let ub = samp_sdk::cell::UnsizedBuffer::from_raw_parts(r);
-                ub.write_str(len, &input).unwrap();
+                let mut out = buffer(&mut cells);
+                out.write_str(black_box(&text)).unwrap();
+                black_box(out.as_slice()[0])
             });
         });
     }
     group.finish();
 }
 
-// ---------------------------------------------------------------------------
-// bench: AmxString::new — construction (lazy — no immediate decode)
-// ---------------------------------------------------------------------------
-
-fn bench_amx_string_new(c: &mut Criterion) {
-    let mut group = c.benchmark_group("amx_string_new");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input: Vec<u8> = (b'A'..=b'Z').cycle().take(size).collect();
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, &size| {
-            b.iter(|| {
-                let mut data = vec![0i32; size + 1];
-                let buf = make_buffer(&mut data);
-                // AmxString cannot be returned because it borrows `data`.
-                // is_packed() does not allocate — forces construction without triggering the lazy decode.
-                let s = unsafe { AmxString::new(buf, &input) };
-                // returns self.len without triggering the lazy decode
-                black_box(s.len());
-            });
-        });
-    }
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
-// bench: to_bytes unpacked — parsing with one byte per cell
-// ---------------------------------------------------------------------------
-
-fn bench_to_bytes_unpacked(c: &mut Criterion) {
-    let mut group = c.benchmark_group("to_bytes/unpacked");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input: Vec<u8> = (b'A'..=b'Z').cycle().take(size).collect();
-        let mut data: Vec<i32> = input
-            .iter()
-            .map(|&b| i32::from(b))
-            .chain(std::iter::once(0))
-            .collect();
-        let buf = make_buffer(&mut data);
-        let s = unsafe { AmxString::new(buf, &input) };
-
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, _| {
-            b.iter(|| s.to_bytes());
-        });
-    }
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
-// bench: to_bytes packed — parsing with 4 bytes per cell
-// ---------------------------------------------------------------------------
-
-fn bench_to_bytes_packed(c: &mut Criterion) {
-    let mut group = c.benchmark_group("to_bytes/packed");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input: Vec<u8> = (b'A'..=b'Z').cycle().take(size).collect();
-        let mut data = build_packed_cells(&input);
-        let len = data.len();
-        let r = unsafe { Ref::new(0, data.as_mut_ptr()) };
-        let buf = Buffer::new(r, len);
-        let s = AmxString::from_buffer_parts(buf, input.len());
-
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, _| {
-            b.iter(|| s.to_bytes());
-        });
-    }
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
-// bench: Deref — cached lazy access (no allocation on the second call)
-// ---------------------------------------------------------------------------
-
-fn bench_deref_first_access(c: &mut Criterion) {
-    let mut group = c.benchmark_group("deref/first_access");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input: Vec<u8> = (b'A'..=b'Z').cycle().take(size).collect();
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, &size| {
-            b.iter(|| {
-                let mut data = vec![0i32; size + 1];
-                let buf = make_buffer(&mut data);
-                let s = unsafe { AmxString::new(buf, &input) };
-                // First access — decodes and caches
-                black_box(s.len());
-            });
-        });
-    }
-    group.finish();
-}
-
-fn bench_deref_cached(c: &mut Criterion) {
-    let mut group = c.benchmark_group("deref/cached");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input: Vec<u8> = (b'A'..=b'Z').cycle().take(size).collect();
-        let mut data: Vec<i32> = input
-            .iter()
-            .map(|&b| i32::from(b))
-            .chain(std::iter::once(0))
-            .collect();
-        let buf = make_buffer(&mut data);
-        let s = unsafe { AmxString::new(buf, &input) };
-        let _ = &*s; // warm up the cache
-
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, _| {
-            // Subsequent access — only reads the decoded field
-            b.iter(|| s.len());
-        });
-    }
-    group.finish();
-}
-
-// ---------------------------------------------------------------------------
-// bench: baseline — String::from_utf8_lossy without AMX (comparison with samp-rs)
-// ---------------------------------------------------------------------------
-
-fn bench_baseline_from_utf8(c: &mut Criterion) {
-    let mut group = c.benchmark_group("baseline/from_utf8_lossy");
-
-    for size in [8usize, 64, 256, 1024] {
-        let input: Vec<u8> = (b'A'..=b'Z').cycle().take(size).collect();
-        group.bench_with_input(BenchmarkId::new("len", size), &size, |b, _| {
-            b.iter(|| String::from_utf8_lossy(&input).into_owned());
+/// What decoding costs without the AMX: bytes to an owned `String`.
+fn baseline(c: &mut Criterion) {
+    let mut group = c.benchmark_group("baseline_utf8_to_string");
+    for size in SIZES {
+        let bytes = text(size).into_bytes();
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_function(BenchmarkId::from_parameter(size), |b| {
+            b.iter(|| black_box(String::from_utf8_lossy(black_box(&bytes)).into_owned()));
         });
     }
     group.finish();
@@ -211,13 +124,10 @@ fn bench_baseline_from_utf8(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_buffer_write_str,
-    bench_write_str,
-    bench_amx_string_new,
-    bench_to_bytes_unpacked,
-    bench_to_bytes_packed,
-    bench_deref_first_access,
-    bench_deref_cached,
-    bench_baseline_from_utf8,
+    to_bytes,
+    deref_first,
+    deref_cached,
+    write_str,
+    baseline
 );
 criterion_main!(benches);

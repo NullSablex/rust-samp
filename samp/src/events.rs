@@ -30,10 +30,6 @@ use crate::runtime::Runtime;
 // Detour machinery is x86/x86_64-only (retour supports no other arch, and
 // SA-MP/open.mp run only on 32-bit x86).
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use std::cell::RefCell;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use std::collections::HashSet;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use std::sync::OnceLock;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -89,6 +85,10 @@ impl EventReturn {
 /// parses the callback arguments into the declared Rust types, invokes the
 /// plugin method, and reports whether to run or suppress the original public.
 pub type EventHandler = fn(&Amx, &mut Args) -> EventReturn;
+
+/// The handlers of one script, by public index: `None` for a public no
+/// handler watches.
+pub(crate) type EventTable = Vec<Option<std::rc::Rc<[EventHandler]>>>;
 
 /// Pawn callback name paired with its handler wrapper.
 ///
@@ -149,18 +149,29 @@ fn resolve_events_for_amx(rt: &Runtime, amx: &Amx) {
     let Some(ptr) = amx.amx() else {
         return;
     };
-    let ident = AmxIdent::from(ptr.as_ptr());
 
-    // Clear any prior resolution for this AMX first, so a second `on_amx_load`
+    let mut by_index: Vec<Vec<EventHandler>> = Vec::new();
+    for event in rt.events_snapshot() {
+        let Ok(index) = amx.find_public(event.name) else {
+            continue;
+        };
+        let Ok(index) = usize::try_from(i32::from(index)) else {
+            continue;
+        };
+        if by_index.len() <= index {
+            by_index.resize_with(index + 1, Vec::new);
+        }
+        by_index[index].push(event.handler);
+    }
+    let table: EventTable = by_index
+        .into_iter()
+        .map(|handlers| (!handlers.is_empty()).then(|| handlers.into()))
+        .collect();
+
+    // Replaces any prior resolution for this AMX, so a second `on_amx_load`
     // for the same script (e.g. an open.mp pre-load path) cannot register
     // duplicate handlers that would fire the callback more than once.
-    rt.remove_resolved_events(ident);
-
-    for event in rt.events_snapshot() {
-        if let Ok(idx) = amx.find_public(event.name) {
-            rt.push_resolved_event(ident, i32::from(idx), event.handler);
-        }
-    }
+    rt.set_resolved_events(AmxIdent::from(ptr.as_ptr()), table);
 }
 
 /// Installs the `amx_Exec` detour from the AMX function table. Idempotent —
@@ -223,6 +234,8 @@ unsafe extern "C" fn exec_detour(amx: *mut AMX, retval: *mut i32, index: i32) ->
     if let Some(value) = suppressed {
         // A handler cancelled the callback: skip the original public, hand
         // `value` back as its return value, and report success (AMX_ERR_NONE).
+        // The arguments the caller pushed are consumed as the call would have.
+        unsafe { consume_arguments(amx) };
         if !retval.is_null() {
             unsafe { *retval = value };
         }
@@ -236,40 +249,61 @@ unsafe extern "C" fn exec_detour(amx: *mut AMX, retval: *mut i32, index: i32) ->
     }
 }
 
-// Tracks the `(amx, public index)` pairs currently being dispatched on this
-// thread, so a handler that re-enters the VM on the *same* public does not
-// recurse into dispatch again (which could loop unbounded).
+/// What `amx_Exec` does with the arguments of a public it runs: the caller
+/// pushed them (`amx_Push`, `paramcount` counting them), and the call takes
+/// them off the stack (`stk += paramcount * cell`, `paramcount = 0`). A
+/// suppressed public skips the call, so it must do the same — otherwise each
+/// one leaves its arguments on the script's stack and a stale `paramcount` for
+/// the next call, and in a few hundred calls the script's stack runs into its
+/// heap and the script stops running.
+///
+/// # Safety
+/// `amx` must be null or point to a live `AMX`.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-thread_local! {
-    static ACTIVE: RefCell<HashSet<(usize, i32)>> = RefCell::new(HashSet::new());
+unsafe fn consume_arguments(amx: *mut AMX) {
+    if amx.is_null() {
+        return;
+    }
+    // SAFETY: `amx` is a live `AMX` (caller's contract); the fields are read
+    // and written unaligned, as everywhere else for this packed struct.
+    unsafe {
+        let paramcount = std::ptr::addr_of!((*amx).paramcount).read_unaligned();
+        let stk = std::ptr::addr_of!((*amx).stk).read_unaligned();
+        let consumed = paramcount
+            .max(0)
+            .checked_mul(4)
+            .and_then(|bytes| stk.checked_add(bytes));
+        if let Some(stk) = consumed {
+            std::ptr::addr_of_mut!((*amx).stk).write_unaligned(stk);
+        }
+        std::ptr::addr_of_mut!((*amx).paramcount).write_unaligned(0);
+    }
 }
 
-/// RAII guard for the reentrancy set: [`acquire`] inserts the key (returning
-/// `None` if it was already dispatching) and `Drop` removes it — so the key is
-/// cleared even if a handler unwinds.
-///
-/// [`acquire`]: ActiveGuard::acquire
+/// Marks `(amx, public index)` as being dispatched for as long as it lives, so
+/// a handler that re-enters the VM on the *same* public does not recurse into
+/// dispatch again (which could loop unbounded). Cleared on drop, including when
+/// a handler unwinds.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-struct ActiveGuard(usize, i32);
+struct ActiveGuard<'rt> {
+    rt: &'rt Runtime,
+    key: (AmxIdent, i32),
+}
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl ActiveGuard {
-    fn acquire(key: (usize, i32)) -> Option<Self> {
-        ACTIVE.with(|active| {
-            active
-                .borrow_mut()
-                .insert(key)
-                .then_some(ActiveGuard(key.0, key.1))
+impl<'rt> ActiveGuard<'rt> {
+    fn acquire(rt: &'rt Runtime, ident: AmxIdent, index: i32) -> Option<Self> {
+        rt.enter_dispatch(ident, index).then_some(ActiveGuard {
+            rt,
+            key: (ident, index),
         })
     }
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl Drop for ActiveGuard {
+impl Drop for ActiveGuard<'_> {
     fn drop(&mut self) {
-        ACTIVE.with(|active| {
-            active.borrow_mut().remove(&(self.0, self.1));
-        });
+        self.rt.leave_dispatch(self.key.0, self.key.1);
     }
 }
 
@@ -290,21 +324,20 @@ fn dispatch(amx_ptr: *mut AMX, index: i32) -> Option<i32> {
 
     let rt = Runtime::get();
     let ident = AmxIdent::from(amx_ptr);
-    let handlers = rt.resolved_handlers(ident, idx);
-    if handlers.is_empty() {
-        return None;
-    }
+    let handlers = rt.resolved_handlers(ident, idx)?;
 
     // Reentrancy guard: a handler re-entering the same public runs it directly
     // rather than dispatching again. Dropped (key cleared) on every return path,
     // including a handler unwind.
-    let _guard = ActiveGuard::acquire((amx_ptr as usize, idx))?;
+    let _guard = ActiveGuard::acquire(rt, ident, idx)?;
 
     let amx = crate::amx::get(ident)?;
-    let params = read_stack_params(amx_ptr, amx)?;
+    let mut inline = [0i32; INLINE_PARAMS + 1];
+    let mut spilled = Vec::new();
+    let params = read_stack_params(amx_ptr, amx, &mut inline, &mut spilled)?;
 
     let mut args = Args::new(amx, params.as_ptr());
-    for handler in handlers {
+    for handler in handlers.iter() {
         // Each handler reads the same argument list from the start.
         args.reset();
         if let EventReturn::Suppress(value) = handler(amx, &mut args) {
@@ -314,14 +347,25 @@ fn dispatch(amx_ptr: *mut AMX, index: i32) -> Option<i32> {
     None
 }
 
+/// Callbacks with up to this many arguments are read into a buffer on the
+/// stack; longer ones (rare) into a `Vec`.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+const INLINE_PARAMS: usize = 16;
+
 /// Rebuilds the native-style parameter table (`[byte_count, arg0, arg1, …]`)
 /// from the callback arguments the gamemode pushed onto the VM stack, so the
 /// existing [`Args`] machinery can parse them exactly like a native call.
+/// The table goes into `inline` when it fits, otherwise into `spilled`.
 ///
 /// Returns `None` if the stack layout is inconsistent (negative param count or
 /// an out-of-bounds cell) — a corrupt frame is skipped rather than trusted.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn read_stack_params(amx_ptr: *mut AMX, amx: &Amx) -> Option<Vec<i32>> {
+fn read_stack_params<'b>(
+    amx_ptr: *mut AMX,
+    amx: &Amx,
+    inline: &'b mut [i32; INLINE_PARAMS + 1],
+    spilled: &'b mut Vec<i32>,
+) -> Option<&'b mut [i32]> {
     // SAFETY: `amx_ptr` is non-null (checked by the caller). `AMX` is `repr(C)`;
     // `read_unaligned` is defensive and never assumes field alignment.
     let (paramcount, stk) = unsafe {
@@ -331,19 +375,20 @@ fn read_stack_params(amx_ptr: *mut AMX, amx: &Amx) -> Option<Vec<i32>> {
         )
     };
 
-    if paramcount < 0 {
-        return None;
-    }
-    let count = paramcount as usize;
+    let count = usize::try_from(paramcount).ok()?;
+    let params: &mut [i32] = if count <= INLINE_PARAMS {
+        &mut inline[..=count]
+    } else {
+        spilled.resize(count + 1, 0);
+        spilled
+    };
 
-    let mut params = Vec::with_capacity(count + 1);
     // Args reads slot 0 as "bytes used by the arguments" and divides by 4.
-    params.push(paramcount.checked_mul(4)?);
-
-    for k in 0..count {
-        let offset = i32::try_from(k).ok()?.checked_mul(4)?;
-        let addr = stk.checked_add(offset)?;
-        params.push(amx.read_cell(addr)?);
+    params[0] = paramcount.checked_mul(4)?;
+    let mut addr = stk;
+    for slot in &mut params[1..] {
+        *slot = amx.read_cell(addr)?;
+        addr = addr.checked_add(4)?;
     }
 
     Some(params)
@@ -353,6 +398,48 @@ fn read_stack_params(amx_ptr: *mut AMX, amx: &Amx) -> Option<Vec<i32>> {
 mod tests {
     use super::*;
     use samp_sdk::cell::Ref;
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[test]
+    fn a_suppressed_public_consumes_its_arguments_like_amx_exec() {
+        extern "C" fn callback(_: *mut AMX, _: i32, _: *mut i32, _: *mut i32) -> i32 {
+            0
+        }
+        extern "C" fn debug(_: *mut AMX) -> i32 {
+            0
+        }
+        // Two arguments pushed: the stack went down 8 bytes from 4096.
+        let mut amx = AMX {
+            base: std::ptr::null_mut(),
+            data: std::ptr::null_mut(),
+            callback,
+            debug,
+            cip: 0,
+            frm: 0,
+            hea: 0,
+            hlw: 0,
+            stk: 4096 - 8,
+            stp: 4096,
+            flags: 0,
+            usertags: [0; 4],
+            userdata: [std::ptr::null_mut(); 4],
+            error: 0,
+            paramcount: 2,
+            pri: 0,
+            alt: 0,
+            reset_stk: 0,
+            reset_hea: 0,
+            sysreq_d: 0,
+        };
+        unsafe { consume_arguments(&raw mut amx) };
+        assert_eq!({ amx.stk }, 4096);
+        assert_eq!({ amx.paramcount }, 0);
+
+        // Nothing pushed: nothing to consume.
+        unsafe { consume_arguments(&raw mut amx) };
+        assert_eq!({ amx.stk }, 4096);
+        unsafe { consume_arguments(std::ptr::null_mut()) };
+    }
 
     fn handler_stub(_amx: &Amx, _args: &mut Args) -> EventReturn {
         EventReturn::Continue

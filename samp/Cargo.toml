@@ -1,6 +1,6 @@
 [package]
 name = "rust-samp"
-version = "3.6.0-rc.3"
+version = "3.6.0-rc.4"
 description = "Write SA-MP and open.mp plugins in safe Rust instead of C++. A single binary runs natively on both servers, with proc macros (`#[native]`, `initialize_plugin!`) that hide the FFI boilerplate and ABI-correct marshalling for Linux (Itanium) and Windows (MSVC)."
 keywords = ["samp", "open-mp", "pawn", "plugin", "gamedev"]
 categories = ["external-ffi-bindings", "game-development", "api-bindings"]
@@ -17,6 +17,9 @@ readme = "README.md"
 # Importable as `samp` so users keep the ergonomic `use samp::prelude::*;`
 # regardless of the published package name.
 name = "samp"
+# Only the `[[bench]]` targets below run under `cargo bench` (criterion flags
+# would be rejected by the lib's libtest harness).
+bench = false
 
 [features]
 default = []
@@ -39,8 +42,8 @@ compression = ["dep:flate2"]
 # `package = "..."` rename keeps the internal `use samp_sdk::...` and
 # `use samp_codegen::...` imports working without sprinkling renames.
 [dependencies]
-samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.6.0-rc.3" }
-samp-codegen = { package = "rust-samp-codegen", path = "../samp-codegen", version = "1.6.0-rc.3" }
+samp-sdk = { package = "rust-samp-sdk", path = "../samp-sdk", version = "3.6.0-rc.4" }
+samp-codegen = { package = "rust-samp-codegen", path = "../samp-codegen", version = "1.6.0-rc.4" }
 fern = "0.7"
 log = "0.4"
 time = { version = "0.3.47", features = ["local-offset", "formatting", "macros"] }
@@ -56,6 +59,13 @@ flate2 = { version = "1.0", optional = true, default-features = false, features 
 # the events module compiles without it and the detour is a no-op.
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
 retour = "=0.4.0-alpha.4"
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "hot_paths"
+harness = false
 
 [package.metadata.docs.rs]
 features = ["encoding", "compression"]

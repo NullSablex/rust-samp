@@ -4,6 +4,85 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.7.0-rc.4] — 2026/10/05
+
+Speed, measured: the paths a server runs on every call got a benchmark that
+loads a plugin the way a server does, and what it found was cut. Times are
+per call on i686.
+
+**Fix to note first:** a `#[event]` handler returning `EventReturn::Suppress`
+broke the script after a few hundred suppressed calls — the gamemode's timers
+and callbacks stopped running.
+
+### `rust-samp` (lib `samp`) — 3.6.0-rc.4
+
+#### Fixed
+
+- **Suppressing a callback leaves the script's stack as the call would
+  have.** The caller pushes a public's arguments and `amx_Exec` takes them off
+  when it runs it; a suppressed public skipped `amx_Exec`, so its arguments
+  stayed on the stack along with a stale argument count. After enough of them
+  the script's stack ran into its heap and nothing in the script ran any more.
+  Proven on all six server combinations: one call in three suppressed, the
+  rest running, counts exact.
+
+#### Added
+
+- `mainthread::set_budget(Some(duration))` caps the time one drain spends
+  running jobs; the rest wait, in order, for the next tick, so a burst of
+  replies no longer freezes the server for one long tick. Off by default;
+  `mainthread::budget()` reads it.
+
+#### Changed
+
+- **A public through the `#[event]` detour:** 266 → 42 ns with a handler, 67
+  → 11 ns without — and every public goes through it once a plugin has an
+  event. The handlers are found by script and public index instead of a
+  hashed key, handed out without copying the list, and the callback's
+  arguments are read into a buffer on the stack.
+- **A native call:** the frame marker no longer does locked atomic operations
+  (natives run on the main thread only); a native taking two `int`s went from
+  27 to 17 ns.
+- **The tick** skips the job queue's and the log backlog's locks when they
+  are empty, as they almost always are: 111 → 53 ns.
+- **Log lines** keep their timestamp for its second and read the local UTC
+  offset once a minute, instead of asking for the local time and formatting
+  it on every line.
+- `mainthread::pending()` reads a counter instead of locking the queue.
+
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.6.0-rc.4
+
+#### Changed
+
+- **Decoding a string argument:** 616 → 155 ns for 127 characters. Unpacked
+  strings are read in one pass the compiler vectorizes; packed ones a cell at
+  a time instead of a byte at a time; and text that is already valid UTF-8
+  becomes the `String` without being copied again.
+- **Measuring a string argument** tests sixteen cells at a time: 143 → 80 ns
+  for 127 characters.
+- **`exec_public!` and `call_public`** resolve the public's name without
+  allocating: 30–50% faster. The same for `find_native` and `find_pubvar`.
+
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.6.0-rc.4
+
+Released with the other two; no change of its own.
+
+### Tests
+
+- New benchmark `samp/benches/hot_paths.rs`: natives with each argument kind,
+  publics through the detour (passed, suppressed, unwatched), calling publics
+  from Rust, the tick, the main-thread queue, a log line.
+- The `samp-sdk` benchmarks were rewritten. Several measured nothing — the
+  optimizer had removed the work, or a "first access" read a cached value —
+  and the `f32` ones timed float addition, which cannot be vectorized, rather
+  than the conversion.
+- `bounded_strlen` is checked against a byte-by-byte search on five thousand
+  generated inputs.
+
+### Docs
+
+- Threads: spreading a burst of jobs over several ticks with a budget.
+
 ## [v3.7.0-rc.3] — 2026/10/05
 
 Fixes from feeding the SDK hostile input on real servers — scripts declaring

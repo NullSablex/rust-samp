@@ -257,10 +257,13 @@ impl Amx {
     /// native is not registered in the VM.
     pub fn find_native(&self, name: &str) -> AmxResult<i32> {
         let find_native = FindNative::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
-        let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut index = -1;
 
-        amx_try!(find_native(self.ptr, c_str.as_ptr(), &raw mut index));
+        amx_try!(with_c_name(name, |name| find_native(
+            self.ptr,
+            name,
+            &raw mut index
+        ))?);
 
         Ok(index)
     }
@@ -405,10 +408,13 @@ impl Amx {
     /// public function is not declared in the Pawn script.
     pub fn find_public(&self, name: &str) -> AmxResult<AmxExecIdx> {
         let find_public = FindPublic::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
-        let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut index = -1;
 
-        amx_try!(find_public(self.ptr, c_str.as_ptr(), &raw mut index));
+        amx_try!(with_c_name(name, |name| find_public(
+            self.ptr,
+            name,
+            &raw mut index
+        ))?);
 
         Ok(AmxExecIdx::from(index))
     }
@@ -431,10 +437,13 @@ impl Amx {
     /// by the VM is invalid.
     pub fn find_pubvar<T: Sized + AmxPrimitive>(&self, name: &str) -> AmxResult<Ref<'_, T>> {
         let find_pubvar = FindPubVar::try_from_table(self.table()?).ok_or(AmxError::NotFound)?;
-        let c_str = CString::new(name).map_err(|_| AmxError::NotFound)?;
         let mut cell_ptr = 0;
 
-        amx_try!(find_pubvar(self.ptr, c_str.as_ptr(), &raw mut cell_ptr));
+        amx_try!(with_c_name(name, |name| find_pubvar(
+            self.ptr,
+            name,
+            &raw mut cell_ptr
+        ))?);
 
         self.get_ref(cell_ptr)
     }
@@ -963,6 +972,27 @@ impl Drop for Allocator<'_> {
         // `exec_public!` the stack rewind is a no-op, on a failed push sequence
         // it restores the leftover cells so the VM stack stays balanced.
         self.amx.release_scope(self.release_hea, self.release_stk);
+    }
+}
+
+/// Hands `name` to `lookup` as a C string, built on the stack.
+///
+/// Every `exec_public!` and `call_public` resolves its public by name, so
+/// this runs on each call. Pawn symbols are at most 31 characters, so the
+/// stack buffer always fits a name a script can declare; a longer one still
+/// works, through a `CString`.
+fn with_c_name<R>(name: &str, lookup: impl FnOnce(*const std::ffi::c_char) -> R) -> AmxResult<R> {
+    const INLINE: usize = 64;
+    if name.as_bytes().contains(&0) {
+        return Err(AmxError::NotFound);
+    }
+    if name.len() < INLINE {
+        let mut buffer = [0u8; INLINE];
+        buffer[..name.len()].copy_from_slice(name.as_bytes());
+        Ok(lookup(buffer.as_ptr().cast()))
+    } else {
+        let name = CString::new(name).map_err(|_| AmxError::NotFound)?;
+        Ok(lookup(name.as_ptr()))
     }
 }
 

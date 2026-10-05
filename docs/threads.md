@@ -120,6 +120,20 @@ does not want a tick can drive the queue itself with
 `samp::mainthread::pending()` reports the backlog, which is useful in a
 diagnostics native.
 
+### Spreading a burst over several ticks
+
+A drain runs every queued job by default. The server is frozen meanwhile, so
+ten thousand replies landing together become one long stall. A budget caps
+the time one drain spends:
+
+```rust
+samp::mainthread::set_budget(Some(std::time::Duration::from_millis(2)));
+```
+
+The drain stops at the first job that ends past the budget and leaves the
+rest, in order and ahead of anything posted since, for the next tick. A job is
+never interrupted, and at least one runs per drain, so the queue always moves.
+
 ## Guarantees
 
 - Jobs run **in the order they were posted**, one after another, on the main

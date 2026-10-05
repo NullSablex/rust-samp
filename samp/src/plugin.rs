@@ -277,6 +277,10 @@ static PLUGIN_BORROWED: AtomicBool = AtomicBool::new(false);
 
 /// Depth of native calls in progress. A native already holds `&mut self`, so
 /// handing out another borrow underneath one would alias it.
+///
+/// Natives run on the main thread only, so this is the only thread that writes
+/// it: a load and a store do, without the locked read-modify-write a
+/// `fetch_add` costs on every native call.
 static NATIVE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
 /// Marks a native call for the duration of its frame.
@@ -304,14 +308,16 @@ impl NativeFrame {
                 );
             }
         }
-        NATIVE_DEPTH.fetch_add(1, Ordering::AcqRel);
+        let depth = NATIVE_DEPTH.load(Ordering::Acquire);
+        NATIVE_DEPTH.store(depth + 1, Ordering::Release);
         Self
     }
 }
 
 impl Drop for NativeFrame {
     fn drop(&mut self) {
-        NATIVE_DEPTH.fetch_sub(1, Ordering::AcqRel);
+        let depth = NATIVE_DEPTH.load(Ordering::Acquire);
+        NATIVE_DEPTH.store(depth.saturating_sub(1), Ordering::Release);
     }
 }
 

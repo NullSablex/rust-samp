@@ -23,14 +23,13 @@ use samp_sdk::raw::types::AMX_NATIVE_INFO;
 use samp_sdk::raw::{functions::Logprintf, types::AMX};
 
 use std::cell::UnsafeCell;
-use std::collections::HashMap;
 use std::ffi::CString;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::amx::{Amx, AmxIdent};
-use crate::events::{EventHandler, EventInfo};
+use crate::events::{EventInfo, EventTable};
 use crate::plugin::{SampPlugin, TickConfig};
 
 static RUNTIME: AtomicPtr<Runtime> = AtomicPtr::new(std::ptr::null_mut());
@@ -103,11 +102,18 @@ struct RuntimeInner {
     /// `#[event]` handlers registered at init via `register_events`. Empty when
     /// the plugin uses no events — the `amx_Exec` detour is then never installed.
     events: Vec<EventInfo>,
-    /// Per-AMX resolution of the registered events, keyed by
-    /// `(amx, public index)` for O(1) lookup on the `amx_Exec` hot path (a
-    /// public runs on every callback/timer tick). Filled on `on_amx_load`,
+    /// Per-AMX resolution of the registered events: for each script, the
+    /// handlers of each public, indexed by the public's index. Read by the
+    /// `amx_Exec` detour on every public the server runs, so the lookup is a
+    /// scan of the few loaded scripts and an index — no hashing — and handing
+    /// out a list clones an `Rc`, not the list. Filled on `on_amx_load`,
     /// pruned on `on_amx_unload`.
-    resolved_events: HashMap<(AmxIdent, i32), Vec<EventHandler>>,
+    resolved_events: Vec<(AmxIdent, EventTable)>,
+    /// `(amx, public index)` pairs being dispatched right now, innermost last:
+    /// a handler re-entering the same public runs it without dispatching
+    /// again. Rarely more than one or two deep.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    dispatching: Vec<(AmxIdent, i32)>,
     logger_enabled: bool,
 }
 
@@ -164,7 +170,9 @@ impl Runtime {
             omp_tick_handler: None,
             amx_list: Vec::new(),
             events: Vec::new(),
-            resolved_events: HashMap::new(),
+            resolved_events: Vec::new(),
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            dispatching: Vec::new(),
             logger_enabled: true,
         };
 
@@ -502,38 +510,64 @@ impl Runtime {
         self.inner().events.clone()
     }
 
-    /// Records a resolved handler for a `(amx, public index)` pair, appending to
-    /// any already registered for that key (multiple handlers per callback run
-    /// in registration order).
-    pub fn push_resolved_event(&self, ident: AmxIdent, index: i32, handler: EventHandler) {
-        self.inner()
-            .resolved_events
-            .entry((ident, index))
-            .or_default()
-            .push(handler);
+    /// Stores the handlers resolved for an AMX, replacing any earlier
+    /// resolution of the same script.
+    pub fn set_resolved_events(&self, ident: AmxIdent, table: EventTable) {
+        self.remove_resolved_events(ident);
+        if !table.is_empty() {
+            self.inner().resolved_events.push((ident, table));
+        }
     }
 
     /// Handlers registered for a given `(amx, public index)` pair, in
-    /// registration order. Empty (no allocation) when the public carries no
-    /// event — the common case on the `amx_Exec` hot path.
+    /// registration order; `None` when the public carries no event — the
+    /// common case on the `amx_Exec` hot path.
     ///
     /// Only the `amx_Exec` dispatcher consumes this, and that path exists on
     /// x86/x86_64 alone (the detour library targets no other arch), so the
     /// method is compiled only there — it has no caller elsewhere.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    pub fn resolved_handlers(&self, ident: AmxIdent, index: i32) -> Vec<EventHandler> {
-        self.inner()
+    pub fn resolved_handlers(
+        &self,
+        ident: AmxIdent,
+        index: i32,
+    ) -> Option<std::rc::Rc<[crate::events::EventHandler]>> {
+        let (_, table) = self
+            .inner()
             .resolved_events
-            .get(&(ident, index))
-            .cloned()
-            .unwrap_or_default()
+            .iter()
+            .find(|(owner, _)| *owner == ident)?;
+        table.get(usize::try_from(index).ok()?)?.clone()
     }
 
     /// Drops every resolved handler bound to an AMX. Called on `on_amx_unload`,
     /// and also before re-resolving an AMX so a second `on_amx_load` for the
     /// same script cannot register duplicate handlers.
     pub fn remove_resolved_events(&self, ident: AmxIdent) {
-        self.inner().resolved_events.retain(|(k, _), _| *k != ident);
+        self.inner()
+            .resolved_events
+            .retain(|(owner, _)| *owner != ident);
+    }
+
+    /// Marks `(amx, index)` as being dispatched. `false` when it already is —
+    /// a handler re-entered the same public.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    pub fn enter_dispatch(&self, ident: AmxIdent, index: i32) -> bool {
+        let dispatching = &mut self.inner().dispatching;
+        if dispatching.contains(&(ident, index)) {
+            return false;
+        }
+        dispatching.push((ident, index));
+        true
+    }
+
+    /// Ends the dispatch [`enter_dispatch`](Self::enter_dispatch) began.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    pub fn leave_dispatch(&self, ident: AmxIdent, index: i32) {
+        let dispatching = &mut self.inner().dispatching;
+        if let Some(at) = dispatching.iter().rposition(|key| *key == (ident, index)) {
+            dispatching.remove(at);
+        }
     }
 }
 
