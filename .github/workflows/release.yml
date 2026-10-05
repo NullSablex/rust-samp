@@ -38,10 +38,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
              && [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "dry_run_flag=--dry-run" >> "$GITHUB_OUTPUT"
             echo "is_dry_run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "dry_run_flag=" >> "$GITHUB_OUTPUT"
             echo "is_dry_run=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -164,18 +162,26 @@ jobs:
           # such on GitHub, so it does not show up as the latest release.
           prerelease: ${{ contains(github.ref_name, '-') }}
 
+      # A dry run checks the three crates together: `--workspace` packages each
+      # against the local versions of the others, which a per-crate dry run
+      # cannot do — `rust-samp` would look for the new `rust-samp-codegen` on
+      # crates.io, where a dry run never put it.
+      - name: Verify the packages (dry run)
+        if: steps.flags.outputs.is_dry_run == 'true'
+        run: cargo publish --workspace --dry-run --target i686-unknown-linux-gnu
+
       # Each publish step is a thin wrapper around `cargo publish`:
       # - If the version is new, publish it and wait for the index to update.
       # - If the version is already on crates.io (e.g. a patch release that
       #   only bumped one crate), emit a notice and continue. This lets a
       #   re-tag of the workspace go through without manual surgery.
       - name: Publish rust-samp-sdk
+        if: steps.flags.outputs.is_dry_run == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set +e
-          OUTPUT=$(cargo publish -p rust-samp-sdk \
-            --target i686-unknown-linux-gnu ${{ steps.flags.outputs.dry_run_flag }} 2>&1)
+          OUTPUT=$(cargo publish -p rust-samp-sdk --target i686-unknown-linux-gnu 2>&1)
           STATUS=$?
           echo "$OUTPUT"
           if [ $STATUS -ne 0 ]; then
@@ -194,12 +200,12 @@ jobs:
           sleep 30
 
       - name: Publish rust-samp-codegen
+        if: steps.flags.outputs.is_dry_run == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set +e
-          OUTPUT=$(cargo publish -p rust-samp-codegen \
-            --target i686-unknown-linux-gnu ${{ steps.flags.outputs.dry_run_flag }} 2>&1)
+          OUTPUT=$(cargo publish -p rust-samp-codegen --target i686-unknown-linux-gnu 2>&1)
           STATUS=$?
           echo "$OUTPUT"
           if [ $STATUS -ne 0 ]; then
@@ -215,12 +221,12 @@ jobs:
         run: sleep 30
 
       - name: Publish rust-samp
+        if: steps.flags.outputs.is_dry_run == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set +e
-          OUTPUT=$(cargo publish -p rust-samp \
-            --target i686-unknown-linux-gnu ${{ steps.flags.outputs.dry_run_flag }} 2>&1)
+          OUTPUT=$(cargo publish -p rust-samp --target i686-unknown-linux-gnu 2>&1)
           STATUS=$?
           echo "$OUTPUT"
           if [ $STATUS -ne 0 ]; then

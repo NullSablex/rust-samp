@@ -4,6 +4,16 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.7.0] — Unreleased
+
+### CI
+
+- The release workflow's dry run checks the three crates together, with
+  `cargo publish --workspace --dry-run`. It used to dry-run each crate on its
+  own, so `rust-samp` looked on crates.io for the new `rust-samp-codegen`,
+  which a dry run never publishes, and the run failed on every release that
+  bumped both. The real publication was unaffected.
+
 ## [v3.7.0-rc.1] — 2026/10/05
 
 The rest of the open.mp interfaces, and a Pawn include that stays in step with
