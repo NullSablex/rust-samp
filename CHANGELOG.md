@@ -430,8 +430,11 @@ The per-crate sections come first, then the ones belonging to the repository.
 
 ### Dependencies
 
-- Dependabot: 13 Cargo updates (#69), 3 GitHub Actions updates (#68), and
-  `pymdown-extensions` for the documentation site (#67).
+- Dependabot: Cargo updates in two batches (13 in #69, 12 in #70 — the one the
+  SDK itself uses is `encoding_rs` 0.8.42, behind the `encoding` feature),
+  `quinn-udp` 0.5.16 (#71), 3 GitHub Actions updates
+  (#68), and for the documentation site `pymdown-extensions` (#67) and
+  `urllib3` 2.8.0 (#72).
 
 ### CI
 
