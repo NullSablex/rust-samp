@@ -4,7 +4,11 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [v3.7.0] — Unreleased
+## [v3.7.0-rc.2] — 2026/10/05
+
+A candidate for the release workflow alone: the crates carry no code change
+since `v3.7.0-rc.1` — `rust-samp` 3.6.0-rc.2, `rust-samp-sdk` 3.6.0-rc.2 and
+`rust-samp-codegen` 1.6.0-rc.2 are the rc.1 crates under new versions.
 
 ### CI
 
