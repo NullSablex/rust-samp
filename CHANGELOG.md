@@ -4,7 +4,7 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
-## [v3.7.0]
+## [v3.7.0-rc.1] — 2026/10/05
 
 The rest of the open.mp interfaces, and a Pawn include that stays in step with
 the plugin.
@@ -24,7 +24,7 @@ return values from C++ are read as the whole register.
 
 The per-crate sections come first, then the ones belonging to the repository.
 
-### `rust-samp` (lib `samp`) — 3.6.0
+### `rust-samp` (lib `samp`) — 3.6.0-rc.1
 
 #### Added
 
@@ -203,7 +203,7 @@ The per-crate sections come first, then the ones belonging to the repository.
   include edited to rename one native and change another's arity and tag reports
   exactly those four divergences.
 
-### `rust-samp-codegen` (lib `samp_codegen`) — 1.6.0
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.6.0-rc.1
 
 #### Added
 
@@ -240,7 +240,7 @@ The per-crate sections come first, then the ones belonging to the repository.
   `samp::plugin::try_get` — so a native called outside the server's ordering
   answers `0` instead of ending the process.
 
-### `rust-samp-sdk` (lib `samp_sdk`) — 3.6.0
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.6.0-rc.1
 
 #### Added
 
