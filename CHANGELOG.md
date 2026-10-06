@@ -4,6 +4,764 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [v3.7.0] — 2026/10/06
+
+The rest of the open.mp interfaces, a Pawn include that stays in step with the
+plugin, and an SDK that was fed hostile input and measured before release.
+
+**Fixes to note first:**
+
+- A plugin built with `samp-only` did not compile in 3.6.0.
+- A `#[event]` handler returning `EventReturn::Suppress` broke the script
+  after a few hundred suppressed calls: the gamemode's timers and callbacks
+  stopped running.
+- An open.mp server could crash on shutdown — about one shutdown in twenty —
+  when `Timers` was freed before the plugin.
+- `rust-samp-sdk` did not compile for `i686-pc-windows-gnu`.
+
+Anyone on 3.6.0 wants this release.
+
+**New:** typed wrappers for nearly every open.mp interface, generated from the
+SDK headers and proven against the official binaries and running servers; the
+Pawn include generated from a template, checked in `cargo test`, documented in
+Pawn's own format; main-thread jobs that reach the plugin's state, with an
+optional time budget per tick.
+
+**Hardening:** panics the server can reach no longer end its process, payloads
+that panic again included; string arguments are measured inside the script's
+memory; logging from other threads reaches the server's log on the main thread.
+
+**Speed:** a public through the `#[event]` detour went from 266 to 42 ns with a
+handler and from 67 to 11 ns without; decoding a string argument is four times
+faster; natives, `call_public` and the tick each lost between a third and half
+of their cost.
+
+It went through five release candidates, `v3.7.0-rc.1` to `v3.7.0-rc.5`, all
+published here and on crates.io. Their entries are kept below as they were
+written; what follows here is everything they carried, in one place. The crates
+now live under `crates/` in the repository, which changes nothing for users.
+
+The per-crate sections come first, then the ones belonging to the repository
+rather than to any published crate.
+
+### `rust-samp` (lib `samp`) — 3.6.0
+
+#### Added
+
+- **A main-thread job can reach the plugin.** `mainthread::post_with::<T>` hands
+  the job `&mut T` when it runs, which is where the result of background work
+  usually has to land. Until now the closure took no parameters and there was no
+  route to plugin state from a worker thread, so a plugin doing I/O had to keep a
+  channel of its own — the limitation `email_samp` ran into while adopting the
+  queue.
+- `mainthread::post_with_amx::<T, _>(script, job)` for the shape that shows up
+  every time: record the result in the plugin, then tell the script. What the
+  closure returns runs after the plugin borrow has ended, so calling a `public`
+  from there is safe, and the job is dropped quietly when the script was
+  unloaded meanwhile.
+- `plugin::with_instance::<T, _>` reaches the plugin from anywhere on the main
+  thread, which is what the hidden `plugin::get` never safely allowed. It returns
+  `None`, naming the reason in the log, when `T` is not the plugin's type, when
+  there is no plugin, when a borrow is already alive, and when called from inside
+  a native — where `&mut self` is in scope and is what to use.
+- `plugin::is_borrowed` reports whether a borrow is alive, for a plugin deciding
+  between reaching for state and deferring.
+- **`samp::pawn_include` — drift checking for a hand-written include.** The
+  generated include from 3.6.0 cannot drift, but a plugin that keeps its `.inc`
+  by hand — for the default values, `sizeof(dest)`, varargs and documentation a
+  Rust signature cannot express — pays with silence when a native is renamed in
+  Rust and forgotten in the include. `compare_file(path)` reports what the two
+  sides disagree about: a native registered but not declared, declared but not
+  registered, a different argument count, a different return tag, or an argument
+  whose tag, `&` or `[]` changed. Setting `SAMP_PAWN_INCLUDE_CHECK` to a path
+  runs it at load and logs the findings, which is the shape a CI job wants.
+  Additions only the include can make are not divergences, and a declaration
+  ending in `...` stops arity checking, being open-ended by design.
+- The comparison understands three things a real include does. An **alias**
+  (`native Email_Close(account = 0) = email_close;`) is matched by the native
+  after the `=`, so an include presenting the whole surface under other names is
+  not drift. A **`raw` native** is compared by presence only, since it parses
+  its own arguments and the include is the only place its shape is written down.
+  A **template** (`plugin.inc.in`) checks like its output, which is usually the
+  file worth checking, being the one edited by hand.
+- The check runs after `on_load` rather than from the entry point, so it reaches
+  a logger the plugin installs there.
+- **The whole check runs in `cargo test`, with no server.** `initialize_plugin!`
+  now also emits `pawn_native_decls()`, the declarations `#[native]` derived,
+  available without a loaded plugin. `pawn_include::compare_with` and
+  `compare_file_with` take them, so a plugin guards its include in CI:
+  `assert!(compare_file_with("include/p.inc", &pawn_native_decls())?.is_empty())`.
+  `pawn_include::render` writes an include from the same place, for a plugin that
+  generates rather than maintains one, replacing the server run with
+  `SAMP_PAWN_INCLUDE` set.
+- `pawn_include::registered` exposes the parsed registered side, for tooling that
+  wants the declarations rather than the divergences.
+- `samp::pawn_include::parse` reads `native` declarations out of any Pawn source,
+  skipping commented-out ones and handling declarations spread over several
+  lines; `compare_declarations` compares two parsed lists with no server behind
+  either. Validated against four hand-written includes in the wild
+  (`a_players`, `a_mysql`, `YSF`, `foreach`, ~550 declarations): every
+  declaration read, and every one inside a comment block correctly left out.
+- **Generating the include from a template.** A generated include has no room
+  for documentation and a hand-written one drifts; a template is both.
+  `pawn_include::Template` fills `{{NATIVES}}`, `{{NATIVE:Name}}` and
+  `{{NATIVE:Name as Alias}}` from the derived declarations, while the prose, the
+  sections, the constants and the callback documentation stay written by hand.
+  `{{PLUGIN}}`, `{{GUARD}}` and `{{VERSION}}` come from the plugin, anything else
+  from `.var(name, value)`. A registered native the template never places is an
+  error, as are an unknown placeholder, a `{{NATIVE:…}}` that names nothing and an
+  unclosed `{{` — all reported at once.
+- **Documentation in Pawn's own format, written once.** Pawn documents a native
+  with a `/** */` block of XML tags — what the open.mp includes carry and what
+  `pawncc -r` reads into its report. `#[native]` now captures the Rust doc
+  comment, `pawn_include::pawndoc` renders it in that format, and a template
+  places it with `{{DOC:Name}}` or above every declaration with
+  `Template::with_docs()`. `@param`, `@returns`, `@remarks` and `@seealso` map to
+  the matching tags; a line already starting with `<` passes through, so the full
+  format — `<library>`, nested markup — is available; everything else is escaped,
+  so a doc mentioning `a < b` cannot break a tag.
+- **Callbacks are declared once and forwarded by the include.** A script
+  implements a plugin's callbacks as `public`, and nothing in the Rust code says
+  what they are, since `exec_public!` takes the name at the call site.
+  `initialize_plugin!` takes `callbacks: ["OnThing(a, b)"]`, `{{CALLBACKS}}` turns
+  each into a `forward`, and `pawn_include::missing_forwards` reports one the
+  include never forwards — a `public` for a callback the include forgot is never
+  called, with nothing to say why. `pawn_include::parse_forwards` reads them back.
+- Placing the same declaration twice in a template is an error: Pawn rejects the
+  second as an already defined symbol, and the template is where it can still be
+  caught. An alias beside its original is two names, so it is not a duplicate.
+- `SAMP_PAWN_INCLUDE_TEMPLATE` renders a template at load with no code at all,
+  with `SAMP_PAWN_VAR_<NAME>` supplying `{{<NAME>}}`. Because the environment
+  belongs to the process and a server may load several Rust plugins, these
+  variables now accept `plugin=path` entries, so two plugins pointed at one
+  variable no longer overwrite each other's include; a bare path still applies to
+  whichever plugin reads it.
+- The include check renders a template before comparing, so it can be pointed at
+  the `.inc.in` — and a template that will not render is reported there too.
+- `#[native]` takes what a Rust signature cannot say: `default(account = 0)`,
+  `sizeof(dest_len = dest)`, `varargs`, and `args = "…"` for the argument list
+  written out — the only way to declare a `raw` native. Naming an argument the
+  function does not have is a compile error, since it means a rename the
+  attribute did not follow.
+- `amx::loaded()` and `amx::count()` enumerate the loaded scripts. A plugin with
+  something to announce to the gamemode and every filterscript had no way to
+  reach them: `amx::get` only answers about an ident already in hand.
+- `mainthread::set_budget(Some(duration))` caps the time one drain spends
+  running jobs; the rest wait, in order, for the next tick, so a burst of
+  replies no longer freezes the server for one long tick. Off by default;
+  `mainthread::budget()` reads it.
+
+#### Changed
+
+- **A public through the `#[event]` detour:** 266 → 42 ns with a handler, 67
+  → 11 ns without — and every public goes through it once a plugin has an
+  event. The handlers are found by script and public index instead of a
+  hashed key, handed out without copying the list, and the callback's
+  arguments are read into a buffer on the stack.
+- **A native call:** the frame marker no longer does locked atomic operations
+  (natives run on the main thread only); a native taking two `int`s went from
+  27 to 17 ns.
+- **The tick** skips the job queue's and the log backlog's locks when they
+  are empty, as they almost always are: 111 → 53 ns.
+- **Log lines** keep their timestamp for its second and read the local UTC
+  offset once a minute, instead of asking for the local time and formatting
+  it on every line.
+- `mainthread::pending()` reads a counter instead of locking the queue.
+
+#### Fixed
+
+- **A plugin built with `samp-only` did not compile — since `3.6.0-rc.1` for
+  the library, and for every plugin since native Open Multiplayer became the
+  default.** Two faults. In the library, the Pawn include's bookkeeping had been
+  placed in the Open Multiplayer-only part of the runtime, and the SDK's log
+  macros were compiled only with Open Multiplayer. In the code generator,
+  `initialize_plugin!` decided whether to emit the Open Multiplayer entry point
+  from `CARGO_FEATURE_SAMP_ONLY`, which Cargo sets only for build scripts — so
+  the check was always false, the entry point was always emitted, and it
+  referred to items `samp-only` removes. The decision now belongs to the `samp`
+  crate: `initialize_plugin!` wraps the entry point in `samp::__omp_only!`,
+  which `samp` defines once per case. A `samp-only` build of the `hello`
+  example loads on SA-MP and, as a legacy plugin, on open.mp; CI now builds it,
+  and runs clippy on the library crates with every feature combination — none
+  of the builds before turned the feature on, which is how this shipped.
+  With `samp-only`, the component UID is now written to `Cargo.toml` like in
+  any other build; it is unused there, and harmless.
+- **A native called outside the server's own ordering could end its process.**
+  The `#[native]` wrapper resolved the script and the plugin with `expect`, before
+  the `catch_unwind` that guards the native's body — so a panic there crossed
+  into the server. That ordering is not guaranteed: another plugin can call a
+  native directly, on a script this one never received or before this one has
+  loaded. Both now answer `0`, with the reason logged once, through
+  `interlayer::native_amx` and `plugin::try_get`.
+- The `#[event]` hook no longer assumes the function table carries `amx_Exec`;
+  without it, the SDK says `#[event]` handlers will not fire, instead of
+  panicking. Its log lines also stop hardcoding the SDK prefix.
+- **The turnkey logger lost the severity of every line on the server's side.**
+  It routed through the plain log, which open.mp classifies as a message, so a
+  `warn!` arrived as `[Info]`. It now maps the level, so warnings and errors
+  arrive as warnings and errors; SA-MP's `logprintf` has no levels and is
+  unaffected.
+- **open.mp shutdown no longer calls into freed components.** The server frees
+  components in its own order, and `Timers` and `Pawn` often go before the
+  plugin; the plugin's cleanup then killed its tick timer through a freed
+  `ITimer`. In testing, about one shutdown in twenty crashed. The SDK now
+  forgets what it holds from a component when the server announces it is
+  freeing it (`onFree`), as the official components do.
+- **Logging from another thread no longer calls the server from that thread.**
+  Neither server's log is thread-safe — open.mp interleaved lines written by two
+  threads at once. A line logged off the main thread now reaches the server log
+  on the main thread, at the next tick or with the next line logged there; the
+  plugin's own log file is still written at once. The backlog is capped at
+  10 000 lines, and lines dropped past it are counted in the server log. Applies
+  to `enable_logger!` and to the default logger alike.
+- Lines logged while the plugin is built — the startup banner, a failure to
+  open the log file — reach the server log. They used to go to stderr only,
+  because the plugin is built before the server hands its log over.
+- When the log file cannot be opened, the SDK says so in the server log
+  instead of only returning the error, which plugins commonly discard; a later
+  `install` can then try again.
+- A panic payload whose `Drop` panics no longer escapes the boundary that
+  caught the panic. Every entry point the server calls goes through one guard,
+  `samp::panic_guard::catch`.
+- `mainthread::post` warns about a backlog after releasing the queue's lock.
+- **Suppressing a callback leaves the script's stack as the call would
+  have.** The caller pushes a public's arguments and `amx_Exec` takes them off
+  when it runs it; a suppressed public skipped `amx_Exec`, so its arguments
+  stayed on the stack along with a stale argument count. After enough of them
+  the script's stack ran into its heap and nothing in the script ran any more.
+  Proven on all six server combinations: one call in three suppressed, the
+  rest running, counts exact.
+
+#### Tests
+
+- The include parser was checked against the 38 includes the open.mp server
+  ships: 1068 native declarations and 117 forwards read, with no divergence from a
+  count of the declaration lines — the pawndoc `/** */` blocks and `///` lines
+  around them are handled.
+- 29 tests over the template engine and the documentation renderer: the prose kept, a native placed once
+  whether by name or by `{{NATIVES}}`, aliasing, every error reported at once,
+  the per-plugin env selector, and a template checked as what it renders to.
+- The `counter` example is generated from a `counter.inc.in` that carries prose,
+  sections, a generated `forward`, a hand-written `#define` shorthand and an
+  alias; the committed `counter.inc` is asserted to
+  be exactly what the template renders (`UPDATE_INCLUDE=1` rewrites it). The
+  result compiles under the open.mp Pawn compiler with no warnings — and with
+  `-r` the compiler reads the generated documentation into its XML report, next to
+  the official includes' own, which is what proves the format is really pawndoc.
+  A script
+  implementing the callback through the template's shorthand, calling the alias
+  and the defaulted `Counter_SetMax()`, runs on a live server. The file the server
+  writes from the template at load is byte for byte the committed one.
+- The plugin cannot be aliased: a nested borrow, a borrow from inside a native
+  and a wrong `T` are each refused rather than served, the borrow is released
+  even when the closure panics, and Miri sees no aliasing in any of it.
+- Validated end to end on three servers — open.mp on Linux, open.mp on Windows
+  under Wine (MSVC ABI), and SA-MP on Linux — with the `counter` example's async
+  native rewritten onto `post_with_amx`: the job writes plugin state, the script
+  hears back afterwards, and deliberately calling a `public` from inside the
+  borrow produces the warning.
+- 13 unit tests over the parser and the comparison, covering defaults,
+  `sizeof(...)`, varargs, commented-out declarations and each kind of
+  divergence, aliases and `raw` natives, plus the stable ordering the CI output
+  depends on.
+- The `counter` example ships a `counter.inc` and a test that compares it with
+  its natives, so the derivation itself is covered in CI: an argument added to a
+  native fails the example's test.
+- Validated against `email_samp` both ways: in `cargo test` over its `.inc.in`
+  template and its alias variant, and on a live open.mp server, over both of its
+  hand-written includes (the original and the open.mp-styled alias variant, 34
+  natives each, all `raw` or alias-declared): both report a match, and an
+  include edited to rename one native and change another's arity and tag reports
+  exactly those four divergences.
+
+### `rust-samp-sdk` (lib `samp_sdk`) — 3.6.0
+
+#### Added
+
+- **Wrappers for nearly every open.mp interface, generated from the SDK
+  headers.** 762 functions over 53 interfaces, in `omp::generated` and
+  re-exported at `omp::`: every entity (`object_*`, `pickup_*`, `textdraw_*`,
+  `gangzone_*`, `actor_*`, `menu_*`, `class_*`, `vehicle_*`, `npc_*`,
+  checkpoints, text labels, player objects and text draws), every component,
+  the player pool, `ICore`, `IConfig`, the database connections and result sets,
+  and each per-player data interface with its accessor (`player_dialogs(player)`,
+  `player_objects(player)`, ...). Each component interface gets its UID and its
+  `ComponentInterface` impl. What the generator will not state with certainty —
+  `std::` types, references to structs the SDK does not mirror, C-style `...`,
+  overloads not named in the TOML — is listed at the end of each module with the reason, never
+  guessed.
+- The generator covers three more shapes, which brought 67 methods in —
+  among them every setter of the text draws, the checkpoints' positions and the
+  vehicles' respawn delay. A `const Vector3 &` (or any mirrored value type
+  taken by const reference) becomes a Rust reference, which is that pointer; a
+  setter returning the object itself for chaining (`ITextDrawBase &`) drops the
+  value, since the caller already holds the object; and `size_t` is `usize`.
+- Overloads, named one by one in `xtask/omp-wrappers.toml` (`overloads`):
+  `player_textdraws_create` and `_create_preview`, `player_textlabels_create`
+  and `_create_on_player`/`_create_on_vehicle`,
+  `player_objects_begin_editing` and `_begin_editing_player_object`,
+  `player_attach_camera_to_object` and `_attach_camera_to_player_object`. The
+  slot of each comes from clang's layout, which already places MSVC's reversed
+  order; `cargo xtask check-abi` checks an overload on Linux by its parameters as
+  well as its name, since the name alone would pass either one. A per-player
+  text draw or text label can now be created, so their round trips run too.
+- **Structs the headers pass by value, mirrored from them** — 16 in
+  `omp::generated::structs`: `VehicleSpawnData`, `VehicleParams`,
+  `PlayerClass`, `WeaponSlotData`, `ObjectMoveData`, `ObjectAttachmentData`,
+  `TextLabelAttachmentData`, `PlayerKeyData`, `PlayerAimData`,
+  `PlayerSurfingData`, `PlayerSpectateData`, `PlayerAnimationData`,
+  `ActorSpawnData` and others. A struct is mirrored only when every field is
+  something the SDK states with certainty and it travels by value under both
+  ABIs (trivially copyable); each carries its C++ defaults as `Default` where
+  they are literals, and compile-time assertions of its size and every field
+  offset per ABI, taken from clang's layout. What was not mirrored is listed
+  at the end of the file, with the reason. With them came 71 more methods:
+  `vehicle_set_params`/`vehicle_params`, `vehicle_spawn_data`,
+  `object_move`/`object_moving_data`, `class_class`, `player_key_data`,
+  `player_aim_data`, `player_give_weapon`, `npc_rotation`, ... A method
+  returning a `const T &` hands back a `*const T` into the server's copy.
+- **Events of every component, generated.** `EventDispatcher<H>` with
+  `add_event_handler`, `remove_event_handler`, `event_handler_count` and the
+  `priority` constants, one generic wrapper for the template every component
+  uses; an accessor per component (`objects_event_dispatcher`,
+  `npcs_event_dispatcher`, `dialogs_event_dispatcher`, ...); and 12 handlers
+  generated from the headers — actors, classes, the console, gang zones,
+  menus, NPCs, objects, pickups, checkpoints, dialogs, custom models, text
+  draws — each with `DEFAULT`, a vtable doing what the C++ bodies do, to
+  override with struct update syntax. A narrow integer a handler receives
+  arrives as a whole word, the value in its low bits: the rule return values
+  already follow. The player groups and the vehicles' keep their hand-written
+  handlers.
+- **Nothing the headers declare is left without a wrapper.** The last gaps
+  closed with what they needed:
+  - `Pair<A, B>`, `Span<T>`, `HybridString<N>` and `FlatSet<T>` in
+    `omp::containers`, laid out as the C++ types are. `flat_set_entries` reads
+    a `robin_hood` set (`players_bots`, `vehicle_passengers`, ...) and fails
+    closed, bounded by the table's own allocation — as the extension-map walk
+    already did.
+  - Structs with anonymous unions (`ObjectMaterialData`, `PeerAddress`,
+    `ConsoleCommandSenderData`, the vehicle sync packets), with bit-fields
+    (collected into one `bits_*` integer), with pointers, and with
+    `HybridString`s (`BanEntry`, `AnimationData`) — the last ones by reference
+    only, since the ABIs pass them by value differently. 36 types in all, each
+    with its layout asserted per ABI.
+  - Arrays (`StaticArray<T, N>`, `WeaponSlots`) as `[T; N]`, their bounds
+    evaluated from the headers' constants and confirmed by clang before
+    anything is written; raw pointers back (`config_int`); out-pointers
+    (`const T *&`); enum out-parameters.
+  - Interfaces the server calls back through — `HTTPResponseHandler`,
+    `OptionEnumeratorCallback`, the core's `onTick`, the player pool's
+    `PoolEventHandler<IPlayer>` — as handlers; a pure interface has no
+    `DEFAULT`, since the plugin implements it whole.
+  - `Microseconds`, `TimePoint` and `WorldTimePoint`; the unit of the last is
+    the standard library's, hence `WORLD_TICKS_PER_SECOND`.
+  - The overloaded `create` of text draws, text labels and vehicles under the
+    generator's names too (`textdraws_create`, ...), beside the hand-written
+    `create_*`.
+- A getter returning a small struct can take arguments: `config_string`,
+  `core_weapon_name`, `player_weapon_slot`, `players_default_colour`, the
+  database rows' `field_string`/`field_name`, the menu's `cell` and
+  `column_header`, the gang zones' colours for a player — 15 in all.
+- The overloads that had no wrapper in any form: `textdraws_create_preview`,
+  `textlabels_create_on_player`/`_on_vehicle`,
+  `vehicles_create_from_spawn_data`, `npc_start_playback`/`_id` and
+  `config_remove_ban_at`.
+- `GTAQuat`, a rotation laid out as the server's `glm::quat`: `w` first, since
+  the SDK is built with `GLM_FORCE_QUAT_DATA_WXYZ`. `entity_rotation` and
+  `entity_set_rotation` read and set it for any entity, as `entity_id` does.
+- Out-parameters (`T &` without `const`) are `&mut T`; typedefs of integers
+  (`PickupType`) read as the integer; `long` is `i32` and `double` is `f64`.
+  `GangZonePos` implements `Default`.
+- `Milliseconds`, `Seconds`, `Minutes` and `Hours`, the `std::chrono`
+  durations the headers take and return, laid out as the C++ classes are. The
+  count of minutes and hours is an `int` under Microsoft's library and 64 bits
+  under libstdc++, so it is `HoursRep`, which follows the target.
+- Wrappers for `ITimersComponent` and `ITimer`: `timers_create_counted` (a
+  first delay, an interval and a number of calls), `timers_count`, and the
+  timer's `running`, `remaining`, `calls`, `interval`, `trigger` and `handler`.
+  `ITimersComponent` implements `ComponentInterface`. The three-argument
+  `create` and `kill` stay hand-written (`create_repeating_timer`,
+  `kill_timer`).
+- `IDatabasesComponent` implements `ComponentInterface`, so
+  `omp_query::<Component<IDatabasesComponent>>()` finds it;
+  `TextLabelAttachmentData` implements `Default` with the header's
+  `INVALID_PLAYER_ID`/`INVALID_VEHICLE_ID`.
+- `ComponentInterface::COMPONENT_OFFSET`, for a component whose `IComponent` is
+  not its first base. `INPCComponent` puts its pool first, so the `IComponent*`
+  the server hands out sits 4 bytes in (8 on MSVC); `Component::as_ptr` moves
+  back by it. Without that, the first call into the NPC component crashed the
+  server — found by running it.
+- `Vector4::ZERO`, and `Default` for `Colour` and `Vector2`.
+- **`omp::Component<I>` and `omp::ComponentInterface`.** An interface handle
+  (`IObjectsComponent`, `IVehiclesComponent`, and the other seven) now declares
+  its UID, and `samp::plugin::omp_query::<Component<IObjectsComponent>>()`
+  returns it typed, with `Component::as_ptr` for the functions that take it.
+- `StringView::of(&str)` for a view to hand the server for one call,
+  `StringView::EMPTY`, and `StringView::to_owned_string` to copy one out;
+  `StringView::from_static` is now `const`. `Vector3::ZERO`.
+- Every public item of the `omp` submodules is re-exported at `omp::`, which
+  adds `Component`, `ComponentInterface`, `ServerComponent` and `NUM_AMX_FUNCS`
+  to what was already there.
+- `encoding::current()` returns the encoding in force. A plugin that lets the
+  server owner choose one could set it but not read it back, so it could not
+  report which encoding it was using.
+
+#### Changed
+
+- **Narrow return values are read as the whole register.** A C++ function
+  returning `bool`, `uint8_t` or a 16-bit integer sets only the low part of
+  `EAX`: the official `IVehicle::isOccupied()` on Windows ORs two pointers into
+  it and then `setne %al`, so `true` comes back as `0x????..01`. Declaring the
+  foreign function as returning `bool` leaves Rust assuming a clean 0 or 1; the
+  code rustc generates today happens to read only `AL`, but nothing guarantees
+  that. `call_vtable!` now goes through `VirtualReturn`, which receives such
+  values as `u32`/`i32` and narrows them in Rust. The two hand-rolled
+  `add_*_handler` calls use `call_vtable!` now as well.
+- The `omp` module lost most of its repetition without changing what it does.
+  Per-ABI slot constants were a `#[cfg]` pair each (about 140 of them) and are
+  now one line in `slots!`; opaque handles went through `opaque!`; getters and
+  setters that were a signature around one `call_vtable!` are one line in
+  `virtual_fns!`; the `StringView` return that differs per ABI is one helper
+  instead of two hand-written copies. Two workarounds went with it: a helper
+  that pushed `u32` values through an `i32` setter with `as`, and a slot
+  constant with two names.
+- That this changed nothing was checked, not assumed: every non-inlined
+  function of the module was disassembled before and after, for both ABIs, and
+  compared. All matched except the two position getters, where the neutral
+  `Vector3` answer is now written only on the failure path instead of before the
+  call — same slot, same call, same stack cleanup. The `counter` example then
+  produced identical output on open.mp Linux and open.mp Windows.
+- **Decoding a string argument:** 616 → 155 ns for 127 characters. Unpacked
+  strings are read in one pass the compiler vectorizes; packed ones a cell at
+  a time instead of a byte at a time; and text that is already valid UTF-8
+  becomes the `String` without being copied again.
+- **Measuring a string argument** tests sixteen cells at a time: 143 → 80 ns
+  for 127 characters.
+- **`exec_public!` and `call_public`** resolve the public's name without
+  allocating: 30–50% faster. The same for `find_native` and `find_pubvar`.
+
+#### Deprecated
+
+- `Export::from_table`, in favour of `Export::try_from_table`, which returns
+  `None` instead of panicking. The old method keeps its signature and behaviour,
+  so nothing that calls it breaks.
+- The nine `omp::as_*_component` casts (`as_objects_component`,
+  `as_vehicles_component`, ...). Each took a component looked up by a UID
+  constant and cast it, and nothing tied the two together: looking up one
+  component and casting it to another compiled. `omp_query::<Component<I>>()`
+  takes the UID from the interface type instead. The casts keep working.
+
+#### Fixed
+
+- **`player_extension` returned null for every component's per-player data.**
+  It called the virtual `getExtension`, whose base implementation returns null;
+  components file their data with `addExtension`, in the extension map. It now
+  does what open.mp's own `queryExtension<T>()` does — the map first, then the
+  virtual — and finds a player's dialog, checkpoint, menu and object data, as
+  `examples/omp-showcase` confirms on both servers.
+- `OmpComponent`'s documentation was attached to a constant declared between
+  the doc comment and the struct, so the struct showed as undocumented. And
+  `player_name` said both ABIs return its `StringView` through a hidden pointer,
+  which is the MSVC half only — the code already did the right thing.
+- **An AMX function table the server left partly empty ended the server's
+  process.** Every `Amx` call resolved its function through `Export::from_table`,
+  which asserted on an empty slot — a panic on the path of every native, and a
+  panic there aborts the process. The calls now answer `Err(AmxError::NotFound)`,
+  which a native reports like any other error. The first assertion, on a null
+  table, was already unreachable: `Amx` checks for that before resolving.
+- **Strings are measured inside the AMX memory.** A string argument was
+  measured with the server's `amx_StrLen`, which has no bound: given an address
+  at the top of the stack, it read past the end of the script's memory. The SDK
+  now measures the string itself, up to the end of the data region, and
+  refuses one with no terminator before it.
+- **A packed string starting with a byte of 0x80 or above decodes.** The
+  packed/unpacked test compared signed, where the server compares unsigned, so
+  `!"\233xyz"` read as garbage.
+- **Text starting like a byte order mark keeps the configured encoding.**
+  Decoding sniffed BOMs: on a Windows-1252 server, a string from a player
+  beginning with `ÿþ` was decoded as UTF-16.
+- A misaligned address from a script is refused (`MemoryAccess`) instead of
+  backing a reference. In a debug build it used to fail an assertion outside
+  the native's panic guard and abort the server.
+- `UnsizedBuffer::into_sized_buffer` no longer asserts on a size above
+  1 MiB in debug builds: the size is often a script argument, and the clamp is
+  the defence.
+- **`i686-pc-windows-gnu` compiles again.** The layout checks for Linux were
+  gated on "not MSVC", which includes windows-gnu, where 64-bit fields align
+  differently.
+
+### `rust-samp-codegen` (lib `samp_codegen`) — 1.6.0
+
+#### Added
+
+- `#[native]` registers its name as a C string literal. The name used to be
+  built with `CString::new(...).unwrap()` and leaked on purpose so the server
+  could keep the pointer; a literal lives in the binary for as long as the plugin
+  is loaded, with nothing to allocate, leak or unwrap.
+- `#[native]` takes `default(...)`, `sizeof(...)`, `varargs` and `args = "…"`,
+  which shape the Pawn declaration it derives; an argument named that the
+  function does not have is a compile error.
+- `initialize_plugin!` records the plugin crate's version, for `{{VERSION}}` in
+  an include template.
+- `#[native]` marks its frame with `samp::plugin::NativeFrame`, so the SDK can
+  tell that `&mut self` is out and refuse a second borrow from a main-thread job
+  instead of aliasing it.
+- `initialize_plugin!` emits `pawn_native_decls()` next to the entry points: the
+  Pawn declaration of every registered native, as a plain function, available
+  without a server. It is what lets `samp::pawn_include` compare a hand-written
+  include with the natives behind it from a test.
+- `initialize_plugin!` takes `callbacks: ["OnThing(a, b)"]`, the Pawn callbacks
+  the plugin calls, and emits `pawn_callback_decls()`; `#[native]` captures the
+  function's doc comment and `initialize_plugin!` emits `pawn_native_docs()`.
+  Both feed the include template (`{{CALLBACKS}}`, `{{DOC:Name}}`).
+
+#### Fixed
+
+- **`initialize_plugin!` emitted the Open Multiplayer entry point even for a
+  `samp-only` plugin**, which then did not compile. It decided from
+  `CARGO_FEATURE_SAMP_ONLY`, which Cargo sets only for build scripts. The entry
+  point is now wrapped in `samp::__omp_only!`, which the `samp` crate defines
+  according to its own feature. See the `rust-samp` entry.
+- The `#[native]` wrapper resolves the script and the plugin without `expect`,
+  before its `catch_unwind` — through `samp::interlayer::native_amx` and
+  `samp::plugin::try_get` — so a native called outside the server's ordering
+  answers `0` instead of ending the process.
+- The generated `#[native]` and `#[event]` wrappers and the component entry
+  points catch panics through `samp::panic_guard::catch`.
+- The component's `onFree` passes on the component being freed.
+
+### Dependencies
+
+- Dependabot: Cargo updates in two batches (13 in #69, 12 in #70 — the one the
+  SDK itself uses is `encoding_rs` 0.8.42, behind the `encoding` feature),
+  `quinn-udp` 0.5.16 (#71), 3 GitHub Actions updates
+  (#68), and for the documentation site `pymdown-extensions` (#67) and
+  `urllib3` 2.8.0 (#72).
+
+### Tests
+
+- A fuzz target for AMX strings (`amx_string`): arbitrary cells and claimed
+  lengths, writes into buffers of any size, read-back in three encodings.
+- Stress test of the main-thread queue from eight threads while draining; it,
+  and the rest of `samp` and `samp-sdk`, run clean under ThreadSanitizer.
+- New benchmark `crates/samp/benches/hot_paths.rs`: natives with each argument kind,
+  publics through the detour (passed, suppressed, unwatched), calling publics
+  from Rust, the tick, the main-thread queue, a log line.
+- The `samp-sdk` benchmarks were rewritten. Several measured nothing — the
+  optimizer had removed the work, or a "first access" read a cached value —
+  and the `f32` ones timed float addition, which cannot be vectorized, rather
+  than the conversion.
+- `bounded_strlen` is checked against a byte-by-byte search on five thousand
+  generated inputs.
+
+### Tooling
+
+- `deny.toml`, the dependency policy the new CI step checks: licenses, sources
+  and yanked crates. Everything that ships with the MIT crates is permissive today; the
+  policy makes a dependency under anything else fail instead of arriving with an
+  update.
+- The generators pass their output through `rustfmt`, so it is what `cargo fmt`
+  leaves: written unformatted, the next `cargo fmt` rewrote it and `--check`
+  reported the files stale forever after.
+- `fuzz/` gained a `pawn_include` target: the include parser and the template
+  renderer read files from outside the plugin, inside the server, at load.
+- **The repository's tooling is Rust: `cargo xtask`.** It lives in `xtask/`, a
+  host crate with its own workspace, and no Python is left in the repository.
+  libclang is loaded at run time, so building, linting and testing the crate
+  need no clang; only running the generator does. Each command was proven
+  against the Python script it replaces before that script was removed.
+  - **`cargo xtask gen-omp`** generates `crates/samp-sdk/src/omp/generated/` from
+    `xtask/omp-wrappers.toml` and the open.mp SDK headers; `--check` reports
+    stale files. The Python generator this release first wrote asked clang for
+    a full JSON AST once per interface — about 30 minutes and up to 4 GB of
+    memory. This one reads every header in one libclang parse per ABI, takes
+    sizes, offsets and constants from it, and runs `clang++` once per ABI for
+    the vtables and once for the subobject offsets, beside the parse: about
+    15 seconds and 280 MB. Types are read from libclang's structure — typedef
+    names, template arguments, the canonical record — instead of their
+    spelling, and what the SDK writes by hand is read with `syn`. Its output
+    matched the Python generator's line for line except where it knew better:
+    the `IDatabasesComponent` UID and `ComponentInterface` impl, which the
+    script's pattern missed; the header of a nested struct (`network.hpp` for
+    `NetworkID`); and a `Default` for `TextLabelAttachmentData`, whose C++
+    defaults are named constants rather than literals. clang is given the
+    definitions the SDK's `CMakeLists.txt` gives every consumer
+    (`GLM_FORCE_QUAT_DATA_WXYZ` and the rest): without them the quaternion's
+    field order was the opposite of the server's.
+  - **`cargo xtask check-abi`** replaces `scripts/check-abi-slots.py`: every
+    slot against the official binaries, by name on Linux and by the bytes each
+    method pops on Windows, with `--generated` for the generated wrappers too.
+    ELF and PE are read with `object`, names demangled with `cpp_demangle`, and
+    `ret N` found with `iced-x86` — no `nm`, `readelf`, `c++filt` or `objdump`.
+    It runs in under a second, and gives the script's verdict on every slot
+    plus seven more: the script passed an address's bytes to `re.finditer` as
+    a pattern, and the `\` in one (`0x5C`) made it find no vtable for
+    `CheckpointsComponent` and `CustomModelsComponent`. Two fixes carried over
+    from the script's last revisions: slots declared through `slots!` are
+    read, and a tail call (`jmp` through a pointer) ends the search for a
+    method's `ret` instead of reading the next function's. It then went
+    further than the script: the official Windows server ships a `.pdb`
+    beside every binary, `omp-server.exe` included, and `check-abi` reads them
+    (`pdb`, `msvc-demangler`) to check every MSVC slot by the name of the
+    method it holds — the way Linux is checked — on top of `ret N`, which
+    cannot tell apart methods without arguments. The vtable is still found
+    through RTTI where the binary keeps it, whose locator records the
+    subobject offset; the PDB stands in only for the server's own classes,
+    which have none. A function MSVC folded with others (`/OPT:ICF`) is
+    matched by any of the names it carries.
+  - **`cargo xtask roundtrip`** derives the showcase's set/get round trips
+    from the generated code, so nobody chooses by hand what gets tested. It
+    reads the wrappers with `syn`, and found one round trip the script's
+    pattern could not: a getter whose signature `rustfmt` wraps over lines.
+  - **`cargo xtask vtable <Class>`** replaces `scripts/omp-vtable.py`: a
+    class's slots for both ABIs, `--rust` printing `slots!` entries. Its stub
+    only defines a constructor, which makes clang lay the vtable out without
+    overriding anything — no list of pure methods to build, and no host
+    `va_list` leaking into the i686 layout. It says where MSVC keeps an
+    override in a secondary base's vtable (`getUID` at offset 56), which the
+    script reported as a meaningless slot, and marks overloads that need a
+    name each.
+- `cargo xtask gen-omp` refuses a spec that names a class or a module twice,
+  a module or prefix that is not an identifier, an overload or a `skip` entry
+  that matches no method. Each passed silently before.
+- `cargo xtask check-abi` names the `.pdb` it failed to read.
+
+### CI
+
+- Clippy on the library crates with every feature combination, and a build of
+  the `hello` example with `samp-only`. No build turned that feature on before,
+  which is how its breakage reached a release.
+- `cargo deny check` against `deny.toml`: licenses, sources, yanked crates.
+- An `xtask` job: formatting, clippy and the generator's own tests, with no
+  clang installed. It is part of the `ci-status` gate.
+- The cross-only `aarch64` check caught a log import in `crates/samp/src/events.rs`
+  left unconditional during the panic audit: only the `amx_Exec` hook uses it,
+  and the hook exists only on x86, so `-D warnings` failed everywhere else. The
+  import now carries the hook's own `cfg`. It never reached a published
+  version.
+- The release workflow's dry run checks the three crates together, with
+  `cargo publish --workspace --dry-run`. It used to dry-run each crate on its
+  own, so `rust-samp` looked on crates.io for the new `rust-samp-codegen`,
+  which a dry run never publishes, and the run failed on every release that
+  bumped both. The real publication was unaffected.
+- `i686-pc-windows-gnu` joins the build matrix, checked with clippy.
+
+### Docs
+
+- `natives.md`: checking and generating the Pawn include — templates,
+  placeholders, callbacks, documentation in Pawn's format, what `#[native]` can
+  add to a declaration, and the per-plugin environment variables.
+- `omp-interfaces.md`: the typed component lookup, the generated wrappers and
+  how they are proven, per-player extensions, and adding an interface.
+- `threads.md`: reaching the plugin's state from a main-thread job, and the one
+  `&mut` rule. `encoding.md`: reading the encoding in force.
+- `migration.md`, `plugin-anatomy.md` and the README: the plugin declares its
+  own `samp-only` feature, which the documented `#[cfg]` guard needs.
+- `migration.md` gains a v3.6.0 → v3.7.0 section: the typed component lookup
+  replacing the deprecated casts, `try_from_table`, and what `player_extension`
+  finds now.
+
+- The README shows the repository release and each crate's version as separate
+  badges, and says that the crates are versioned on their own: one crates.io
+  badge next to a different GitHub release number read as a mismatch.
+- `examples/omp-showcase` gained a README, and is listed in the root README,
+  `examples/README.md` (which also lists `sink-demo`, missing until now) and
+  `advanced-examples.md`.
+- `api-reference.md` lists what this release added: `amx::loaded`/`count`,
+  `plugin::with_instance`/`is_borrowed`, `samp::mainthread`,
+  `samp::pawn_include`, `encoding::current`, `omp::Component<I>` and the
+  generated wrappers. The `rust-samp-sdk` README names the generated wrappers.
+- Removed `samp-sdk/readme.md` and `samp-codegen/readme.md`, copies left from
+  v2 that no manifest pointed at, and that clash with `README.md` on a
+  case-insensitive file system.
+- Logging: lines logged before `on_load` now wait for the server instead of
+  being lost, and how lines from other threads reach the server log.
+- Threads: `log::*` is safe from any thread.
+- Threads: spreading a burst of jobs over several ticks with a budget.
+
+### Repository
+
+- The three published crates moved under `crates/` (`crates/samp`,
+  `crates/samp-sdk`, `crates/samp-codegen`), so the root holds the
+  repository — examples, tooling, docs — and not the product mixed in with
+  it. Nothing changes for users: the package and library names, and the
+  published contents, are the same.
+- `scripts/bench.sh` runs the `rust-samp` benchmark too.
+
+### Validation
+
+- `omp-showcase` now also proves what the first run listed as ignored. Every
+  setter the server rejected was traced to the server's own code and exercised
+  under the conditions it sets: a valid fighting style, an armed NPC for its
+  clip, the NPC seated as a driver for its vehicle state and for angular
+  velocity, and the NPC's own weapon and special action for the player-side
+  getters. Four setters remain unproven by design — they only send an RPC to
+  the client (`player_set_velocity`, `vehicle_set_velocity`, and the player's
+  `set_action`/`set_armed_weapon`, which an NPC ignores) — and the report says
+  so. Round trips also cover `Vector3`, `Vector4`, `Colour` and text now, the
+  return conventions most likely to differ between the ABIs, and the durations
+  and const-reference setters the generator gained later, the global text
+  draw's included, and the per-player text draws and text labels created
+  through the new overloads, and one check per mirrored struct in the shape
+  it travels in — by value, by `const &`, as a pointer into the server's copy.
+  The quaternion's order was proven against an angle the server keeps apart:
+  a vehicle turned 90 degrees reads back with only `w` and `z` set. Generated
+  handlers were registered and fired by the server with no client — an NPC's
+  create [1], destroy [2], spawn [3] and death [8] with its reason, an
+  object's `onMoved` [0] — and `config_string`/`core_weapon_name` read a
+  `StringView` back past an argument. The containers were proven the same
+  way: `config_strings` filling a `Span`, `config_enum_options` calling a
+  callback object, a `BanEntry` added, found and removed, `vehicle_colour`
+  and `player_time` as `Pair`s, the NPC found in `players_bots` through the
+  hash-table walk, `vehicles_models` as an array, and the core's `onTick`
+  receiving sane `Microseconds` and a steady `TimePoint` on every tick; the
+  database component found through its new `ComponentInterface` impl, and the
+  text draw's background colour, a round trip only the Rust reader finds; and a
+  counted timer that reports its interval, calls and handler and fires exactly
+  three times. 152 passed, 0 wrong, identically on open.mp Linux and on
+  Windows under Wine (WineHQ 11).
+- New tools in the loop: `cargo-careful` (the standard library's own debug and
+  UB checks) and AddressSanitizer with leak detection on the host target both
+  run the SDK's tests clean; `cargo-semver-checks` finds no breaking change in
+  `samp` and only the intended deprecation in `samp-sdk`; a new fuzz target for
+  `pawn_include` ran 214,617 inputs without a panic, `parse_debug` 9.7 million.
+  The four plugins built on the SDK (`email-samp`, `mysql_samp`, `json-samp`,
+  `env-samp`, the last two written for 3.0) compile against it unchanged.
+- The SDK ran on every combination it supports: SA-MP on Linux and on
+  Windows (plugin), and open.mp on Linux and on Windows as a legacy plugin and
+  as a native component — Windows under Wine. On each, the `counter` example
+  under a Pawn script gave the same answers: default and by-reference
+  arguments, an aliased native, a public called back with a string and a float
+  whose return reached the native, work finished on another thread and handed
+  back through `post_with_amx`, the tick, and the extended native table — read
+  as a component, reported unavailable everywhere else.
+- The four plugins built on the SDK compile against this tree with no error
+  or warning, each checked to resolve `rust-samp` to it rather than to a
+  locked older version.
+- The generated wrappers were proven three ways. **Against the binaries**:
+  `cargo xtask check-abi --generated` passes 2276 checks — every generated
+  slot by method name on both ABIs (776 of them on Windows through the PDBs,
+  the server's own `Player` and `PlayerPool` included, which used to be left
+  to a server run) and by the bytes each method pops. The 35 it declares
+  underivable are all `ret N` checks of methods that end in a tail call; each
+  of those slots passes its name check.
+  **Against a running server**: the new `examples/omp-showcase` creates one of
+  every entity, reads back what it created, and round-trips every setter that
+  has a matching getter — including the player's, through an NPC. On open.mp
+  Linux and on open.mp Windows under Wine it reports the same thing: 53 passed,
+  0 wrong, and 9 setters the server ignores by its own rules (a fighting style
+  of 3 is not one, ammunition without a weapon), listed rather than hidden.
+  That run also proved the extension-map walk against a real player's data for
+  the first time.
+- The panic audit: every `unwrap`, `expect`, `assert!` and `panic!` outside test
+  code was classified by whether the server can reach it. Four were, and are
+  fixed above; the rest are compile-time layout checks, `debug_assert!`s, or
+  invariants the servers' call order guarantees — the runtime and the plugin are
+  created by `Supports`/`ComponentEntryPoint`, the first call each server makes.
+  An empty function-table slot is now pinned by a test that expects an error, and
+  the `counter` example, whose every native went through the changed wrapper,
+  was run on open.mp Linux, open.mp Windows under Wine and SA-MP Linux.
+
 ## [v3.7.0-rc.5] — 2026/10/06
 
 A candidate for the new repository layout: the crates carry no code change

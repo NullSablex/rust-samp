@@ -163,8 +163,8 @@ Types supported by `get_as` / `set_as` / `iter_as`: `i8`, `u8`, `i16`,
 ## v3.6.0 → v3.7.0
 
 Release v3.7.0 ships `rust-samp` 3.6.0, `rust-samp-sdk` 3.6.0 and
-`rust-samp-codegen` 1.6.0. Nothing breaks; two things are deprecated and one
-behaves better.
+`rust-samp-codegen` 1.6.0. Nothing breaks; two things are deprecated, and a
+few behave differently in ways worth knowing — none needs a code change.
 
 ### Querying a component
 
@@ -210,6 +210,29 @@ It works again, declared on the plugin so its own `#[cfg]` agrees with the SDK:
 [features]
 samp-only = ["samp/samp-only"]
 ```
+
+### Logging from another thread
+
+A `log::*` line written off the main thread still goes to the plugin's log
+file at once, but reaches the server's log on the main thread — neither
+server's log is safe to call from two threads. It is written at the next tick,
+so a plugin that logs from worker threads wants `samp::plugin::enable_tick()`.
+Lines logged while the plugin is built (the banner, a log file that cannot be
+opened) now reach the server's log instead of stderr. See
+[Logging](logging.md#logs-from-other-threads-reach-the-server-on-the-main-thread).
+
+### Suppressed callbacks
+
+`EventReturn::Suppress` now leaves the script's stack as the skipped public
+would have. Before, every suppressed call left its arguments behind, and after
+a few hundred the script stopped running. A plugin that suppresses callbacks
+needs nothing but the update.
+
+### Spreading main-thread work
+
+`samp::mainthread::set_budget(Some(duration))` caps the time one tick spends
+running queued jobs; the rest run on the next tick, in order. It is off by
+default. See [Threads](threads.md#spreading-a-burst-over-several-ticks).
 
 ## v3.1.0 → v3.2.0
 
