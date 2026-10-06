@@ -1601,7 +1601,7 @@ dependencies = [
 
 [[package]]
 name = "rust-samp"
-version = "3.6.0-rc.4"
+version = "3.6.0-rc.5"
 dependencies = [
  "criterion",
  "fern",
@@ -1615,7 +1615,7 @@ dependencies = [
 
 [[package]]
 name = "rust-samp-codegen"
-version = "1.6.0-rc.4"
+version = "1.6.0-rc.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "rust-samp-sdk"
-version = "3.6.0-rc.4"
+version = "3.6.0-rc.5"
 dependencies = [
  "bitflags 2.13.2",
  "criterion",

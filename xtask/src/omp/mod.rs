@@ -110,7 +110,10 @@ pub fn run(options: &Options) -> Result<bool> {
             hand,
             &spec,
         );
-        let mut output = Output::new(&repo.join("crates/samp-sdk/src/omp/generated"), options.check);
+        let mut output = Output::new(
+            &repo.join("crates/samp-sdk/src/omp/generated"),
+            options.check,
+        );
         let modules = write_modules(&mut generator, &spec, &layouts, &mut output)?;
 
         eprintln!(
