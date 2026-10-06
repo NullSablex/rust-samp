@@ -15,11 +15,11 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 
 [dependencies.rust-samp-sdk]
-path = "../samp-sdk"
+path = "../crates/samp-sdk"
 features = ["debug", "encoding"]
 
 [dependencies.rust-samp]
-path = "../samp"
+path = "../crates/samp"
 
 # cargo-machete reads the package name, `rust-samp-sdk`, and looks for it in the
 # code; the code uses the library name, `samp_sdk`. It is used.

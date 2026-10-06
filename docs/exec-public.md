@@ -34,7 +34,7 @@ it usually means the script and the plugin disagree about the callback name.
 ## `exec_public!` — the macro
 
 Pawn `public` functions can be called from the plugin. The
-`exec_public!` macro (defined in `samp-sdk/src/macros.rs`, re-exported
+`exec_public!` macro (defined in `crates/samp-sdk/src/macros.rs`, re-exported
 as `samp::exec_public`) handles the boilerplate: it pushes arguments
 in the correct order, allocates AMX
 heap memory for owned Rust values, executes the function, and frees

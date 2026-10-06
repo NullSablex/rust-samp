@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { package = "rust-samp", path = "../../samp", features = ["encoding"] }
+samp = { package = "rust-samp", path = "../../crates/samp", features = ["encoding"] }
 memcache = { version = "0.21", default-features = false }
 log = "0.4"
 fern = "0.7"

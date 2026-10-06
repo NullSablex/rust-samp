@@ -9,7 +9,7 @@ description = "Exercises every generated open.mp wrapper against a running serve
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { package = "rust-samp", path = "../../samp" }
+samp = { package = "rust-samp", path = "../../crates/samp" }
 log = "0.4"
 
 [package.metadata.samp]

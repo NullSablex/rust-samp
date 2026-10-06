@@ -52,11 +52,14 @@ cargo xwin build --xwin-arch x86 --target i686-pc-windows-msvc
 A Cargo workspace of crates:
 
 ```
-samp/          ← main crate, re-exports sdk + codegen (lib name: samp)
-samp-sdk/      ← FFI bindings to the AMX VM and the open.mp component ABI
-samp-codegen/  ← proc macros (#[native], initialize_plugin!, derive SampPlugin)
-examples/      ← hello / counter / advanced / sink-demo plugins
-docs/          ← MkDocs (Material) sources, published to GitHub Pages
+crates/
+  samp/          ← main crate, re-exports sdk + codegen (lib name: samp)
+  samp-sdk/      ← FFI bindings to the AMX VM and the open.mp component ABI
+  samp-codegen/  ← proc macros (#[native], initialize_plugin!, derive SampPlugin)
+examples/        ← hello / counter / advanced / sink-demo / omp-showcase plugins
+xtask/           ← repository tooling (`cargo xtask`): wrapper generation, ABI checks
+fuzz/            ← cargo-fuzz targets for the parsers that read outside input
+docs/            ← MkDocs (Material) sources, published to GitHub Pages
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the architecture notes (open.mp ABI,
@@ -138,7 +141,7 @@ and `omp-server`, and fails when the source disagrees: by name on Linux, whose
 libraries keep their symbols; by name on Windows as well, through the `.pdb`
 the official server ships beside each binary, and by the argument bytes each
 method pops (`ret N` under `thiscall`). Run it after touching anything under
-`samp-sdk/src/omp/`, and before a release. Not part of CI: it needs the official
+`crates/samp-sdk/src/omp/`, and before a release. Not part of CI: it needs the official
 servers, which cannot be redistributed.
 
 ## Fuzzing

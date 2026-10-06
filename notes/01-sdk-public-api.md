@@ -1,6 +1,6 @@
 # samp-sdk public API (verified from `.rs`)
 
-## `samp-sdk/src/lib.rs`
+## `crates/samp-sdk/src/lib.rs`
 
 Crate-level doc says: low-level layer; two binding sets — AMX (Pawn VM, SA-MP) and
 Open Multiplayer (vtables, `IComponent` layout, typed wrappers of native server
@@ -20,7 +20,7 @@ Public modules:
 
 `tests` is private (`#[cfg(test)]`).
 
-## `samp-sdk/src/amx.rs`
+## `crates/samp-sdk/src/amx.rs`
 
 ### `pub struct Amx { ptr: *mut AMX, fn_table: usize }`
 - `Debug`. Wraps `*mut AMX` + `amx_Exports` table address.

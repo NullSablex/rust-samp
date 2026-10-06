@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run the SDK benchmarks locally.
+# Run the benchmarks locally: `rust-samp-sdk` (strings, buffers) and
+# `rust-samp` (`hot_paths`: natives, publics, the tick, logging).
 #
 # Benchmarks are intentionally NOT part of CI (no GitHub Actions run them on
 # push/PR/release) — they are noisy on shared runners and provide little signal
@@ -16,4 +17,4 @@ set -euo pipefail
 
 TARGET="${BENCH_TARGET:-i686-unknown-linux-gnu}"
 
-exec cargo bench -p rust-samp-sdk --target "$TARGET" "$@"
+exec cargo bench -p rust-samp-sdk -p rust-samp --target "$TARGET" "$@"

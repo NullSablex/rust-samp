@@ -9,7 +9,7 @@ the server log:
 [rust-samp] null ICore* in on_load — samp::plugin::omp_core() will return None
 ```
 
-The prefix is a single constant in `samp/src/macros.rs`
+The prefix is a single constant in `crates/samp/src/macros.rs`
 (`SDK_LOG_PREFIX`) — do not hardcode the literal in your own logs.
 
 ## Where they fire

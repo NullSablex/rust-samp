@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "samp-codegen",
-    "samp-sdk",
-    "samp",
+    "crates/samp-codegen",
+    "crates/samp-sdk",
+    "crates/samp",
     "examples/hello",
     "examples/counter",
     "examples/advanced",

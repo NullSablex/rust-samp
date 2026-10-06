@@ -301,7 +301,7 @@ pub fn run(check: bool) -> Result<bool> {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .context("the xtask crate has no parent")?;
-    let generated = repo.join("samp-sdk/src/omp/generated");
+    let generated = repo.join("crates/samp-sdk/src/omp/generated");
     let target = repo.join("examples/omp-showcase/src/round_trips.rs");
 
     let mut paths: Vec<_> = std::fs::read_dir(&generated)

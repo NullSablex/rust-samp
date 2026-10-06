@@ -4,6 +4,17 @@ Current release only. Previous releases are split per major line under
 [`changelog/`](changelog/) — see [`changelog/index.md`](changelog/index.md)
 for the full directory.
 
+## [Unreleased]
+
+### Repository
+
+- The three published crates moved under `crates/` (`crates/samp`,
+  `crates/samp-sdk`, `crates/samp-codegen`), so the root holds the
+  repository — examples, tooling, docs — and not the product mixed in with
+  it. Nothing changes for users: the package and library names, and the
+  published contents, are the same.
+- `scripts/bench.sh` runs the `rust-samp` benchmark too.
+
 ## [v3.7.0-rc.4] — 2026/10/05
 
 Speed, measured: the paths a server runs on every call got a benchmark that

@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-samp = { package = "rust-samp", path = "../../samp" }
+samp = { package = "rust-samp", path = "../../crates/samp" }
 log = "0.4"
 # Real Sentry client. The example commits to a concrete upstream so
 # the dev sees the full pattern integrated, not a hand-rolled HTTP

@@ -241,7 +241,7 @@ pub struct IComponentVTable {
 //
 // Genuinely different layouts: Itanium has 3 slots (D1, D0, getUID);
 // MSVC has 1 slot (only getUID — no virtual destructor). Kept duplicated
-// because the static initializers in `samp-codegen/src/plugin.rs` are also
+// because the static initializers in `crates/samp-codegen/src/plugin.rs` are also
 // cfg-gated with different field names; unifying would require changing
 // both ends and would lose the clarity of the `pub destructor_*` fields on Itanium.
 

@@ -21,7 +21,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Generate `samp-sdk/src/omp/generated/` from the open.mp SDK headers.
+    /// Generate `crates/samp-sdk/src/omp/generated/` from the open.mp SDK headers.
     GenOmp {
         /// Fail if the committed files differ from what would be generated.
         #[arg(long)]
@@ -41,7 +41,7 @@ enum Command {
         /// The unpacked Windows server (default: `$OPENMP_WIN_SERVER`, then the usual spots).
         #[arg(long)]
         win: Option<PathBuf>,
-        /// Also check every slot in `samp-sdk/src/omp/generated/`.
+        /// Also check every slot in `crates/samp-sdk/src/omp/generated/`.
         #[arg(long)]
         generated: bool,
     },

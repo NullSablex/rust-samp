@@ -99,7 +99,7 @@ pub fn run(options: &Options) -> Result<bool> {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap_or(Path::new("."));
-    let omp = repo.join("samp-sdk/src/omp");
+    let omp = repo.join("crates/samp-sdk/src/omp");
     let linux = find_server(
         options.linux.as_deref(),
         "OPENMP_LINUX_SERVER",
@@ -503,7 +503,7 @@ fn check_generated(
     report: &mut Report,
 ) -> Result<()> {
     let spec = crate::omp::spec::load(&repo.join("xtask/omp-wrappers.toml"))?;
-    let generated = repo.join("samp-sdk/src/omp/generated");
+    let generated = repo.join("crates/samp-sdk/src/omp/generated");
     let bytes = ArgBytes::new(&source::mirrored_sizes(&generated.join("structs.rs"))?);
     for entry in &spec {
         let path = generated.join(format!("{}.rs", entry.module));

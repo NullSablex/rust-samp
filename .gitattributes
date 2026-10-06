@@ -7,7 +7,7 @@
 #
 # Does NOT affect the SDK source tarball uploaded by
 # `.github/workflows/release.yml` — that one uses an explicit `tar` allowlist
-# and is restricted to `samp/`, `samp-sdk/`, `samp-codegen/`, `Cargo.toml`,
+# and is restricted to `crates/`, `Cargo.toml`,
 # `Cargo.lock`, and `LICENSE`.
 
 # Documentation site (MkDocs) — source pages and the build configuration.

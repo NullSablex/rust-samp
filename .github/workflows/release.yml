@@ -127,9 +127,7 @@ jobs:
               --exclude='.git*' \
               --exclude='*.swp' \
               --exclude='*.swo' \
-              samp/ \
-              samp-sdk/ \
-              samp-codegen/ \
+              crates/ \
               Cargo.toml \
               Cargo.lock \
               LICENSE

@@ -1,5 +1,5 @@
 # Interfaces `cargo xtask gen-omp` wraps, one module each under
-# `samp-sdk/src/omp/generated/`.
+# `crates/samp-sdk/src/omp/generated/`.
 #
 #   class   the interface whose methods are wrapped, with its primary bases
 #   header  the SDK header declaring it

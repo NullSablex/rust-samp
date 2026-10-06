@@ -252,7 +252,7 @@ binaries; an overloaded method is wrapped once each overload gets a name under
 `overloads` (`"create(Vector2,int)" = "create_preview"`) — then:
 
 ```sh
-cargo xtask gen-omp                        # regenerate samp-sdk/src/omp/generated/
+cargo xtask gen-omp                        # regenerate crates/samp-sdk/src/omp/generated/
 cargo xtask check-abi --generated          # every slot against the binaries
 cargo xtask roundtrip                      # refresh the showcase's round trips
 ```

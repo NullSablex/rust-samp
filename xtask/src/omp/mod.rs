@@ -102,7 +102,7 @@ pub fn run(options: &Options) -> Result<bool> {
             component_msvc: joined(offsets_msvc)?,
         };
 
-        let hand = Hand::scan(&repo.join("samp-sdk/src/omp"))?;
+        let hand = Hand::scan(&repo.join("crates/samp-sdk/src/omp"))?;
         let mut generator = Generator::new(
             records,
             Records::index(&msvc_unit),
@@ -110,7 +110,7 @@ pub fn run(options: &Options) -> Result<bool> {
             hand,
             &spec,
         );
-        let mut output = Output::new(&repo.join("samp-sdk/src/omp/generated"), options.check);
+        let mut output = Output::new(&repo.join("crates/samp-sdk/src/omp/generated"), options.check);
         let modules = write_modules(&mut generator, &spec, &layouts, &mut output)?;
 
         eprintln!(
