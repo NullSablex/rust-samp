@@ -1,0 +1,142 @@
+name: CI
+
+# Single entry point for pushes and pull requests. The `changes` job maps the
+# diff to the checks that can be affected; unrelated jobs are skipped. The
+# final `CI` job is the only required build check, so skipped jobs never leave
+# a required status pending. Root Markdown, the changelog, the license, scripts
+# and repository metadata trigger nothing beyond this gate.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      xtask: ${{ steps.filter.outputs.xtask }}
+      docs: ${{ steps.filter.outputs.docs }}
+      codeql: ${{ steps.filter.outputs.codeql }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Map changed paths to checks
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          all=false
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only "$BASE...$HEAD")
+          elif [ "$EVENT" = push ] && [ -n "$BEFORE" ] \
+            && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+            && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+            files=$(git diff --name-only "$BEFORE" "$SHA")
+          else
+            all=true
+            files=''
+          fi
+          printf 'Changed files:\n%s\n' "${files:-(full run)}"
+          # CI definitions affect every check, so they run everything.
+          if grep -qE '^\.github/workflows/' <<< "$files"; then all=true; fi
+          match() {
+            if [ "$all" = true ] || grep -qE "$1" <<< "$files"; then echo true; else echo false; fi
+          }
+          rust=$(match '^(crates/|examples/|Cargo\.(toml|lock)$|\.cargo/|deny\.toml$|rust-toolchain\.toml$)')
+          xtask=$(match '^xtask/')
+          {
+            echo "rust=$rust"
+            echo "xtask=$xtask"
+            echo "docs=$(match '^(docs/|zensical\.toml$|requirements-docs\.txt$)')"
+            if [ "$rust" = true ] || [ "$xtask" = true ] || [ "$all" = true ]; then
+              echo codeql=true
+            else
+              echo codeql=false
+            fi
+          } | tee -a "$GITHUB_OUTPUT"
+
+  rust:
+    name: Rust
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/rust.yml
+
+  # `xtask/` is a host tool with its own workspace. It loads libclang at run
+  # time, so it builds, lints and tests without clang installed; only running
+  # the generator needs it.
+  xtask:
+    name: xtask
+    needs: changes
+    if: needs.changes.outputs.xtask == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust (stable + rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path xtask/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path xtask/Cargo.toml
+
+  docs:
+    name: Docs
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+
+  codeql:
+    name: CodeQL
+    needs: changes
+    if: needs.changes.outputs.codeql == 'true'
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/codeql.yml
+
+  result:
+    name: CI
+    needs: [changes, rust, xtask, docs, codeql]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected check to pass
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if jq -e 'any(.[]; . == "failure" or . == "cancelled")' <<< "$RESULTS" > /dev/null; then
+            echo '::error::A selected check failed or was cancelled.'
+            exit 1
+          fi

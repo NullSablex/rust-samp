@@ -143,7 +143,7 @@ are 32-bit.
 
 ## Documentation
 
-Full user docs under [`docs/`](docs/) (MkDocs Material). Starting points:
+Full user docs under [`docs/`](docs/) (Zensical). Starting points:
 
 - [Introduction](docs/index.md) and [Setup](docs/setup.md).
 - [First plugin](docs/first-plugin.md) and [Plugin anatomy](docs/plugin-anatomy.md).

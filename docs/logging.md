@@ -90,7 +90,7 @@ plugin prefix because every line in it already belongs to this plugin.
 
 ## Customizing the pipeline
 
-`enable_logger_with!` accepts a [`LoggerConfig`](#loggerconfig) and
+`enable_logger_with!` accepts a `LoggerConfig` and
 returns the same `Result`. Every method on `LoggerConfig` is a fluent
 builder:
 

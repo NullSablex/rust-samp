@@ -59,7 +59,7 @@ crates/
 examples/        ← hello / counter / advanced / sink-demo / omp-showcase plugins
 xtask/           ← repository tooling (`cargo xtask`): wrapper generation, ABI checks
 fuzz/            ← cargo-fuzz targets for the parsers that read outside input
-docs/            ← MkDocs (Material) sources, published to GitHub Pages
+docs/            ← Zensical sources (`zensical.toml`), published to GitHub Pages
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the architecture notes (open.mp ABI,

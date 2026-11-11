@@ -1,16 +1,9 @@
 name: Rust
 
+# Reusable: called by ci.yml when the SDK, examples or Cargo inputs change.
 on:
-  push:
-    branches: [ "master" ]
-    paths-ignore: &doc-paths
-      - '**.md'
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'LICENSE'
-  pull_request:
-    branches: [ "master" ]
-    paths-ignore: *doc-paths
+  workflow_call:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -196,64 +189,3 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
-
-  # ---------------------------------------------------------------------------
-  # Repository tooling
-  # ---------------------------------------------------------------------------
-  # `xtask/` is a host tool with its own workspace. It loads libclang at run
-  # time, so it builds, lints and tests without clang installed; only running
-  # the generator needs it.
-  xtask:
-    name: xtask
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install Rust (stable + rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Check formatting
-        run: cargo fmt --manifest-path xtask/Cargo.toml -- --check
-
-      - name: Clippy
-        run: cargo clippy --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
-
-      - name: Tests
-        run: cargo test --manifest-path xtask/Cargo.toml
-
-  # ---------------------------------------------------------------------------
-  # Aggregate gate: the single required status check on `master`.
-  # ---------------------------------------------------------------------------
-  # The `build` matrix produces check names derived from the matrix values, which
-  # change whenever a matrix entry is edited — too brittle to require directly.
-  # This job's name is stable, so the branch ruleset requires only this one.
-  #
-  # A docs-only PR never triggers this workflow at all (see `paths-ignore`), so
-  # `rust-skip.yml` reports a passing check under the same `ci-status` name to
-  # keep such PRs mergeable. Keep the two names in sync.
-  ci-status:
-    name: ci-status
-    if: always()
-    needs: [build, rustfmt, miri, xtask]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Check job results
-        env:
-          BUILD_RESULT: ${{ needs.build.result }}
-          RUSTFMT_RESULT: ${{ needs.rustfmt.result }}
-          MIRI_RESULT: ${{ needs.miri.result }}
-          XTASK_RESULT: ${{ needs.xtask.result }}
-        run: |
-          echo "build:   $BUILD_RESULT"
-          echo "rustfmt: $RUSTFMT_RESULT"
-          echo "miri:    $MIRI_RESULT (advisory — does not gate the merge)"
-          echo "xtask:   $XTASK_RESULT"
-          [ "$BUILD_RESULT" = "success" ] || exit 1
-          [ "$RUSTFMT_RESULT" = "success" ] || exit 1
-          [ "$XTASK_RESULT" = "success" ] || exit 1
