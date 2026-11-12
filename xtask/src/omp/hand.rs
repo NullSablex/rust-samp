@@ -110,7 +110,7 @@ impl<'ast> Visit<'ast> for Hand {
     }
 
     fn visit_item_impl(&mut self, item: &'ast syn::ItemImpl) {
-        if let (Some((_, path, _)), syn::Type::Path(target)) = (&item.trait_, &*item.self_ty) {
+        if let (Some((path, _)), syn::Type::Path(target)) = (&item.trait_, &*item.self_ty) {
             let is_component = path
                 .segments
                 .last()
