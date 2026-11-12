@@ -14,7 +14,7 @@ anyhow = "1"
 clang = { version = "2.1", features = ["runtime", "clang_10_0"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
-syn = { version = "2", features = ["full", "visit"] }
+syn = { version = "3", features = ["full", "visit"] }
 proc-macro2 = "1"
 toml = "1.2"
 object = { version = "0.40.0", default-features = false, features = ["read_core", "elf", "pe", "std"] }
