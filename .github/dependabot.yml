@@ -72,3 +72,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: docs(deps)
+
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build(toolchain)

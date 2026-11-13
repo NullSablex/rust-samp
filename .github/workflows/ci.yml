@@ -56,18 +56,21 @@ jobs:
             files=''
           fi
           printf 'Changed files:\n%s\n' "${files:-(full run)}"
-          # CI definitions affect every check, so they run everything.
-          if grep -qE '^\.github/workflows/' <<< "$files"; then all=true; fi
+          # ci.yml decides what runs, so a change to it runs everything. Each
+          # reusable workflow only triggers its own check (see the patterns
+          # below), and any workflow triggers CodeQL, which analyzes Actions.
+          if grep -qE '^\.github/workflows/ci\.yml$' <<< "$files"; then all=true; fi
           match() {
             if [ "$all" = true ] || grep -qE "$1" <<< "$files"; then echo true; else echo false; fi
           }
-          rust=$(match '^(crates/|examples/|Cargo\.(toml|lock)$|\.cargo/|deny\.toml$|rust-toolchain\.toml$)')
+          rust=$(match '(^(crates/|examples/|Cargo\.(toml|lock)$|\.cargo/|deny\.toml$|rust-toolchain\.toml$)|^\.github/workflows/rust\.yml$)')
           xtask=$(match '^xtask/')
+          workflows=$(match '^\.github/(workflows/|codeql/)')
           {
             echo "rust=$rust"
             echo "xtask=$xtask"
-            echo "docs=$(match '^(docs/|zensical\.toml$|requirements-docs\.txt$)')"
-            if [ "$rust" = true ] || [ "$xtask" = true ] || [ "$all" = true ]; then
+            echo "docs=$(match '(^(docs/|zensical\.toml$|requirements-docs\.txt$)|^\.github/workflows/docs\.yml$)')"
+            if [ "$rust" = true ] || [ "$xtask" = true ] || [ "$workflows" = true ] || [ "$all" = true ]; then
               echo codeql=true
             else
               echo codeql=false
@@ -96,10 +99,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust (stable + rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt, clippy
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
       - run: cargo fmt --manifest-path xtask/Cargo.toml -- --check
       - run: cargo clippy --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path xtask/Cargo.toml

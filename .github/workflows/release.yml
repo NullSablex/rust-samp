@@ -45,8 +45,7 @@ jobs:
 
       - name: Install stable Rust + i686 target
         run: |
-          rustup update stable --no-self-update
-          rustup default stable
+          rustup toolchain install
           rustup target add i686-unknown-linux-gnu
           rustup component add clippy
 
