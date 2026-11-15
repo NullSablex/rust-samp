@@ -58,7 +58,7 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
     - name: Cache cargo build
-      uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+      uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
       with:
         cache-all-crates: true
         prefix-key: "v1"
@@ -159,7 +159,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266 # v2
         with:
           cache-all-crates: true
           prefix-key: "miri-v1"
