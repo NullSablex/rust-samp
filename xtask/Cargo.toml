@@ -19,7 +19,7 @@ proc-macro2 = "1"
 toml = "1.2"
 object = { version = "0.41.0", default-features = false, features = ["read_core", "elf", "pe", "std"] }
 iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder"] }
-cpp_demangle = "0.5.1"
+cpp_demangle = "0.6.0"
 memchr = "2.8.3"
 pdb = "0.8.0"
 msvc-demangler = "0.11.0"
